@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/actions";
+import { createRoom, joinRoomByCode } from "./actions";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -10,7 +12,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -19,6 +25,8 @@ export default async function DashboardPage() {
   if (!user) {
     redirect("/login");
   }
+
+  const { error } = await searchParams;
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -36,7 +44,9 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button disabled>통화방 만들기 (준비 중)</Button>
+          <form action={createRoom}>
+            <Button type="submit">통화방 만들기</Button>
+          </form>
           <form action={logout}>
             <Button type="submit" variant="ghost">
               로그아웃
@@ -44,15 +54,31 @@ export default async function DashboardPage() {
           </form>
         </div>
       </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
       <div className="grid gap-6 sm:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>내 통화방</CardTitle>
+            <CardTitle>코드로 입장하기</CardTitle>
             <CardDescription>
-              생성/참여 중인 통화방 목록이 곧 이곳에 표시됩니다.
+              친구에게 받은 6자리 통화방 코드를 입력하세요.
             </CardDescription>
           </CardHeader>
-          <CardContent />
+          <CardContent>
+            <form action={joinRoomByCode} className="flex gap-2">
+              <Input
+                name="code"
+                placeholder="예: 7XQK2M"
+                maxLength={6}
+                className="uppercase"
+                required
+              />
+              <Button type="submit" variant="outline">
+                입장
+              </Button>
+            </form>
+          </CardContent>
         </Card>
         <Card>
           <CardHeader>
