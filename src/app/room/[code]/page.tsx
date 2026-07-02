@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { VoiceRoom } from "@/components/room/voice-room";
 import {
   Card,
   CardContent,
@@ -51,17 +52,29 @@ export default async function RoomPage({
     );
   }
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("nickname")
+    .eq("id", user.id)
+    .single();
+
   return (
-    <div className="mx-auto flex max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24 text-center">
+    <div className="mx-auto flex max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24">
       <Card className="w-full">
         <CardHeader>
           <CardTitle>통화방 {room.code}</CardTitle>
           <CardDescription>
-            음성 연결은 다음 단계에서 붙습니다. 방 코드/유효성 확인까지는
-            정상 동작합니다.
+            같은 코드를 가진 파티원과 자동으로 음성 연결됩니다.
           </CardDescription>
         </CardHeader>
-        <CardContent />
+        <CardContent>
+          <VoiceRoom
+            roomCode={room.code}
+            roomId={room.id}
+            userId={user.id}
+            nickname={profile?.nickname ?? user.email ?? "익명"}
+          />
+        </CardContent>
       </Card>
     </div>
   );
