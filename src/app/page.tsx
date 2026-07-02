@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { AuthNav } from "@/components/auth-nav";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -27,32 +27,14 @@ const features = [
   },
 ];
 
-export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+export default function Home() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="border-b">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <span className="text-lg font-bold tracking-tight">Arring</span>
           <nav className="flex items-center gap-2">
-            {user ? (
-              <Button asChild>
-                <Link href="/dashboard">대시보드</Link>
-              </Button>
-            ) : (
-              <>
-                <Button variant="ghost" asChild>
-                  <Link href="/login">로그인</Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link href="/signup">회원가입</Link>
-                </Button>
-              </>
-            )}
+            <AuthNav />
           </nav>
         </div>
       </header>
@@ -73,13 +55,11 @@ export default async function Home() {
           </p>
           <div className="flex gap-3">
             <Button size="lg" asChild>
-              <Link href={user ? "/dashboard" : "/signup"}>통화방 만들기</Link>
+              <Link href="/dashboard">통화방 만들기</Link>
             </Button>
-            {!user && (
-              <Button size="lg" variant="outline" asChild>
-                <Link href="/login">로그인</Link>
-              </Button>
-            )}
+            <Button size="lg" variant="outline" asChild>
+              <Link href="/login">로그인</Link>
+            </Button>
           </div>
         </section>
 

@@ -6,7 +6,8 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  // Session refresh only matters where auth is actually checked — keeping
+  // public pages (landing, login, signup) out of the matcher saves a
+  // Supabase round trip on every visit.
+  matcher: ["/dashboard/:path*", "/room/:path*", "/auth/:path*"],
 };
