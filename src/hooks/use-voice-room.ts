@@ -64,6 +64,7 @@ export function useVoiceRoom({
   const audioContainerRef = useRef<HTMLDivElement | null>(null);
   const audioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const otherPeerIdsRef = useRef<Set<string>>(new Set());
+  const everHadOtherPeerRef = useRef(false);
 
   const upsertParticipant = useCallback((p: Participant) => {
     setParticipants((prev) => {
@@ -215,6 +216,7 @@ export function useVoiceRoom({
           if (!presence) continue;
 
           otherPeerIdsRef.current.add(peerId);
+          everHadOtherPeerRef.current = true;
 
           upsertParticipant({
             id: peerId,
@@ -276,9 +278,11 @@ export function useVoiceRoom({
         .is("left_at", null)
         .then(() => {});
 
-      // If no one else was present when we left, close the room instead of
-      // waiting for its TTL to expire.
-      if (otherPeerIdsRef.current.size === 0) {
+      // Only auto-close the room if other participants were here and have
+      // now all left — not just because no one has joined yet (e.g. the
+      // creator is still waiting for a friend, or this is React Strict
+      // Mode's dev-only mount/cleanup/mount dry run).
+      if (everHadOtherPeerRef.current && otherPeerIdsRef.current.size === 0) {
         supabase
           .from("rooms")
           .update({ status: "ended" })
