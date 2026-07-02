@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { login } from "./actions";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -42,9 +42,9 @@ export default async function LoginPage({
               <Input id="password" name="password" type="password" required />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full">
+            <SubmitButton pendingText="로그인 중..." className="w-full">
               로그인
-            </Button>
+            </SubmitButton>
             <p className="text-center text-sm text-muted-foreground">
               계정이 없으신가요?{" "}
               <Link href="/signup" className="underline underline-offset-4">

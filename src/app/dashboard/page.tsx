@@ -15,7 +15,7 @@ import {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; welcome?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -26,7 +26,7 @@ export default async function DashboardPage({
     redirect("/login");
   }
 
-  const { error } = await searchParams;
+  const { error, welcome } = await searchParams;
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -56,6 +56,11 @@ export default async function DashboardPage({
         </div>
       </div>
 
+      {welcome && (
+        <div className="rounded-md border border-green-600/30 bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+          🎉 회원가입이 완료되었습니다! 이제 통화방을 만들어 파티원을 초대해보세요.
+        </div>
+      )}
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="grid gap-6 sm:grid-cols-2">

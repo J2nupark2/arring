@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { signup } from "./actions";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -65,9 +65,9 @@ export default async function SignupPage({
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full">
+            <SubmitButton pendingText="가입 처리 중..." className="w-full">
               회원가입
-            </Button>
+            </SubmitButton>
             <p className="text-center text-sm text-muted-foreground">
               이미 계정이 있으신가요?{" "}
               <Link href="/login" className="underline underline-offset-4">

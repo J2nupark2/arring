@@ -27,13 +27,23 @@ export async function signup(formData: FormData) {
   });
 
   if (error) {
+    // A duplicate submit (double click) can land here after the first
+    // request already created the account and signed the user in — if we
+    // have a session, treat it as success instead of showing an error.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      redirect("/dashboard?welcome=1");
+    }
+
     redirect("/signup?error=" + encodeURIComponent(translateAuthError(error.message)));
   }
 
   // If email confirmation is disabled, signUp already returns an active
   // session — skip the "check your email" step and go straight in.
   if (data.session) {
-    redirect("/dashboard");
+    redirect("/dashboard?welcome=1");
   }
 
   redirect("/signup/check-email?email=" + encodeURIComponent(email));
