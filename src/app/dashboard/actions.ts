@@ -41,6 +41,7 @@ export async function createRoom(formData: FormData) {
       max_members: maxMembers,
       is_public: isPublic,
       created_by: user.id,
+      host_id: user.id,
       expires_at: expiresAt,
     });
 

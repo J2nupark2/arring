@@ -5,7 +5,22 @@ import { useRouter } from "next/navigation";
 import { useVoiceRoom } from "@/hooks/use-voice-room";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Loader2, Mic, MicOff, PhoneOff, Volume2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Crown,
+  Loader2,
+  Mic,
+  MicOff,
+  MoreVertical,
+  PhoneOff,
+  UserX,
+  Volume2,
+} from "lucide-react";
 
 export function VoiceRoom({
   roomCode,
@@ -13,12 +28,14 @@ export function VoiceRoom({
   userId,
   nickname,
   maxMembers,
+  initialHostId,
 }: {
   roomCode: string;
   roomId: string;
   userId: string;
   nickname: string;
   maxMembers: number;
+  initialHostId: string;
 }) {
   const router = useRouter();
   const [leaving, startLeaving] = useTransition();
@@ -30,8 +47,22 @@ export function VoiceRoom({
     setMicGain,
     volumes,
     setParticipantVolume,
+    hostId,
+    isHost,
+    transferHost,
+    kickParticipant,
     status,
-  } = useVoiceRoom({ roomCode, roomId, userId, nickname });
+  } = useVoiceRoom({
+    roomCode,
+    roomId,
+    userId,
+    nickname,
+    initialHostId,
+    onKicked: () =>
+      router.push(
+        "/dashboard?error=" + encodeURIComponent("방장에 의해 추방되었습니다."),
+      ),
+  });
 
   return (
     <div className="flex w-full flex-col gap-6">
@@ -61,16 +92,47 @@ export function VoiceRoom({
                 <Avatar className="size-7">
                   <AvatarFallback>{p.nickname.slice(0, 1)}</AvatarFallback>
                 </Avatar>
-                <span className="text-sm font-medium">
+                <span className="flex items-center gap-1 text-sm font-medium">
+                  {p.id === hostId && (
+                    <Crown className="size-4 text-amber-500" aria-label="방장" />
+                  )}
                   {p.nickname}
                   {p.isSelf && " (나)"}
                 </span>
               </div>
-              {p.muted ? (
-                <MicOff className="size-4 text-muted-foreground" />
-              ) : (
-                <Mic className="size-4 text-muted-foreground" />
-              )}
+              <div className="flex items-center gap-1">
+                {p.muted ? (
+                  <MicOff className="size-4 text-muted-foreground" />
+                ) : (
+                  <Mic className="size-4 text-muted-foreground" />
+                )}
+                {isHost && !p.isSelf && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`${p.nickname} 관리`}
+                      >
+                        <MoreVertical className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => transferHost(p.id)}>
+                        <Crown className="size-4" />
+                        방장 위임
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => kickParticipant(p.id)}
+                      >
+                        <UserX className="size-4" />
+                        추방
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </div>
             {!p.isSelf && (
               <div className="flex items-center gap-2">

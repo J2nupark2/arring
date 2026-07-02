@@ -15,6 +15,10 @@ type SignalPayload = {
 
 type MuteStatePayload = { userId: string; muted: boolean };
 
+type KickPayload = { targetId: string; from: string };
+
+type HostChangePayload = { newHostId: string; from: string };
+
 type PresenceState = { userId: string; nickname: string };
 
 export type Participant = {
@@ -45,16 +49,21 @@ export function useVoiceRoom({
   roomId,
   userId,
   nickname,
+  initialHostId,
+  onKicked,
 }: {
   roomCode: string;
   roomId: string;
   userId: string;
   nickname: string;
+  initialHostId: string;
+  onKicked?: () => void;
 }) {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [muted, setMuted] = useState(false);
   const [micGain, setMicGainState] = useState(1);
   const [volumes, setVolumes] = useState<Record<string, number>>({});
+  const [hostId, setHostId] = useState(initialHostId);
   const [status, setStatus] = useState<"connecting" | "connected" | "error">(
     "connecting",
   );
@@ -69,8 +78,16 @@ export function useVoiceRoom({
   const audioContainerRef = useRef<HTMLDivElement | null>(null);
   const audioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const otherPeerIdsRef = useRef<Set<string>>(new Set());
-  const everHadOtherPeerRef = useRef(false);
   const volumesRef = useRef<Record<string, number>>({});
+  const hostIdRef = useRef(initialHostId);
+  const joinedRef = useRef(false);
+  const onKickedRef = useRef(onKicked);
+  onKickedRef.current = onKicked;
+
+  const applyHostChange = useCallback((newHostId: string) => {
+    hostIdRef.current = newHostId;
+    setHostId(newHostId);
+  }, []);
 
   const upsertParticipant = useCallback((p: Participant) => {
     setParticipants((prev) => {
@@ -228,6 +245,26 @@ export function useVoiceRoom({
         },
       );
 
+      channel.on(
+        "broadcast",
+        { event: "host-change" },
+        ({ payload }: { payload: HostChangePayload }) => {
+          if (payload.from !== hostIdRef.current) return;
+          applyHostChange(payload.newHostId);
+        },
+      );
+
+      channel.on(
+        "broadcast",
+        { event: "kick" },
+        ({ payload }: { payload: KickPayload }) => {
+          if (payload.from !== hostIdRef.current) return;
+          if (payload.targetId === userId) {
+            onKickedRef.current?.();
+          }
+        },
+      );
+
       channel.on("presence", { event: "sync" }, () => {
         const state = channel.presenceState<PresenceState>();
 
@@ -237,7 +274,6 @@ export function useVoiceRoom({
           if (!presence) continue;
 
           otherPeerIdsRef.current.add(peerId);
-          everHadOtherPeerRef.current = true;
 
           upsertParticipant({
             id: peerId,
@@ -263,10 +299,28 @@ export function useVoiceRoom({
         otherPeerIdsRef.current.delete(key);
         closePeer(key);
         removeParticipant(key);
+
+        // The host left (gracefully or by closing the tab). Every remaining
+        // client deterministically picks the same successor — the smallest
+        // user id — and only the successor writes it to the DB, so no
+        // coordination is needed.
+        if (key === hostIdRef.current) {
+          const candidates = [userId, ...otherPeerIdsRef.current].sort();
+          const newHost = candidates[0];
+          applyHostChange(newHost);
+          if (newHost === userId) {
+            supabase
+              .from("rooms")
+              .update({ host_id: userId })
+              .eq("id", roomId)
+              .then(() => {});
+          }
+        }
       });
 
       channel.subscribe(async (subscribeStatus) => {
         if (subscribeStatus === "SUBSCRIBED") {
+          joinedRef.current = true;
           await channel.track({ userId, nickname } satisfies PresenceState);
           const { error: participantError } = await supabase
             .from("room_participants")
@@ -301,17 +355,17 @@ export function useVoiceRoom({
         .is("left_at", null)
         .then(() => {});
 
-      // Only auto-close the room if other participants were here and have
-      // now all left — not just because no one has joined yet (e.g. the
-      // creator is still waiting for a friend, or this is React Strict
-      // Mode's dev-only mount/cleanup/mount dry run).
-      if (everHadOtherPeerRef.current && otherPeerIdsRef.current.size === 0) {
+      // Leaving an empty room closes it. joinedRef guards against React
+      // Strict Mode's dev-only mount/cleanup/mount dry run, where cleanup
+      // fires before the channel ever subscribed.
+      if (joinedRef.current && otherPeerIdsRef.current.size === 0) {
         supabase
           .from("rooms")
           .update({ status: "ended" })
           .eq("id", roomId)
           .then(() => {});
       }
+      joinedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode, roomId, userId, nickname]);
@@ -352,6 +406,36 @@ export function useVoiceRoom({
     }
   }, []);
 
+  const transferHost = useCallback(
+    (peerId: string) => {
+      if (hostIdRef.current !== userId) return;
+      supabaseRef.current
+        .from("rooms")
+        .update({ host_id: peerId })
+        .eq("id", roomId)
+        .then(() => {});
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "host-change",
+        payload: { newHostId: peerId, from: userId } satisfies HostChangePayload,
+      });
+      applyHostChange(peerId);
+    },
+    [roomId, userId, applyHostChange],
+  );
+
+  const kickParticipant = useCallback(
+    (peerId: string) => {
+      if (hostIdRef.current !== userId) return;
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "kick",
+        payload: { targetId: peerId, from: userId } satisfies KickPayload,
+      });
+    },
+    [userId],
+  );
+
   return {
     participants,
     muted,
@@ -360,6 +444,10 @@ export function useVoiceRoom({
     setMicGain,
     volumes,
     setParticipantVolume,
+    hostId,
+    isHost: hostId === userId,
+    transferHost,
+    kickParticipant,
     status,
   };
 }

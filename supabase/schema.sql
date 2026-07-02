@@ -64,6 +64,7 @@ create table public.rooms (
   max_members integer not null default 6,
   is_public boolean not null default false,
   created_by uuid not null references public.profiles (id),
+  host_id uuid references public.profiles (id),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
   status text not null default 'active' check (status in ('active', 'ended'))

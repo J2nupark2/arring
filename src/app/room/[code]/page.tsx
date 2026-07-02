@@ -28,7 +28,7 @@ export default async function RoomPage({
 
   const { data: room } = await supabase
     .from("rooms")
-    .select("id, code, title, max_members, status, expires_at, created_by")
+    .select("id, code, title, max_members, status, expires_at, created_by, host_id")
     .eq("code", code)
     .maybeSingle();
 
@@ -118,6 +118,7 @@ export default async function RoomPage({
             userId={user.id}
             nickname={displayName}
             maxMembers={room.max_members}
+            initialHostId={room.host_id ?? room.created_by}
           />
         </CardContent>
       </Card>
