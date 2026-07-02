@@ -28,7 +28,7 @@ export default async function RoomPage({
 
   const { data: room } = await supabase
     .from("rooms")
-    .select("id, code, status, expires_at, created_by")
+    .select("id, code, title, max_members, status, expires_at, created_by")
     .eq("code", code)
     .maybeSingle();
 
@@ -44,6 +44,43 @@ export default async function RoomPage({
             <CardDescription>
               존재하지 않거나 만료된 통화방 코드예요. 대시보드에서 새 통화방을
               만들어보세요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent />
+        </Card>
+      </div>
+    );
+  }
+
+  const { data: memberCount } = await supabase.rpc("room_member_count", {
+    target_room_id: room.id,
+  });
+
+  // A user already counted as active (e.g. rejoining after a refresh or a
+  // closed tab that never recorded the leave) must not be blocked by the
+  // member cap — they ARE one of the counted members.
+  const { data: ownActiveRow } = await supabase
+    .from("room_participants")
+    .select("id")
+    .eq("room_id", room.id)
+    .eq("user_id", user.id)
+    .is("left_at", null)
+    .limit(1)
+    .maybeSingle();
+
+  if (
+    !ownActiveRow &&
+    typeof memberCount === "number" &&
+    memberCount >= room.max_members
+  ) {
+    return (
+      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24 text-center">
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>정원이 가득 찼습니다</CardTitle>
+            <CardDescription>
+              {room.title} ({memberCount}/{room.max_members}명) — 자리가 나면
+              다시 시도해주세요.
             </CardDescription>
           </CardHeader>
           <CardContent />
@@ -68,9 +105,10 @@ export default async function RoomPage({
     <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24">
       <Card className="w-full">
         <CardHeader>
-          <CardTitle>통화방 {room.code}</CardTitle>
+          <CardTitle>{room.title}</CardTitle>
           <CardDescription>
-            같은 코드를 가진 파티원과 자동으로 음성 연결됩니다.
+            방 코드 <span className="font-mono font-semibold">{room.code}</span>{" "}
+            — 같은 코드를 가진 파티원과 자동으로 음성 연결됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -79,6 +117,7 @@ export default async function RoomPage({
             roomId={room.id}
             userId={user.id}
             nickname={displayName}
+            maxMembers={room.max_members}
           />
         </CardContent>
       </Card>

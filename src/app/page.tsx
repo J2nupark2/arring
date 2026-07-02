@@ -22,8 +22,8 @@ const features = [
   },
   {
     title: "파티/그룹원 매칭",
-    description: "던전, 시간, 인원을 올리고 신청받는 매칭 게시판을 준비 중입니다.",
-    comingSoon: true,
+    description:
+      "모집 중인 파티를 둘러보고 바로 통화방에 입장하거나, 직접 파티를 모집해보세요.",
   },
 ];
 
@@ -69,11 +69,6 @@ export default function Home() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   {feature.title}
-                  {feature.comingSoon && (
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
-                      준비 중
-                    </span>
-                  )}
                 </CardTitle>
                 <CardDescription>{feature.description}</CardDescription>
               </CardHeader>

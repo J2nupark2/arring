@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/actions";
@@ -45,9 +46,9 @@ export default async function DashboardPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <form action={createRoom}>
-            <Button type="submit">통화방 만들기</Button>
-          </form>
+          <Button variant="outline" asChild>
+            <Link href="/party">파티 구하기</Link>
+          </Button>
           <form action={logout}>
             <Button type="submit" variant="ghost">
               로그아웃
@@ -64,6 +65,24 @@ export default async function DashboardPage({
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="grid gap-6 sm:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>새 통화방 만들기</CardTitle>
+            <CardDescription>
+              방 제목을 정하고 파티원에게 코드를 공유하세요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={createRoom} className="flex gap-2">
+              <Input
+                name="title"
+                placeholder="예: 불의 신전 4인팟"
+                maxLength={40}
+              />
+              <Button type="submit">만들기</Button>
+            </form>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle>코드로 입장하기</CardTitle>

@@ -53,6 +53,8 @@ export function useVoiceRoom({
 }) {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [muted, setMuted] = useState(false);
+  const [micGain, setMicGainState] = useState(1);
+  const [volumes, setVolumes] = useState<Record<string, number>>({});
   const [status, setStatus] = useState<"connecting" | "connected" | "error">(
     "connecting",
   );
@@ -60,11 +62,15 @@ export function useVoiceRoom({
   const supabaseRef = useRef(createClient());
   const channelRef = useRef<RealtimeChannel | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const rawStreamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const audioContainerRef = useRef<HTMLDivElement | null>(null);
   const audioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const otherPeerIdsRef = useRef<Set<string>>(new Set());
   const everHadOtherPeerRef = useRef(false);
+  const volumesRef = useRef<Record<string, number>>({});
 
   const upsertParticipant = useCallback((p: Participant) => {
     setParticipants((prev) => {
@@ -123,6 +129,7 @@ export function useVoiceRoom({
         if (!audioEl) {
           audioEl = document.createElement("audio");
           audioEl.autoplay = true;
+          audioEl.volume = volumesRef.current[peerId] ?? 1;
           audioContainerRef.current?.appendChild(audioEl);
           audioElsRef.current.set(peerId, audioEl);
         }
@@ -151,14 +158,28 @@ export function useVoiceRoom({
 
     async function setup() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        const rawStream = await navigator.mediaDevices.getUserMedia({
           audio: true,
         });
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          rawStream.getTracks().forEach((t) => t.stop());
           return;
         }
-        localStreamRef.current = stream;
+
+        // Route the mic through a GainNode so its level can be adjusted
+        // live; peers receive the gain-processed stream.
+        const audioCtx = new AudioContext();
+        const source = audioCtx.createMediaStreamSource(rawStream);
+        const gainNode = audioCtx.createGain();
+        const destination = audioCtx.createMediaStreamDestination();
+        source.connect(gainNode);
+        gainNode.connect(destination);
+        audioCtx.resume().catch(() => {});
+
+        rawStreamRef.current = rawStream;
+        audioCtxRef.current = audioCtx;
+        gainNodeRef.current = gainNode;
+        localStreamRef.current = destination.stream;
       } catch {
         setStatus("error");
         return;
@@ -269,6 +290,8 @@ export function useVoiceRoom({
       audioElsRef.current.clear();
       audioContainerRef.current?.remove();
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      rawStreamRef.current?.getTracks().forEach((t) => t.stop());
+      audioCtxRef.current?.close().catch(() => {});
 
       supabase
         .from("room_participants")
@@ -313,5 +336,30 @@ export function useVoiceRoom({
     });
   }, [userId]);
 
-  return { participants, muted, toggleMute, status };
+  const setMicGain = useCallback((value: number) => {
+    setMicGainState(value);
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = value;
+    }
+  }, []);
+
+  const setParticipantVolume = useCallback((peerId: string, value: number) => {
+    volumesRef.current[peerId] = value;
+    setVolumes((prev) => ({ ...prev, [peerId]: value }));
+    const audioEl = audioElsRef.current.get(peerId);
+    if (audioEl) {
+      audioEl.volume = value;
+    }
+  }, []);
+
+  return {
+    participants,
+    muted,
+    toggleMute,
+    micGain,
+    setMicGain,
+    volumes,
+    setParticipantVolume,
+    status,
+  };
 }

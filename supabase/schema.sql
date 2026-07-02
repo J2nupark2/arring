@@ -7,6 +7,8 @@ drop table if exists public.rooms cascade;
 drop trigger if exists on_auth_user_created on auth.users;
 drop function if exists public.handle_new_user cascade;
 drop function if exists public.is_room_participant cascade;
+drop function if exists public.room_member_count cascade;
+drop function if exists public.list_public_rooms cascade;
 drop table if exists public.profiles cascade;
 
 create extension if not exists pgcrypto;
@@ -58,6 +60,9 @@ create trigger on_auth_user_created
 create table public.rooms (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
+  title text not null default '파티 통화방',
+  max_members integer not null default 6,
+  is_public boolean not null default false,
   created_by uuid not null references public.profiles (id),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
@@ -132,3 +137,51 @@ create policy "participants can update room status"
     auth.uid() = created_by
     or public.is_room_participant(id)
   );
+
+-- Member counts are needed by non-participants (party finder list), but
+-- room_participants RLS only lets participants see each other — so expose
+-- the count through a SECURITY DEFINER function instead.
+create function public.room_member_count(target_room_id uuid)
+returns integer
+language sql
+security definer set search_path = public
+stable
+as $$
+  select count(distinct user_id)::integer
+  from public.room_participants
+  where room_id = target_room_id and left_at is null;
+$$;
+
+-- One-shot listing for the party finder: public active rooms with their
+-- creator's profile and current member count.
+create function public.list_public_rooms()
+returns table (
+  id uuid,
+  code text,
+  title text,
+  max_members integer,
+  created_at timestamptz,
+  creator_nickname text,
+  creator_server text,
+  member_count integer
+)
+language sql
+security definer set search_path = public
+stable
+as $$
+  select
+    r.id,
+    r.code,
+    r.title,
+    r.max_members,
+    r.created_at,
+    p.nickname,
+    p.server,
+    public.room_member_count(r.id)
+  from public.rooms r
+  join public.profiles p on p.id = r.created_by
+  where r.is_public
+    and r.status = 'active'
+    and r.expires_at > now()
+  order by r.created_at desc;
+$$;
