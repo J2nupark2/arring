@@ -1,0 +1,38 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+
+export async function signup(formData: FormData) {
+  const nickname = (formData.get("nickname") as string)?.trim();
+  const email = (formData.get("email") as string)?.trim();
+  const password = formData.get("password") as string;
+
+  if (!nickname || !email || !password) {
+    redirect("/signup?error=" + encodeURIComponent("모든 항목을 입력해주세요."));
+  }
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { nickname },
+      emailRedirectTo: `${siteUrl}/auth/callback?next=/dashboard`,
+    },
+  });
+
+  if (error) {
+    redirect("/signup?error=" + encodeURIComponent(error.message));
+  }
+
+  // If email confirmation is disabled, signUp already returns an active
+  // session — skip the "check your email" step and go straight in.
+  if (data.session) {
+    redirect("/dashboard");
+  }
+
+  redirect("/signup/check-email?email=" + encodeURIComponent(email));
+}
