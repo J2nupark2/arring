@@ -35,7 +35,7 @@ export default async function DashboardPage({
     .single();
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-1 flex-col gap-6 px-6 py-12">
+    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-12">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">대시보드</h1>

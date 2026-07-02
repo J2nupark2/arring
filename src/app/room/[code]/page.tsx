@@ -37,7 +37,7 @@ export default async function RoomPage({
 
   if (isInvalid) {
     return (
-      <div className="mx-auto flex max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24 text-center">
+      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24 text-center">
         <Card className="w-full">
           <CardHeader>
             <CardTitle>통화방을 찾을 수 없습니다</CardTitle>
@@ -59,7 +59,7 @@ export default async function RoomPage({
     .single();
 
   return (
-    <div className="mx-auto flex max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24">
+    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24">
       <Card className="w-full">
         <CardHeader>
           <CardTitle>통화방 {room.code}</CardTitle>
