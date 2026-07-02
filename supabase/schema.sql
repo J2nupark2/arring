@@ -16,6 +16,7 @@ create extension if not exists pgcrypto;
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   nickname text not null,
+  server text,
   created_at timestamptz not null default now()
 );
 
@@ -38,10 +39,11 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, nickname)
+  insert into public.profiles (id, nickname, server)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data ->> 'nickname', split_part(new.email, '@', 1))
+    coalesce(new.raw_user_meta_data ->> 'nickname', split_part(new.email, '@', 1)),
+    nullif(new.raw_user_meta_data ->> 'server', '')
   );
   return new;
 end;

@@ -30,7 +30,7 @@ export default async function DashboardPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("nickname")
+    .select("nickname, server")
     .eq("id", user.id)
     .single();
 
@@ -40,7 +40,8 @@ export default async function DashboardPage({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">대시보드</h1>
           <p className="text-sm text-muted-foreground">
-            {profile?.nickname ?? user.email}님, 환영합니다.
+            {profile?.nickname ?? user.email}
+            {profile?.server && ` (${profile.server})`}님, 환영합니다.
           </p>
         </div>
         <div className="flex items-center gap-2">

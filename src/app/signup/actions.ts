@@ -2,9 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { translateAuthError } from "@/lib/auth-errors";
 
 export async function signup(formData: FormData) {
   const nickname = (formData.get("nickname") as string)?.trim();
+  const server = (formData.get("server") as string)?.trim() || null;
   const email = (formData.get("email") as string)?.trim();
   const password = formData.get("password") as string;
 
@@ -19,13 +21,13 @@ export async function signup(formData: FormData) {
     email,
     password,
     options: {
-      data: { nickname },
+      data: { nickname, server },
       emailRedirectTo: `${siteUrl}/auth/callback?next=/dashboard`,
     },
   });
 
   if (error) {
-    redirect("/signup?error=" + encodeURIComponent(error.message));
+    redirect("/signup?error=" + encodeURIComponent(translateAuthError(error.message)));
   }
 
   // If email confirmation is disabled, signUp already returns an active

@@ -29,14 +29,20 @@ export default async function SignupPage({
         </CardHeader>
         <CardContent>
           <form action={signup} className="flex flex-col gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="nickname">닉네임</Label>
-              <Input
-                id="nickname"
-                name="nickname"
-                placeholder="아이온2 캐릭터명"
-                required
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="nickname">닉네임</Label>
+                <Input
+                  id="nickname"
+                  name="nickname"
+                  placeholder="아이온2 캐릭터명"
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="server">서버</Label>
+                <Input id="server" name="server" placeholder="예: 지켈" />
+              </div>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="email">이메일</Label>

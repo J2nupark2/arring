@@ -54,9 +54,15 @@ export default async function RoomPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("nickname")
+    .select("nickname, server")
     .eq("id", user.id)
     .single();
+
+  const displayName = profile
+    ? profile.server
+      ? `${profile.nickname} (${profile.server})`
+      : profile.nickname
+    : (user.email ?? "익명");
 
   return (
     <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24">
@@ -72,7 +78,7 @@ export default async function RoomPage({
             roomCode={room.code}
             roomId={room.id}
             userId={user.id}
-            nickname={profile?.nickname ?? user.email ?? "익명"}
+            nickname={displayName}
           />
         </CardContent>
       </Card>
