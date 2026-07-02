@@ -1,8 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createRoom } from "@/app/dashboard/actions";
 import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/link-button";
+import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -60,9 +61,9 @@ export default async function PartyPage({
             모집 중인 파티에 바로 입장하거나, 직접 파티를 모집해보세요.
           </p>
         </div>
-        <Button variant="outline" asChild>
-          <Link href="/dashboard">대시보드</Link>
-        </Button>
+        <LinkButton href="/dashboard" variant="outline">
+          대시보드
+        </LinkButton>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -93,7 +94,7 @@ export default async function PartyPage({
               className="w-24"
               aria-label="최대 인원"
             />
-            <Button type="submit">모집 시작</Button>
+            <SubmitButton pendingText="만드는 중...">모집 시작</SubmitButton>
           </form>
         </CardContent>
       </Card>
@@ -132,9 +133,7 @@ export default async function PartyPage({
                       정원 마감
                     </Button>
                   ) : (
-                    <Button asChild>
-                      <Link href={`/room/${room.code}`}>입장</Link>
-                    </Button>
+                    <LinkButton href={`/room/${room.code}`}>입장</LinkButton>
                   )}
                 </div>
               </CardContent>

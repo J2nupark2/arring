@@ -1,10 +1,11 @@
 "use client";
 
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useVoiceRoom } from "@/hooks/use-voice-room";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Mic, MicOff, PhoneOff, Volume2 } from "lucide-react";
+import { Loader2, Mic, MicOff, PhoneOff, Volume2 } from "lucide-react";
 
 export function VoiceRoom({
   roomCode,
@@ -20,6 +21,7 @@ export function VoiceRoom({
   maxMembers: number;
 }) {
   const router = useRouter();
+  const [leaving, startLeaving] = useTransition();
   const {
     participants,
     muted,
@@ -122,10 +124,15 @@ export function VoiceRoom({
         <Button
           variant="destructive"
           size="icon-lg"
-          onClick={() => router.push("/dashboard")}
+          disabled={leaving}
+          onClick={() => startLeaving(() => router.push("/dashboard"))}
           aria-label="퇴장"
         >
-          <PhoneOff className="size-5" />
+          {leaving ? (
+            <Loader2 className="size-5 animate-spin" />
+          ) : (
+            <PhoneOff className="size-5" />
+          )}
         </Button>
       </div>
     </div>

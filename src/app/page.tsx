@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { AuthNav } from "@/components/auth-nav";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/link-button";
 import {
   Card,
   CardContent,
@@ -54,12 +53,12 @@ export default function Home() {
             통화방을 만들고 파티원을 초대하세요.
           </p>
           <div className="flex gap-3">
-            <Button size="lg" asChild>
-              <Link href="/dashboard">통화방 만들기</Link>
-            </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link href="/login">로그인</Link>
-            </Button>
+            <LinkButton href="/dashboard" size="lg">
+              통화방 만들기
+            </LinkButton>
+            <LinkButton href="/login" size="lg" variant="outline">
+              로그인
+            </LinkButton>
           </div>
         </section>
 

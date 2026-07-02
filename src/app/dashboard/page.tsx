@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/actions";
 import { createRoom, joinRoomByCode } from "./actions";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/link-button";
+import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import {
   Card,
@@ -46,13 +46,13 @@ export default async function DashboardPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <Link href="/party">파티 구하기</Link>
-          </Button>
+          <LinkButton href="/party" variant="outline">
+            파티 구하기
+          </LinkButton>
           <form action={logout}>
-            <Button type="submit" variant="ghost">
+            <SubmitButton pendingText="로그아웃 중..." variant="ghost">
               로그아웃
-            </Button>
+            </SubmitButton>
           </form>
         </div>
       </div>
@@ -79,7 +79,7 @@ export default async function DashboardPage({
                 placeholder="예: 불의 신전 4인팟"
                 maxLength={40}
               />
-              <Button type="submit">만들기</Button>
+              <SubmitButton pendingText="만드는 중...">만들기</SubmitButton>
             </form>
           </CardContent>
         </Card>
@@ -99,9 +99,9 @@ export default async function DashboardPage({
                 className="uppercase"
                 required
               />
-              <Button type="submit" variant="outline">
+              <SubmitButton pendingText="입장 중..." variant="outline">
                 입장
-              </Button>
+              </SubmitButton>
             </form>
           </CardContent>
         </Card>

@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/link-button";
 
 // Client-side auth-aware nav so the landing page can stay fully static
 // (served from the CDN edge) instead of doing a server-side session check.
@@ -18,21 +17,17 @@ export function AuthNav() {
   }, []);
 
   if (loggedIn) {
-    return (
-      <Button asChild>
-        <Link href="/dashboard">대시보드</Link>
-      </Button>
-    );
+    return <LinkButton href="/dashboard">대시보드</LinkButton>;
   }
 
   return (
     <>
-      <Button variant="ghost" asChild>
-        <Link href="/login">로그인</Link>
-      </Button>
-      <Button variant="outline" asChild>
-        <Link href="/signup">회원가입</Link>
-      </Button>
+      <LinkButton href="/login" variant="ghost">
+        로그인
+      </LinkButton>
+      <LinkButton href="/signup" variant="outline">
+        회원가입
+      </LinkButton>
     </>
   );
 }
