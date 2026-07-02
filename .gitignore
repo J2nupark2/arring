@@ -45,3 +45,4 @@ next-env.d.ts
 .netlify
 deno.lock
 *.log
+.claude/scheduled_tasks.lock
