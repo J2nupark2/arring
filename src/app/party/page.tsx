@@ -45,7 +45,7 @@ export default async function PartyPage({
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(`/login?error=${encodeURIComponent("로그인 후 파티를 구할 수 있습니다.")}`);
+    redirect(`/guest?next=${encodeURIComponent("/party")}`);
   }
 
   const { error } = await searchParams;

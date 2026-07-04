@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
@@ -21,10 +22,11 @@ export default async function DashboardPage({
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/guest");
   }
 
   const { error, welcome } = await searchParams;
+  const isGuest = user.is_anonymous ?? false;
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -39,7 +41,7 @@ export default async function DashboardPage({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">대시보드</h1>
           <p className="text-sm text-muted-foreground">
-            {profile?.nickname ?? user.email}
+            {profile?.nickname ?? user.email ?? "게스트"}
             {profile?.server && ` (${profile.server})`}님, 환영합니다.
           </p>
         </div>
@@ -47,6 +49,14 @@ export default async function DashboardPage({
       {welcome && (
         <div className="rounded-md border border-green-600/30 bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-400">
           🎉 회원가입이 완료되었습니다! 이제 통화방을 만들어 파티원을 초대해보세요.
+        </div>
+      )}
+      {isGuest && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-200">
+          <span>게스트로 이용 중입니다. 친구 추가 등 계정 기능은 회원가입 후 이용할 수 있어요.</span>
+          <Link href="/signup" className="shrink-0 font-medium underline underline-offset-4">
+            회원가입하기
+          </Link>
         </div>
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -81,7 +91,9 @@ export default async function DashboardPage({
           <CardHeader>
             <CardTitle>친구 목록</CardTitle>
             <CardDescription>
-              친구 요청/수락 기능은 Phase 2에서 연결됩니다.
+              {isGuest
+                ? "친구 추가는 회원가입 후 이용할 수 있어요. 친구 요청/수락 기능은 Phase 2에서 연결됩니다."
+                : "친구 요청/수락 기능은 Phase 2에서 연결됩니다."}
             </CardDescription>
           </CardHeader>
           <CardContent />

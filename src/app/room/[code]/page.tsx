@@ -26,7 +26,7 @@ export default async function RoomPage({
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(`/login?error=${encodeURIComponent("로그인 후 통화방에 입장할 수 있습니다.")}`);
+    redirect(`/guest?next=${encodeURIComponent(`/room/${code}`)}`);
   }
 
   const { data: room } = await supabase
