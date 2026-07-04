@@ -69,8 +69,8 @@ create table public.rooms (
   title text not null default '파티 통화방',
   max_members integer not null default 6,
   is_public boolean not null default false,
-  created_by uuid not null references public.profiles (id),
-  host_id uuid references public.profiles (id),
+  created_by uuid not null references public.profiles (id) on delete cascade,
+  host_id uuid references public.profiles (id) on delete cascade,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
   status text not null default 'active' check (status in ('active', 'ended')),
@@ -106,7 +106,7 @@ create policy "authenticated users can create rooms"
 create table public.room_participants (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references public.rooms (id) on delete cascade,
-  user_id uuid not null references public.profiles (id),
+  user_id uuid not null references public.profiles (id) on delete cascade,
   joined_at timestamptz not null default now(),
   left_at timestamptz
 );
