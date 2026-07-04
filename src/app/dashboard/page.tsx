@@ -1,9 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createRoom, joinRoomByCode } from "./actions";
 import { AppHeader } from "@/components/app-header";
-import { SubmitButton } from "@/components/submit-button";
-import { Input } from "@/components/ui/input";
+import { CreateRoomForm, JoinByCodeForm } from "@/components/room-forms";
 import {
   Card,
   CardContent,
@@ -62,14 +60,10 @@ export default async function DashboardPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={createRoom} className="flex gap-2">
-              <Input
-                name="title"
-                placeholder="예: 불의 신전 4인팟"
-                maxLength={40}
-              />
-              <SubmitButton pendingText="만드는 중...">만들기</SubmitButton>
-            </form>
+            <CreateRoomForm
+              titlePlaceholder="예: 불의 신전 4인팟"
+              submitLabel="만들기"
+            />
           </CardContent>
         </Card>
         <Card>
@@ -80,18 +74,7 @@ export default async function DashboardPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={joinRoomByCode} className="flex gap-2">
-              <Input
-                name="code"
-                placeholder="예: 7XQK2M"
-                maxLength={6}
-                className="uppercase"
-                required
-              />
-              <SubmitButton pendingText="입장 중..." variant="outline">
-                입장
-              </SubmitButton>
-            </form>
+            <JoinByCodeForm />
           </CardContent>
         </Card>
         <Card>

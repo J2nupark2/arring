@@ -1,12 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createRoom } from "@/app/dashboard/actions";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { LinkButton } from "@/components/link-button";
 import { PartyRefresh } from "@/components/party-refresh";
-import { SubmitButton } from "@/components/submit-button";
-import { Input } from "@/components/ui/input";
+import { CreateRoomForm } from "@/components/room-forms";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -78,26 +76,12 @@ export default async function PartyPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={createRoom} className="flex flex-wrap gap-2">
-            <input type="hidden" name="isPublic" value="on" />
-            <Input
-              name="title"
-              placeholder="예: 불의 신전 스피드런, 딜러 2명 구해요"
-              maxLength={40}
-              required
-              className="min-w-48 flex-1"
-            />
-            <Input
-              name="maxMembers"
-              type="number"
-              min={2}
-              max={12}
-              defaultValue={6}
-              className="w-24"
-              aria-label="최대 인원"
-            />
-            <SubmitButton pendingText="만드는 중...">모집 시작</SubmitButton>
-          </form>
+          <CreateRoomForm
+            isPublic
+            showMaxMembers
+            titlePlaceholder="예: 불의 신전 스피드런, 딜러 2명 구해요"
+            submitLabel="모집 시작"
+          />
         </CardContent>
       </Card>
 

@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { logout } from "@/app/actions";
 import { LinkButton } from "@/components/link-button";
-import { SubmitButton } from "@/components/submit-button";
+import { LogoutButton } from "@/components/logout-button";
 
 // Shared top navigation for authenticated pages.
 export function AppHeader() {
@@ -18,11 +17,7 @@ export function AppHeader() {
           <LinkButton href="/party" variant="ghost">
             파티 구하기
           </LinkButton>
-          <form action={logout}>
-            <SubmitButton pendingText="로그아웃 중..." variant="ghost">
-              로그아웃
-            </SubmitButton>
-          </form>
+          <LogoutButton />
         </nav>
       </div>
     </header>
