@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useVoiceRoom } from "@/hooks/use-voice-room";
+import { sendFriendRequest } from "@/hooks/use-friends";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -18,6 +19,7 @@ import {
   MicOff,
   MoreVertical,
   PhoneOff,
+  UserPlus,
   UserX,
   Volume2,
 } from "lucide-react";
@@ -29,6 +31,7 @@ export function VoiceRoom({
   nickname,
   maxMembers,
   initialHostId,
+  isGuest = false,
 }: {
   roomCode: string;
   roomId: string;
@@ -36,6 +39,7 @@ export function VoiceRoom({
   nickname: string;
   maxMembers: number;
   initialHostId: string;
+  isGuest?: boolean;
 }) {
   const router = useRouter();
   const [leaving, startLeaving] = useTransition();
@@ -112,6 +116,16 @@ export function VoiceRoom({
                   <MicOff className="size-4 text-muted-foreground" />
                 ) : (
                   <Mic className="size-4 text-muted-foreground" />
+                )}
+                {!p.isSelf && !isGuest && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`${p.nickname} 친구 추가`}
+                    onClick={() => sendFriendRequest(p.id)}
+                  >
+                    <UserPlus className="size-4" />
+                  </Button>
                 )}
                 {isHost && !p.isSelf && (
                   <DropdownMenu>

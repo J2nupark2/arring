@@ -144,6 +144,7 @@ export default async function RoomPage({
               nickname={displayName}
               maxMembers={room.max_members}
               initialHostId={room.host_id ?? room.created_by}
+              isGuest={user.is_anonymous ?? false}
             />
           </CardContent>
         </Card>
