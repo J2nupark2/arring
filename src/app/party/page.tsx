@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createRoom } from "@/app/dashboard/actions";
+import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { LinkButton } from "@/components/link-button";
+import { PartyRefresh } from "@/components/party-refresh";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -53,17 +55,17 @@ export default async function PartyPage({
   const publicRooms = (rooms ?? []) as PublicRoom[];
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-12">
-      <div className="flex items-center justify-between">
+    <>
+      <AppHeader />
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">파티 구하기</h1>
           <p className="text-sm text-muted-foreground">
             모집 중인 파티에 바로 입장하거나, 직접 파티를 모집해보세요.
           </p>
         </div>
-        <LinkButton href="/dashboard" variant="outline">
-          대시보드
-        </LinkButton>
+        <PartyRefresh />
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -141,6 +143,7 @@ export default async function PartyPage({
           );
         })}
       </div>
-    </div>
+      </main>
+    </>
   );
 }

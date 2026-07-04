@@ -19,7 +19,13 @@ export default async function SignupPage({
   const { error } = await searchParams;
 
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-24">
+    <main className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-24 sm:px-6">
+      <Link
+        href="/"
+        className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-2xl font-bold tracking-tight text-transparent"
+      >
+        Arring
+      </Link>
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>회원가입</CardTitle>
@@ -77,6 +83,6 @@ export default async function SignupPage({
           </form>
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }

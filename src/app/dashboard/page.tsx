@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { logout } from "@/app/actions";
 import { createRoom, joinRoomByCode } from "./actions";
-import { LinkButton } from "@/components/link-button";
+import { AppHeader } from "@/components/app-header";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,8 +35,9 @@ export default async function DashboardPage({
     .single();
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-12">
-      <div className="flex items-center justify-between">
+    <>
+      <AppHeader />
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">대시보드</h1>
           <p className="text-sm text-muted-foreground">
@@ -45,17 +45,6 @@ export default async function DashboardPage({
             {profile?.server && ` (${profile.server})`}님, 환영합니다.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <LinkButton href="/party" variant="outline">
-            파티 구하기
-          </LinkButton>
-          <form action={logout}>
-            <SubmitButton pendingText="로그아웃 중..." variant="ghost">
-              로그아웃
-            </SubmitButton>
-          </form>
-        </div>
-      </div>
 
       {welcome && (
         <div className="rounded-md border border-green-600/30 bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-400">
@@ -115,6 +104,7 @@ export default async function DashboardPage({
           <CardContent />
         </Card>
       </div>
-    </div>
+      </main>
+    </>
   );
 }

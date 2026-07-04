@@ -63,6 +63,7 @@ export function useVoiceRoom({
   const [muted, setMuted] = useState(false);
   const [micGain, setMicGainState] = useState(1);
   const [volumes, setVolumes] = useState<Record<string, number>>({});
+  const [speaking, setSpeaking] = useState<Record<string, boolean>>({});
   const [hostId, setHostId] = useState(initialHostId);
   const [status, setStatus] = useState<"connecting" | "connected" | "error">(
     "connecting",
@@ -79,6 +80,7 @@ export function useVoiceRoom({
   const audioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const otherPeerIdsRef = useRef<Set<string>>(new Set());
   const volumesRef = useRef<Record<string, number>>({});
+  const analysersRef = useRef<Map<string, AnalyserNode>>(new Map());
   const hostIdRef = useRef(initialHostId);
   const joinedRef = useRef(false);
   const onKickedRef = useRef(onKicked);
@@ -105,12 +107,29 @@ export function useVoiceRoom({
   const closePeer = useCallback((peerId: string) => {
     peersRef.current.get(peerId)?.close();
     peersRef.current.delete(peerId);
+    analysersRef.current.delete(peerId);
 
     const audioEl = audioElsRef.current.get(peerId);
     if (audioEl) {
       audioEl.srcObject = null;
       audioEl.remove();
       audioElsRef.current.delete(peerId);
+    }
+  }, []);
+
+  // Feed a stream into an AnalyserNode so the UI can highlight who is
+  // actually talking. Muted tracks output silence, so mute is reflected.
+  const attachAnalyser = useCallback((id: string, stream: MediaStream) => {
+    const ctx = audioCtxRef.current;
+    if (!ctx || analysersRef.current.has(id)) return;
+    try {
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      analysersRef.current.set(id, analyser);
+    } catch {
+      // Analyser is a nice-to-have; ignore failures.
     }
   }, []);
 
@@ -152,6 +171,7 @@ export function useVoiceRoom({
         }
         audioEl.srcObject = event.streams[0];
         audioEl.play().catch(() => {});
+        attachAnalyser(peerId, event.streams[0]);
       };
 
       pc.onconnectionstatechange = () => {
@@ -162,7 +182,7 @@ export function useVoiceRoom({
 
       return pc;
     },
-    [send, userId, closePeer],
+    [send, userId, closePeer, attachAnalyser],
   );
 
   useEffect(() => {
@@ -197,6 +217,7 @@ export function useVoiceRoom({
         audioCtxRef.current = audioCtx;
         gainNodeRef.current = gainNode;
         localStreamRef.current = destination.stream;
+        attachAnalyser(userId, destination.stream);
       } catch {
         setStatus("error");
         return;
@@ -335,8 +356,33 @@ export function useVoiceRoom({
 
     setup();
 
+    // Poll analysers for voice activity (RMS over the time-domain signal).
+    const levelBuffer = new Uint8Array(512);
+    const speakingInterval = setInterval(() => {
+      const next: Record<string, boolean> = {};
+      analysersRef.current.forEach((analyser, id) => {
+        analyser.getByteTimeDomainData(levelBuffer);
+        let sum = 0;
+        for (let i = 0; i < levelBuffer.length; i++) {
+          const v = (levelBuffer[i] - 128) / 128;
+          sum += v * v;
+        }
+        next[id] = Math.sqrt(sum / levelBuffer.length) > 0.04;
+      });
+      setSpeaking((prev) => {
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(next);
+        const changed =
+          prevKeys.length !== nextKeys.length ||
+          nextKeys.some((k) => prev[k] !== next[k]);
+        return changed ? next : prev;
+      });
+    }, 180);
+
     return () => {
       cancelled = true;
+      clearInterval(speakingInterval);
+      analysersRef.current.clear();
       channelRef.current?.unsubscribe();
       peersRef.current.forEach((pc) => pc.close());
       peersRef.current.clear();
@@ -444,6 +490,7 @@ export function useVoiceRoom({
     setMicGain,
     volumes,
     setParticipantVolume,
+    speaking,
     hostId,
     isHost: hostId === userId,
     transferHost,

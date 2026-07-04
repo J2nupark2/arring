@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { AppHeader } from "@/components/app-header";
+import { LinkButton } from "@/components/link-button";
+import { CopyInvite } from "@/components/room/copy-invite";
 import { VoiceRoom } from "@/components/room/voice-room";
 import {
   Card,
@@ -37,18 +40,25 @@ export default async function RoomPage({
 
   if (isInvalid) {
     return (
-      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24 text-center">
-        <Card className="w-full">
-          <CardHeader>
-            <CardTitle>통화방을 찾을 수 없습니다</CardTitle>
-            <CardDescription>
-              존재하지 않거나 만료된 통화방 코드예요. 대시보드에서 새 통화방을
-              만들어보세요.
-            </CardDescription>
-          </CardHeader>
-          <CardContent />
-        </Card>
-      </div>
+      <>
+        <AppHeader />
+        <main className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-4 py-24 text-center sm:px-6">
+          <Card className="w-full">
+            <CardHeader>
+              <CardTitle>통화방을 찾을 수 없습니다</CardTitle>
+              <CardDescription>
+                존재하지 않거나 만료된 통화방 코드예요. 대시보드에서 새 통화방을
+                만들어보세요.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex justify-center">
+              <LinkButton href="/dashboard" variant="outline">
+                대시보드로 이동
+              </LinkButton>
+            </CardContent>
+          </Card>
+        </main>
+      </>
     );
   }
 
@@ -74,18 +84,25 @@ export default async function RoomPage({
     memberCount >= room.max_members
   ) {
     return (
-      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24 text-center">
-        <Card className="w-full">
-          <CardHeader>
-            <CardTitle>정원이 가득 찼습니다</CardTitle>
-            <CardDescription>
-              {room.title} ({memberCount}/{room.max_members}명) — 자리가 나면
-              다시 시도해주세요.
-            </CardDescription>
-          </CardHeader>
-          <CardContent />
-        </Card>
-      </div>
+      <>
+        <AppHeader />
+        <main className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-4 py-24 text-center sm:px-6">
+          <Card className="w-full">
+            <CardHeader>
+              <CardTitle>정원이 가득 찼습니다</CardTitle>
+              <CardDescription>
+                {room.title} ({memberCount}/{room.max_members}명) — 자리가 나면
+                다시 시도해주세요.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex justify-center">
+              <LinkButton href="/party" variant="outline">
+                다른 파티 찾기
+              </LinkButton>
+            </CardContent>
+          </Card>
+        </main>
+      </>
     );
   }
 
@@ -102,26 +119,35 @@ export default async function RoomPage({
     : (user.email ?? "익명");
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-24">
-      <Card className="w-full">
-        <CardHeader>
-          <CardTitle>{room.title}</CardTitle>
-          <CardDescription>
-            방 코드 <span className="font-mono font-semibold">{room.code}</span>{" "}
-            — 같은 코드를 가진 파티원과 자동으로 음성 연결됩니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <VoiceRoom
-            roomCode={room.code}
-            roomId={room.id}
-            userId={user.id}
-            nickname={displayName}
-            maxMembers={room.max_members}
-            initialHostId={room.host_id ?? room.created_by}
-          />
-        </CardContent>
-      </Card>
-    </div>
+    <>
+      <AppHeader />
+      <main className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-4 py-10 sm:px-6 sm:py-16">
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>{room.title}</CardTitle>
+            <CardDescription>
+              방 코드{" "}
+              <span className="font-mono font-semibold text-violet-300">
+                {room.code}
+              </span>{" "}
+              — 코드나 링크를 공유하면 파티원이 바로 들어올 수 있어요.
+            </CardDescription>
+            <div className="pt-2">
+              <CopyInvite code={room.code} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <VoiceRoom
+              roomCode={room.code}
+              roomId={room.id}
+              userId={user.id}
+              nickname={displayName}
+              maxMembers={room.max_members}
+              initialHostId={room.host_id ?? room.created_by}
+            />
+          </CardContent>
+        </Card>
+      </main>
+    </>
   );
 }

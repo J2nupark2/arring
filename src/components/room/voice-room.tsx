@@ -47,6 +47,7 @@ export function VoiceRoom({
     setMicGain,
     volumes,
     setParticipantVolume,
+    speaking,
     hostId,
     isHost,
     transferHost,
@@ -89,7 +90,13 @@ export function VoiceRoom({
           <li key={p.id} className="flex flex-col gap-2 rounded-md border px-3 py-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Avatar className="size-7">
+                <Avatar
+                  className={`size-7 transition-shadow ${
+                    speaking[p.id]
+                      ? "ring-2 ring-green-500 ring-offset-2 ring-offset-card"
+                      : ""
+                  }`}
+                >
                   <AvatarFallback>{p.nickname.slice(0, 1)}</AvatarFallback>
                 </Avatar>
                 <span className="flex items-center gap-1 text-sm font-medium">
