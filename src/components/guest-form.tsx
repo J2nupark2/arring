@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 export function GuestForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/dashboard";
+  const next = searchParams.get("next") || "/party";
 
   const [nickname, setNickname] = useState("");
   const [server, setServer] = useState("");
@@ -74,12 +74,16 @@ export function GuestForm() {
         {pending && <Loader2 className="animate-spin" />}
         {pending ? "입장 중..." : "바로 시작하기"}
       </Button>
+      <div className="flex items-center gap-2">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">또는</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      <Button variant="outline" className="w-full" asChild>
+        <Link href="/login">로그인</Link>
+      </Button>
       <p className="text-center text-sm text-muted-foreground">
-        계정이 있으신가요?{" "}
-        <Link href="/login" className="underline underline-offset-4">
-          로그인
-        </Link>{" "}
-        ·{" "}
+        계정이 없으신가요?{" "}
         <Link href="/signup" className="underline underline-offset-4">
           회원가입
         </Link>

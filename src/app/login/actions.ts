@@ -19,5 +19,5 @@ export async function login(formData: FormData) {
     redirect("/login?error=" + encodeURIComponent(translateAuthError(error.message)));
   }
 
-  redirect("/dashboard");
+  redirect("/party");
 }

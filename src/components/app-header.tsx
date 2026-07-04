@@ -28,7 +28,7 @@ export function AppHeader({
     <header className="sticky top-0 z-10 border-b bg-background/70 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
         <Link
-          href="/dashboard"
+          href="/party"
           className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-lg font-bold tracking-tight text-transparent"
         >
           Arring

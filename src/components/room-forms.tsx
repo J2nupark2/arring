@@ -2,33 +2,27 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Lock } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { generateRoomCode } from "@/lib/room-code";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 
 const ROOM_TTL_HOURS = 6;
 const MIN_MEMBERS = 2;
 const MAX_MEMBERS = 12;
 
-// Creates the room straight from the browser (Korea → Supabase) instead of
-// routing through the US serverless function — skips its latency and cold
-// starts entirely.
-export function CreateRoomForm({
-  isPublic = false,
-  showMaxMembers = false,
-  titlePlaceholder,
-  submitLabel,
-}: {
-  isPublic?: boolean;
-  showMaxMembers?: boolean;
-  titlePlaceholder: string;
-  submitLabel: string;
-}) {
+// Creates the room straight from the browser (Korea → Supabase) via the
+// create_room RPC — skips the US serverless function's latency/cold starts,
+// and lets the password (if any) get bcrypt-hashed server-side without ever
+// leaving the client in plaintext form beyond this one call.
+export function CreateRoomForm() {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [maxMembers, setMaxMembers] = useState(6);
+  const [isPublic, setIsPublic] = useState(true);
+  const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +38,7 @@ export function CreateRoomForm({
     } = await supabase.auth.getSession();
 
     if (!session) {
-      router.push("/login");
+      router.push("/");
       return;
     }
 
@@ -58,24 +52,23 @@ export function CreateRoomForm({
 
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = generateRoomCode();
-      const { error: insertError } = await supabase.from("rooms").insert({
-        code,
-        title: title.trim() || "파티 통화방",
-        max_members: clampedMax,
-        is_public: isPublic,
-        created_by: session.user.id,
-        host_id: session.user.id,
-        expires_at: expiresAt,
+      const { error: rpcError } = await supabase.rpc("create_room", {
+        p_code: code,
+        p_title: title.trim() || "파티 통화방",
+        p_max_members: clampedMax,
+        p_is_public: isPublic,
+        p_password: password.trim() || null,
+        p_expires_at: expiresAt,
       });
 
-      if (!insertError) {
+      if (!rpcError) {
         router.push(`/room/${code}`);
         return;
       }
 
       // 23505 = unique_violation on the room code — retry with a fresh code.
-      if (insertError.code !== "23505") {
-        setError("통화방 생성에 실패했습니다: " + insertError.message);
+      if (rpcError.code !== "23505") {
+        setError("통화방 생성에 실패했습니다: " + rpcError.message);
         setPending(false);
         return;
       }
@@ -86,32 +79,45 @@ export function CreateRoomForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-2">
+    <form onSubmit={onSubmit} className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
         <Input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder={titlePlaceholder}
+          placeholder="예: 불의 신전 4인팟"
           maxLength={40}
-          required={isPublic}
           className="min-w-40 flex-1"
         />
-        {showMaxMembers && (
-          <Input
-            type="number"
-            min={MIN_MEMBERS}
-            max={MAX_MEMBERS}
-            value={maxMembers}
-            onChange={(e) => setMaxMembers(Number(e.target.value))}
-            className="w-20"
-            aria-label="최대 인원"
-          />
-        )}
-        <Button type="submit" disabled={pending}>
-          {pending && <Loader2 className="animate-spin" />}
-          {pending ? "만드는 중..." : submitLabel}
-        </Button>
+        <Input
+          type="number"
+          min={MIN_MEMBERS}
+          max={MAX_MEMBERS}
+          value={maxMembers}
+          onChange={(e) => setMaxMembers(Number(e.target.value))}
+          className="w-20"
+          aria-label="최대 인원"
+        />
       </div>
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2 text-sm">
+          <Switch checked={isPublic} onCheckedChange={setIsPublic} />
+          {isPublic ? "파티 목록에 공개" : "비공개 (코드로만 입장)"}
+        </label>
+        <div className="flex min-w-40 flex-1 items-center gap-2">
+          <Lock className="size-4 shrink-0 text-muted-foreground" />
+          <Input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="비밀번호 (선택)"
+            maxLength={40}
+          />
+        </div>
+      </div>
+      <Button type="submit" disabled={pending} className="self-start">
+        {pending && <Loader2 className="animate-spin" />}
+        {pending ? "만드는 중..." : "통화방 만들기"}
+      </Button>
       {error && <p className="text-sm text-destructive">{error}</p>}
     </form>
   );

@@ -22,7 +22,7 @@ export async function signup(formData: FormData) {
     password,
     options: {
       data: { nickname, server },
-      emailRedirectTo: `${siteUrl}/auth/callback?next=/dashboard`,
+      emailRedirectTo: `${siteUrl}/auth/callback?next=/party`,
     },
   });
 
@@ -34,7 +34,7 @@ export async function signup(formData: FormData) {
       data: { user },
     } = await supabase.auth.getUser();
     if (user) {
-      redirect("/dashboard?welcome=1");
+      redirect("/party?welcome=1");
     }
 
     redirect("/signup?error=" + encodeURIComponent(translateAuthError(error.message)));
@@ -43,7 +43,7 @@ export async function signup(formData: FormData) {
   // If email confirmation is disabled, signUp already returns an active
   // session — skip the "check your email" step and go straight in.
   if (data.session) {
-    redirect("/dashboard?welcome=1");
+    redirect("/party?welcome=1");
   }
 
   redirect("/signup/check-email?email=" + encodeURIComponent(email));

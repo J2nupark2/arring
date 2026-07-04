@@ -73,8 +73,21 @@ create table public.rooms (
   host_id uuid references public.profiles (id),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
-  status text not null default 'active' check (status in ('active', 'ended'))
+  status text not null default 'active' check (status in ('active', 'ended')),
+  password_hash text
 );
+
+-- Column-level lock: RLS below allows any authenticated user to SELECT a
+-- room row, but the hash itself must stay unreadable directly — only
+-- SECURITY DEFINER functions (running as the table owner) can see it.
+-- A column-level revoke alone doesn't work here because Supabase's default
+-- privileges already grant table-level SELECT (all columns); that has to
+-- be revoked first, then re-granted narrowly on just the safe columns.
+revoke select on public.rooms from authenticated, anon;
+grant select (
+  id, code, title, max_members, is_public, created_by, host_id,
+  created_at, expires_at, status
+) on public.rooms to authenticated;
 
 alter table public.rooms enable row level security;
 
@@ -159,8 +172,61 @@ as $$
   where room_id = target_room_id and left_at is null;
 $$;
 
+-- Creates a room with an optional password, bcrypt-hashed server-side via
+-- pgcrypto so the plaintext never needs to round-trip through app code.
+create function public.create_room(
+  p_code text,
+  p_title text,
+  p_max_members integer,
+  p_is_public boolean,
+  p_password text,
+  p_expires_at timestamptz
+)
+returns uuid
+language plpgsql
+security definer set search_path = public, extensions
+as $$
+declare
+  new_id uuid;
+begin
+  insert into public.rooms (code, title, max_members, is_public, created_by, host_id, expires_at, password_hash)
+  values (
+    p_code, p_title, p_max_members, p_is_public, auth.uid(), auth.uid(), p_expires_at,
+    case when p_password is not null and p_password <> '' then extensions.crypt(p_password, extensions.gen_salt('bf')) else null end
+  )
+  returning id into new_id;
+
+  return new_id;
+end;
+$$;
+
+create function public.room_has_password(target_room_id uuid)
+returns boolean
+language sql
+security definer set search_path = public
+stable
+as $$
+  select password_hash is not null from public.rooms where id = target_room_id;
+$$;
+
+create function public.verify_room_password(target_room_id uuid, password text)
+returns boolean
+language plpgsql
+security definer set search_path = public, extensions
+as $$
+declare
+  hash text;
+begin
+  select password_hash into hash from public.rooms where id = target_room_id;
+  if hash is null then
+    return true;
+  end if;
+  return extensions.crypt(coalesce(password, ''), hash) = hash;
+end;
+$$;
+
 -- One-shot listing for the party finder: public active rooms with their
--- creator's profile and current member count.
+-- creator's profile, current member count, and whether a password is set.
 create function public.list_public_rooms()
 returns table (
   id uuid,
@@ -170,7 +236,8 @@ returns table (
   created_at timestamptz,
   creator_nickname text,
   creator_server text,
-  member_count integer
+  member_count integer,
+  has_password boolean
 )
 language sql
 security definer set search_path = public
@@ -184,7 +251,8 @@ as $$
     r.created_at,
     p.nickname,
     p.server,
-    public.room_member_count(r.id)
+    public.room_member_count(r.id),
+    r.password_hash is not null
   from public.rooms r
   join public.profiles p on p.id = r.created_by
   where r.is_public

@@ -65,7 +65,7 @@ export function VoiceRoom({
     initialHostId,
     onKicked: () =>
       router.push(
-        "/dashboard?error=" + encodeURIComponent("방장에 의해 추방되었습니다."),
+        "/party?error=" + encodeURIComponent("방장에 의해 추방되었습니다."),
       ),
   });
 
@@ -208,7 +208,7 @@ export function VoiceRoom({
           variant="destructive"
           size="icon-lg"
           disabled={leaving}
-          onClick={() => startLeaving(() => router.push("/dashboard"))}
+          onClick={() => startLeaving(() => router.push("/party"))}
           aria-label="퇴장"
         >
           {leaving ? (
