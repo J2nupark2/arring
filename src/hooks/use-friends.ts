@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 
@@ -44,11 +45,51 @@ export function useFriends(isGuest: boolean) {
     setLoading(false);
   }, [isGuest]);
 
+  const channelsRef = useRef<RealtimeChannel[]>([]);
+
   useEffect(() => {
     refresh();
     if (isGuest) return;
+
     const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
+    const supabase = createClient();
+
+    // Friend requests and messages used to only ever update on the next
+    // 15s poll tick. That's kept as a fallback (in case a realtime
+    // connection drops), but both now also push instantly.
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      const channel = supabase
+        .channel(`friend-updates:${user.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "friend_requests",
+            filter: `receiver_id=eq.${user.id}`,
+          },
+          () => refresh(),
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "direct_messages",
+            filter: `receiver_id=eq.${user.id}`,
+          },
+          () => refresh(),
+        )
+        .subscribe();
+      channelsRef.current.push(channel);
+    });
+
+    return () => {
+      clearInterval(id);
+      channelsRef.current.forEach((c) => supabase.removeChannel(c));
+      channelsRef.current = [];
+    };
   }, [refresh, isGuest]);
 
   const respond = useCallback(

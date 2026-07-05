@@ -314,6 +314,11 @@ create policy "no direct inserts" on public.friend_requests for insert to authen
 create policy "no direct updates" on public.friend_requests for update to authenticated using (false);
 create policy "no direct deletes" on public.friend_requests for delete to authenticated using (false);
 
+-- Lets the incoming-request badge/toast update instantly instead of
+-- waiting on the 15s friend-list poll (same idea as direct_messages below
+-- and room_invites further down).
+alter publication supabase_realtime add table public.friend_requests;
+
 create function public.send_friend_request(target_id uuid)
 returns text
 language plpgsql
