@@ -11,6 +11,7 @@ export type Friend = {
   friends_since: string;
   is_online: boolean;
   current_room_code: string | null;
+  unread_count: number;
 };
 
 export type IncomingRequest = {

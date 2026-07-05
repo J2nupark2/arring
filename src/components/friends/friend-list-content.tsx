@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
   Check,
+  MessageCircle,
   PhoneIncoming,
   RefreshCw,
   UserMinus,
@@ -15,6 +17,7 @@ import { useFriends } from "@/hooks/use-friends";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { FriendChatDialog } from "@/components/friends/friend-chat-dialog";
 
 // currentRoomCode is set only when this is rendered from inside an active
 // call room, enabling the "초대" (invite into my room) action per friend.
@@ -27,6 +30,10 @@ export function FriendListContent({
 }) {
   const { friends, incoming, loading, refresh, respond, remove } =
     useFriends(isGuest);
+  const [chatWith, setChatWith] = useState<{
+    id: string;
+    nickname: string;
+  } | null>(null);
 
   async function inviteToMyRoom(nickname: string) {
     if (!currentRoomCode) return;
@@ -160,14 +167,32 @@ export function FriendListContent({
                       {friend.server && ` (${friend.server})`}
                     </span>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="친구 삭제"
-                    onClick={() => remove(friend.user_id)}
-                  >
-                    <UserMinus className="size-4 text-muted-foreground" />
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="relative"
+                      aria-label={`${friend.nickname}님과 채팅`}
+                      onClick={() =>
+                        setChatWith({ id: friend.user_id, nickname: friend.nickname })
+                      }
+                    >
+                      <MessageCircle className="size-4 text-muted-foreground" />
+                      {friend.unread_count > 0 && (
+                        <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-destructive text-[9px] font-semibold text-destructive-foreground">
+                          {friend.unread_count > 9 ? "9+" : friend.unread_count}
+                        </span>
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="친구 삭제"
+                      onClick={() => remove(friend.user_id)}
+                    >
+                      <UserMinus className="size-4 text-muted-foreground" />
+                    </Button>
+                  </div>
                 </div>
                 {(friend.current_room_code || canInvite) && (
                   <div className="flex flex-wrap items-center gap-1.5 pl-8">
@@ -200,6 +225,18 @@ export function FriendListContent({
             );
           })}
         </div>
+      )}
+
+      {chatWith && (
+        <FriendChatDialog
+          friendId={chatWith.id}
+          friendNickname={chatWith.nickname}
+          open={!!chatWith}
+          onOpenChange={(next) => {
+            if (!next) setChatWith(null);
+          }}
+          onRead={refresh}
+        />
       )}
     </div>
   );
