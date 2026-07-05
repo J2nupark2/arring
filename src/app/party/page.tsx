@@ -44,9 +44,18 @@ export default async function PartyPage({
   searchParams: Promise<{ error?: string; welcome?: string }>;
 }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+
+  // list_public_rooms() doesn't depend on the caller's identity, so fetch
+  // it alongside getUser() instead of waterfalling two round trips.
+  const [
+    {
+      data: { user },
+    },
+    { data: rooms },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.rpc("list_public_rooms"),
+  ]);
 
   if (!user) {
     redirect(`/guest?next=${encodeURIComponent("/party")}`);
@@ -54,7 +63,6 @@ export default async function PartyPage({
 
   const { error, welcome } = await searchParams;
   const isGuest = user.is_anonymous ?? false;
-  const { data: rooms } = await supabase.rpc("list_public_rooms");
   const publicRooms = (rooms ?? []) as PublicRoom[];
 
   return (

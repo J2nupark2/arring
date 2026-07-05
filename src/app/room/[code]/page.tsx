@@ -23,19 +23,26 @@ export default async function RoomPage({
   const code = rawCode.toUpperCase();
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+
+  // getUser() and the room lookup don't depend on each other — running them
+  // sequentially would waterfall two Supabase round trips for no reason.
+  const [
+    {
+      data: { user },
+    },
+    { data: room },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("rooms")
+      .select("id, code, title, max_members, status, expires_at, created_by, host_id")
+      .eq("code", code)
+      .maybeSingle(),
+  ]);
 
   if (!user) {
     redirect(`/guest?next=${encodeURIComponent(`/room/${code}`)}`);
   }
-
-  const { data: room } = await supabase
-    .from("rooms")
-    .select("id, code, title, max_members, status, expires_at, created_by, host_id")
-    .eq("code", code)
-    .maybeSingle();
 
   const isExpired = room && new Date(room.expires_at).getTime() < Date.now();
   const isInvalid = !room || room.status === "ended" || isExpired;
@@ -64,21 +71,32 @@ export default async function RoomPage({
     );
   }
 
-  const { data: memberCount } = await supabase.rpc("room_member_count", {
-    target_room_id: room.id,
-  });
-
-  // A user already counted as active (e.g. rejoining after a refresh or a
-  // closed tab that never recorded the leave) must not be blocked by the
-  // member cap — they ARE one of the counted members.
-  const { data: ownActiveRow } = await supabase
-    .from("room_participants")
-    .select("id")
-    .eq("room_id", room.id)
-    .eq("user_id", user.id)
-    .is("left_at", null)
-    .limit(1)
-    .maybeSingle();
+  // These four are all independent of each other's results, so run them
+  // together instead of waterfalling four sequential Supabase round trips.
+  // room_has_password is fetched unconditionally (even though its result is
+  // discarded when skipPasswordGate ends up true) to keep it out of the
+  // critical path — it's a cheap SECURITY DEFINER read either way.
+  const [
+    { data: memberCount },
+    { data: ownActiveRow },
+    { data: profile },
+    { data: hasPasswordRaw },
+  ] = await Promise.all([
+    supabase.rpc("room_member_count", { target_room_id: room.id }),
+    // A user already counted as active (e.g. rejoining after a refresh or a
+    // closed tab that never recorded the leave) must not be blocked by the
+    // member cap — they ARE one of the counted members.
+    supabase
+      .from("room_participants")
+      .select("id")
+      .eq("room_id", room.id)
+      .eq("user_id", user.id)
+      .is("left_at", null)
+      .limit(1)
+      .maybeSingle(),
+    supabase.from("profiles").select("nickname, server").eq("id", user.id).single(),
+    supabase.rpc("room_has_password", { target_room_id: room.id }),
+  ]);
 
   if (
     !ownActiveRow &&
@@ -108,12 +126,6 @@ export default async function RoomPage({
     );
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("nickname, server")
-    .eq("id", user.id)
-    .single();
-
   const displayName = profile
     ? profile.server
       ? `${profile.nickname} (${profile.server})`
@@ -123,13 +135,7 @@ export default async function RoomPage({
   // Already-joined participants and the room's creator never need to
   // re-enter the password.
   const skipPasswordGate = !!ownActiveRow || room.created_by === user.id;
-  let hasPassword = false;
-  if (!skipPasswordGate) {
-    const { data } = await supabase.rpc("room_has_password", {
-      target_room_id: room.id,
-    });
-    hasPassword = !!data;
-  }
+  const hasPassword = !!hasPasswordRaw;
 
   const isGuest = user.is_anonymous ?? false;
 
