@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Check,
@@ -14,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useFriendsContext } from "@/components/friends/friends-provider";
+import { sendRoomInvite } from "@/hooks/use-room-invites";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -28,23 +30,23 @@ export function FriendListContent({
   isGuest: boolean;
   currentRoomCode?: string;
 }) {
-  const { friends, incoming, loading, refresh, respond, remove } =
+  const router = useRouter();
+  const { friends, incoming, loading, refresh, respond, remove, incomingInvites, respondInvite } =
     useFriendsContext();
   const [chatWith, setChatWith] = useState<{
     id: string;
     nickname: string;
   } | null>(null);
 
-  async function inviteToMyRoom(nickname: string) {
+  async function inviteToMyRoom(friendId: string, nickname: string) {
     if (!currentRoomCode) return;
-    try {
-      await navigator.clipboard.writeText(
-        `${window.location.origin}/room/${currentRoomCode}`,
-      );
-      toast.success(`초대 링크가 복사됐습니다. ${nickname}님에게 전달해주세요.`);
-    } catch {
-      toast.error("복사에 실패했습니다.");
-    }
+    const ok = await sendRoomInvite(friendId, currentRoomCode);
+    if (ok) toast.success(`${nickname}님에게 초대를 보냈습니다`);
+  }
+
+  async function acceptInvite(inviteId: string, roomCode: string) {
+    await respondInvite(inviteId, true);
+    router.push(`/room/${roomCode}`);
   }
 
   if (isGuest) {
@@ -125,7 +127,52 @@ export function FriendListContent({
         </div>
       )}
 
-      {!loading && friends.length === 0 && incoming.length === 0 && (
+      {incomingInvites.length > 0 && (
+        <div className="flex flex-col gap-2 px-4 pt-3">
+          <span className="text-xs font-medium text-muted-foreground">
+            받은 통화 초대
+          </span>
+          {incomingInvites.map((invite) => (
+            <div
+              key={invite.invite_id}
+              className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <Avatar className="size-6 shrink-0">
+                  <AvatarFallback>{invite.nickname.slice(0, 1)}</AvatarFallback>
+                </Avatar>
+                <span className="truncate text-sm">
+                  {invite.nickname}님의 통화방
+                </span>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => acceptInvite(invite.invite_id, invite.room_code)}
+                >
+                  <PhoneIncoming className="size-3.5" />
+                  참가
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="초대 거절"
+                  onClick={() => respondInvite(invite.invite_id, false)}
+                >
+                  <X className="size-4 text-destructive" />
+                </Button>
+              </div>
+            </div>
+          ))}
+          <Separator className="mt-1" />
+        </div>
+      )}
+
+      {!loading &&
+        friends.length === 0 &&
+        incoming.length === 0 &&
+        incomingInvites.length === 0 && (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-10 text-center">
           <Users className="size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">아직 친구가 없어요.</p>
@@ -213,7 +260,9 @@ export function FriendListContent({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => inviteToMyRoom(friend.nickname)}
+                        onClick={() =>
+                          inviteToMyRoom(friend.user_id, friend.nickname)
+                        }
                       >
                         <UserPlus className="size-3.5" />
                         초대

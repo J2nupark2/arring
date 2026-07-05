@@ -1,10 +1,15 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useFriends } from "@/hooks/use-friends";
+import { useRoomInvites, type RoomInvite } from "@/hooks/use-room-invites";
 
-type FriendsValue = ReturnType<typeof useFriends>;
+type FriendsValue = ReturnType<typeof useFriends> & {
+  incomingInvites: RoomInvite[];
+  respondInvite: (inviteId: string, accept: boolean) => Promise<void>;
+};
 
 // Inert fallback for the rare AppHeader usages with no wrapping provider
 // (e.g. the invalid-room/full-room screens in room/[code]/page.tsx, which
@@ -17,6 +22,8 @@ const inertValue: FriendsValue = {
   refresh: async () => {},
   respond: async () => {},
   remove: async () => {},
+  incomingInvites: [],
+  respondInvite: async () => {},
 };
 
 const FriendsContext = createContext<FriendsValue>(inertValue);
@@ -32,9 +39,13 @@ export function FriendsProvider({
   isGuest: boolean;
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const value = useFriends(isGuest);
+  const { incoming: incomingInvites, respond: respondInvite } =
+    useRoomInvites(isGuest);
   const seenRequestIds = useRef<Set<string> | null>(null);
   const lastUnread = useRef<Map<string, number> | null>(null);
+  const seenInviteIds = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     if (isGuest) return;
@@ -65,8 +76,33 @@ export function FriendsProvider({
     );
   }, [value.friends, isGuest]);
 
+  useEffect(() => {
+    if (isGuest) return;
+
+    if (seenInviteIds.current) {
+      for (const invite of incomingInvites) {
+        if (!seenInviteIds.current.has(invite.invite_id)) {
+          toast(`${invite.nickname}님이 통화방으로 초대했습니다`, {
+            action: {
+              label: "참가하기",
+              onClick: async () => {
+                await respondInvite(invite.invite_id, true);
+                router.push(`/room/${invite.room_code}`);
+              },
+            },
+          });
+        }
+      }
+    }
+    seenInviteIds.current = new Set(incomingInvites.map((i) => i.invite_id));
+  }, [incomingInvites, isGuest, respondInvite, router]);
+
   return (
-    <FriendsContext.Provider value={value}>{children}</FriendsContext.Provider>
+    <FriendsContext.Provider
+      value={{ ...value, incomingInvites, respondInvite }}
+    >
+      {children}
+    </FriendsContext.Provider>
   );
 }
 
