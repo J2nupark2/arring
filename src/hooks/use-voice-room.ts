@@ -28,6 +28,16 @@ export type Participant = {
   muted: boolean;
 };
 
+export type RoomChatMessage = {
+  id: string;
+  userId: string;
+  nickname: string;
+  body: string;
+  createdAt: number;
+};
+
+type ChatPayload = RoomChatMessage;
+
 // Google's public STUN server plus Open Relay Project's free demo TURN
 // server. Fine for a personal-project MVP; swap for a paid/self-hosted TURN
 // if usage grows (see plan's Phase 1 risk notes).
@@ -68,6 +78,7 @@ export function useVoiceRoom({
   const [status, setStatus] = useState<"connecting" | "connected" | "error">(
     "connecting",
   );
+  const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
 
   const supabaseRef = useRef(createClient());
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -263,6 +274,18 @@ export function useVoiceRoom({
               p.id === payload.userId ? { ...p, muted: payload.muted } : p,
             ),
           );
+        },
+      );
+
+      // Room text chat rides the same per-room channel used for signaling —
+      // broadcast-only, no persistence, matching how the call itself works
+      // (nothing to replay once you've left).
+      channel.on(
+        "broadcast",
+        { event: "chat-message" },
+        ({ payload }: { payload: ChatPayload }) => {
+          if (payload.userId === userId) return;
+          setChatMessages((prev) => [...prev, payload]);
         },
       );
 
@@ -484,6 +507,28 @@ export function useVoiceRoom({
     [userId],
   );
 
+  const sendChatMessage = useCallback(
+    (body: string) => {
+      const trimmed = body.trim();
+      if (!trimmed) return;
+      const message: RoomChatMessage = {
+        id: crypto.randomUUID(),
+        userId,
+        nickname,
+        body: trimmed,
+        createdAt: Date.now(),
+      };
+      // Broadcast doesn't echo back to the sender, so append locally too.
+      setChatMessages((prev) => [...prev, message]);
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "chat-message",
+        payload: message satisfies ChatPayload,
+      });
+    },
+    [userId, nickname],
+  );
+
   return {
     participants,
     muted,
@@ -497,6 +542,8 @@ export function useVoiceRoom({
     isHost: hostId === userId,
     transferHost,
     kickParticipant,
+    chatMessages,
+    sendChatMessage,
     status,
   };
 }

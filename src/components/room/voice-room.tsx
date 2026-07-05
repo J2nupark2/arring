@@ -1,10 +1,11 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useVoiceRoom } from "@/hooks/use-voice-room";
 import { sendFriendRequest } from "@/hooks/use-friends";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -19,10 +20,12 @@ import {
   MicOff,
   MoreVertical,
   PhoneOff,
+  Send,
   UserPlus,
   UserX,
   Volume2,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export function VoiceRoom({
   roomCode,
@@ -57,6 +60,8 @@ export function VoiceRoom({
     transferHost,
     kickParticipant,
     status,
+    chatMessages,
+    sendChatMessage,
   } = useVoiceRoom({
     roomCode,
     roomId,
@@ -70,6 +75,19 @@ export function VoiceRoom({
       router.refresh();
     },
   });
+  const [chatText, setChatText] = useState("");
+  const chatBottomRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ block: "end" });
+  }, [chatMessages.length]);
+
+  function handleSendChat(e: React.FormEvent) {
+    e.preventDefault();
+    if (!chatText.trim()) return;
+    sendChatMessage(chatText);
+    setChatText("");
+  }
 
   return (
     <div className="flex w-full flex-col gap-6">
@@ -179,6 +197,60 @@ export function VoiceRoom({
           </li>
         ))}
       </ul>
+
+      <div className="flex flex-col gap-2">
+        <span className="text-sm text-muted-foreground">채팅</span>
+        <div className="flex h-48 flex-col gap-2 overflow-y-auto rounded-md border p-3">
+          {chatMessages.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              아직 채팅이 없어요. 파티원에게 인사해보세요!
+            </p>
+          )}
+          {chatMessages.map((m) => {
+            const isMine = m.userId === userId;
+            return (
+              <div
+                key={m.id}
+                className={cn("flex", isMine ? "justify-end" : "justify-start")}
+              >
+                <div
+                  className={cn(
+                    "max-w-[80%] rounded-lg px-3 py-1.5 text-sm break-words",
+                    isMine
+                      ? "bg-violet-600 text-white"
+                      : "bg-muted text-foreground",
+                  )}
+                >
+                  {!isMine && (
+                    <div className="text-xs font-medium opacity-70">
+                      {m.nickname}
+                    </div>
+                  )}
+                  {m.body}
+                </div>
+              </div>
+            );
+          })}
+          <div ref={chatBottomRef} />
+        </div>
+        <form onSubmit={handleSendChat} className="flex gap-2">
+          <Input
+            value={chatText}
+            onChange={(e) => setChatText(e.target.value)}
+            placeholder="메시지 입력..."
+            maxLength={500}
+            aria-label="통화방 채팅 입력"
+          />
+          <Button
+            type="submit"
+            size="icon"
+            disabled={!chatText.trim()}
+            aria-label="채팅 전송"
+          >
+            <Send className="size-4" />
+          </Button>
+        </form>
+      </div>
 
       <div className="flex items-center gap-2 rounded-md border px-3 py-2">
         <Mic className="size-4 shrink-0 text-muted-foreground" />
