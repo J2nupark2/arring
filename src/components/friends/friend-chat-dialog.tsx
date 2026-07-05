@@ -41,8 +41,10 @@ export function FriendChatDialog({
     e.preventDefault();
     const value = text;
     if (!value.trim()) return;
-    setText("");
-    await send(value);
+    // Only clear the input once the send actually succeeds — clearing
+    // eagerly makes a failed send look like it silently did nothing.
+    const ok = await send(value);
+    if (ok) setText("");
   }
 
   return (
@@ -51,7 +53,7 @@ export function FriendChatDialog({
         <DialogHeader>
           <DialogTitle>{friendNickname}</DialogTitle>
         </DialogHeader>
-        <div className="flex h-80 flex-col gap-2 overflow-y-auto rounded-md border p-3">
+        <div className="flex min-h-32 flex-1 flex-col gap-2 overflow-y-auto rounded-md border p-3">
           {loading && (
             <p className="text-sm text-muted-foreground">불러오는 중...</p>
           )}
@@ -82,7 +84,7 @@ export function FriendChatDialog({
           })}
           <div ref={bottomRef} />
         </div>
-        <form onSubmit={handleSend} className="flex gap-2">
+        <form onSubmit={handleSend} className="flex shrink-0 gap-2">
           <Input
             value={text}
             onChange={(e) => setText(e.target.value)}

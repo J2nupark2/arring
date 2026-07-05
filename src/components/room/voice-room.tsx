@@ -63,10 +63,12 @@ export function VoiceRoom({
     userId,
     nickname,
     initialHostId,
-    onKicked: () =>
+    onKicked: () => {
       router.push(
         "/party?error=" + encodeURIComponent("방장에 의해 추방되었습니다."),
-      ),
+      );
+      router.refresh();
+    },
   });
 
   return (
@@ -208,7 +210,12 @@ export function VoiceRoom({
           variant="destructive"
           size="icon-lg"
           disabled={leaving}
-          onClick={() => startLeaving(() => router.push("/party"))}
+          onClick={() =>
+            startLeaving(() => {
+              router.push("/party");
+              router.refresh();
+            })
+          }
           aria-label="퇴장"
         >
           {leaving ? (

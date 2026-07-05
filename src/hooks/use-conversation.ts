@@ -91,7 +91,7 @@ export function useConversation(friendId: string, onRead?: () => void) {
   const send = useCallback(
     async (body: string) => {
       const trimmed = body.trim();
-      if (!trimmed) return;
+      if (!trimmed) return false;
       setSending(true);
       const supabase = createClient();
       const { data, error } = await supabase
@@ -100,9 +100,10 @@ export function useConversation(friendId: string, onRead?: () => void) {
       setSending(false);
       if (error) {
         toast.error("메시지 전송에 실패했습니다: " + error.message);
-        return;
+        return false;
       }
       setMessages((prev) => [...prev, data as Message]);
+      return true;
     },
     [friendId],
   );
