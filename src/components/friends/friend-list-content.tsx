@@ -1,15 +1,44 @@
 "use client";
 
 import Link from "next/link";
-import { Check, RefreshCw, UserMinus, Users, X } from "lucide-react";
+import { toast } from "sonner";
+import {
+  Check,
+  PhoneIncoming,
+  RefreshCw,
+  UserMinus,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
 import { useFriends } from "@/hooks/use-friends";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 
-export function FriendListContent({ isGuest }: { isGuest: boolean }) {
+// currentRoomCode is set only when this is rendered from inside an active
+// call room, enabling the "초대" (invite into my room) action per friend.
+export function FriendListContent({
+  isGuest,
+  currentRoomCode,
+}: {
+  isGuest: boolean;
+  currentRoomCode?: string;
+}) {
   const { friends, incoming, loading, refresh, respond, remove } =
     useFriends(isGuest);
+
+  async function inviteToMyRoom(nickname: string) {
+    if (!currentRoomCode) return;
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/room/${currentRoomCode}`,
+      );
+      toast.success(`초대 링크가 복사됐습니다. ${nickname}님에게 전달해주세요.`);
+    } catch {
+      toast.error("복사에 실패했습니다.");
+    }
+  }
 
   if (isGuest) {
     return (
@@ -28,7 +57,14 @@ export function FriendListContent({ isGuest }: { isGuest: boolean }) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       <div className="flex items-center justify-between px-4 pt-4">
-        <h2 className="text-sm font-semibold">친구 목록</h2>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+          친구 목록
+          {incoming.length > 0 && (
+            <span className="flex size-4.5 items-center justify-center rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground">
+              {incoming.length}
+            </span>
+          )}
+        </h2>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -99,30 +135,70 @@ export function FriendListContent({ isGuest }: { isGuest: boolean }) {
               친구
             </span>
           )}
-          {friends.map((friend) => (
-            <div
-              key={friend.user_id}
-              className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <Avatar className="size-6 shrink-0">
-                  <AvatarFallback>{friend.nickname.slice(0, 1)}</AvatarFallback>
-                </Avatar>
-                <span className="truncate text-sm">
-                  {friend.nickname}
-                  {friend.server && ` (${friend.server})`}
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="친구 삭제"
-                onClick={() => remove(friend.user_id)}
+          {friends.map((friend) => {
+            const canInvite =
+              !!currentRoomCode && friend.current_room_code !== currentRoomCode;
+            return (
+              <div
+                key={friend.user_id}
+                className="flex flex-col gap-1.5 rounded-md border px-3 py-2"
               >
-                <UserMinus className="size-4 text-muted-foreground" />
-              </Button>
-            </div>
-          ))}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="relative shrink-0">
+                      <Avatar className="size-6">
+                        <AvatarFallback>
+                          {friend.nickname.slice(0, 1)}
+                        </AvatarFallback>
+                      </Avatar>
+                      {friend.is_online && (
+                        <span className="absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-green-500 ring-2 ring-card" />
+                      )}
+                    </span>
+                    <span className="truncate text-sm">
+                      {friend.nickname}
+                      {friend.server && ` (${friend.server})`}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="친구 삭제"
+                    onClick={() => remove(friend.user_id)}
+                  >
+                    <UserMinus className="size-4 text-muted-foreground" />
+                  </Button>
+                </div>
+                {(friend.current_room_code || canInvite) && (
+                  <div className="flex flex-wrap items-center gap-1.5 pl-8">
+                    {friend.current_room_code && (
+                      <>
+                        <span className="rounded-full bg-green-500/15 px-1.5 py-0.5 text-[10px] font-medium text-green-500">
+                          통화중
+                        </span>
+                        <Button size="sm" variant="secondary" asChild>
+                          <Link href={`/room/${friend.current_room_code}`}>
+                            <PhoneIncoming className="size-3.5" />
+                            참여
+                          </Link>
+                        </Button>
+                      </>
+                    )}
+                    {canInvite && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => inviteToMyRoom(friend.nickname)}
+                      >
+                        <UserPlus className="size-3.5" />
+                        초대
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

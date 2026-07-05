@@ -349,6 +349,7 @@ export function useVoiceRoom({
           if (participantError) {
             console.error("room_participants insert failed:", participantError);
           }
+          supabase.rpc("set_current_room", { p_room_code: roomCode }).then(() => {});
           setStatus("connected");
         }
       });
@@ -400,6 +401,7 @@ export function useVoiceRoom({
         .eq("user_id", userId)
         .is("left_at", null)
         .then(() => {});
+      supabase.rpc("set_current_room", { p_room_code: null }).then(() => {});
 
       // Leaving an empty room closes it. joinedRef guards against React
       // Strict Mode's dev-only mount/cleanup/mount dry run, where cleanup

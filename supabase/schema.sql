@@ -3,6 +3,8 @@
 -- Safe to re-run: drops any previous version of these objects first.
 
 drop table if exists public.friend_requests cascade;
+drop function if exists public.touch_presence cascade;
+drop function if exists public.set_current_room cascade;
 drop function if exists public.send_friend_request cascade;
 drop function if exists public.respond_friend_request cascade;
 drop function if exists public.remove_friend cascade;
@@ -25,7 +27,9 @@ create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   nickname text not null,
   server text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz,
+  current_room_code text
 );
 
 alter table public.profiles enable row level security;
@@ -39,6 +43,15 @@ create policy "users can update own profile"
   on public.profiles for update
   to authenticated
   using (auth.uid() = id);
+
+-- last_seen_at/current_room_code must not be readable by arbitrary
+-- authenticated users: current_room_code would let anyone look up which
+-- room code any user is currently in and join a "private" (code-only) room
+-- without ever being invited. Same column-privilege issue as password_hash
+-- on rooms below — narrow the table-level grant, expose presence only
+-- through list_friends() (SECURITY DEFINER, friends-only).
+revoke select on public.profiles from authenticated, anon;
+grant select (id, nickname, server, created_at) on public.profiles to authenticated;
 
 -- Auto-create a profile row whenever a new auth user signs up.
 create function public.handle_new_user()
@@ -379,23 +392,50 @@ returns table (
   user_id uuid,
   nickname text,
   server text,
-  friends_since timestamptz
+  friends_since timestamptz,
+  is_online boolean,
+  current_room_code text
 )
 language sql
 security definer set search_path = public
 stable
 as $$
   select
-    case when fr.sender_id = auth.uid() then fr.receiver_id else fr.sender_id end,
-    p.nickname,
-    p.server,
-    fr.responded_at
+    other.id,
+    other.nickname,
+    other.server,
+    fr.responded_at,
+    other.last_seen_at is not null and other.last_seen_at > now() - interval '30 seconds',
+    case
+      when other.last_seen_at > now() - interval '30 seconds' then other.current_room_code
+      else null
+    end
   from public.friend_requests fr
-  join public.profiles p
-    on p.id = case when fr.sender_id = auth.uid() then fr.receiver_id else fr.sender_id end
+  join public.profiles other
+    on other.id = case when fr.sender_id = auth.uid() then fr.receiver_id else fr.sender_id end
   where fr.status = 'accepted'
     and (fr.sender_id = auth.uid() or fr.receiver_id = auth.uid())
   order by fr.responded_at desc;
+$$;
+
+-- Presence: a lightweight heartbeat (touch_presence, called on the existing
+-- friend-list poll cycle) plus room join/leave (set_current_room) drive the
+-- is_online/current_room_code columns above — no separate realtime channel
+-- needed.
+create function public.touch_presence()
+returns void
+language sql
+security definer set search_path = public
+as $$
+  update public.profiles set last_seen_at = now() where id = auth.uid();
+$$;
+
+create function public.set_current_room(p_room_code text)
+returns void
+language sql
+security definer set search_path = public
+as $$
+  update public.profiles set current_room_code = p_room_code where id = auth.uid();
 $$;
 
 create function public.list_incoming_friend_requests()

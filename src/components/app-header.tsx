@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Users } from "lucide-react";
+import { useFriends } from "@/hooks/use-friends";
 import { LinkButton } from "@/components/link-button";
 import { LogoutButton } from "@/components/logout-button";
 import { Button } from "@/components/ui/button";
@@ -17,13 +18,20 @@ import { FriendListContent } from "@/components/friends/friend-list-content";
 // Shared top navigation for authenticated pages. When showFriends is set,
 // a Users button appears below the lg breakpoint (where FriendSidebar is
 // hidden) and opens the same friend list content in a slide-over Sheet.
+// currentRoomCode is passed only from inside an active call room, so the
+// friend list there can offer "invite into my room".
 export function AppHeader({
   showFriends = false,
   isGuest = false,
+  currentRoomCode,
 }: {
   showFriends?: boolean;
   isGuest?: boolean;
+  currentRoomCode?: string;
 }) {
+  // Reused here (in addition to inside FriendListContent) just to surface a
+  // pending-request badge dot on the header trigger; the 15s poll is cheap.
+  const { incoming } = useFriends(showFriends ? isGuest : true);
   return (
     <header className="sticky top-0 z-10 border-b bg-background/70 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
@@ -43,17 +51,23 @@ export function AppHeader({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="lg:hidden"
+                  className="relative lg:hidden"
                   aria-label="친구 목록 열기"
                 >
                   <Users className="size-4.5" />
+                  {incoming.length > 0 && (
+                    <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-destructive" />
+                  )}
                 </Button>
               </SheetTrigger>
               <SheetContent side="right" className="flex flex-col p-0">
                 <SheetHeader className="border-b">
                   <SheetTitle>친구 목록</SheetTitle>
                 </SheetHeader>
-                <FriendListContent isGuest={isGuest} />
+                <FriendListContent
+                  isGuest={isGuest}
+                  currentRoomCode={currentRoomCode}
+                />
               </SheetContent>
             </Sheet>
           )}

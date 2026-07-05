@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
+import { FriendSidebar } from "@/components/friends/friend-sidebar";
 import { LinkButton } from "@/components/link-button";
 import { CopyInvite } from "@/components/room/copy-invite";
 import { PasswordGate } from "@/components/room/password-gate";
@@ -130,43 +131,48 @@ export default async function RoomPage({
     hasPassword = !!data;
   }
 
+  const isGuest = user.is_anonymous ?? false;
+
   return (
     <>
-      <AppHeader />
-      <main className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-4 py-10 sm:px-6 sm:py-16">
-        <PasswordGate
-          roomId={room.id}
-          roomTitle={room.title}
-          skip={skipPasswordGate || !hasPassword}
-        >
-          <Card className="w-full">
-            <CardHeader>
-              <CardTitle>{room.title}</CardTitle>
-              <CardDescription>
-                방 코드{" "}
-                <span className="font-mono font-semibold text-violet-300">
-                  {room.code}
-                </span>{" "}
-                — 코드나 링크를 공유하면 파티원이 바로 들어올 수 있어요.
-              </CardDescription>
-              <div className="pt-2">
-                <CopyInvite code={room.code} />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <VoiceRoom
-                roomCode={room.code}
-                roomId={room.id}
-                userId={user.id}
-                nickname={displayName}
-                maxMembers={room.max_members}
-                initialHostId={room.host_id ?? room.created_by}
-                isGuest={user.is_anonymous ?? false}
-              />
-            </CardContent>
-          </Card>
-        </PasswordGate>
-      </main>
+      <AppHeader showFriends isGuest={isGuest} currentRoomCode={room.code} />
+      <div className="mx-auto flex w-full max-w-6xl flex-1 gap-6 px-4 py-10 sm:px-6 sm:py-16">
+        <main className="flex min-w-0 flex-1 flex-col items-center justify-center">
+          <PasswordGate
+            roomId={room.id}
+            roomTitle={room.title}
+            skip={skipPasswordGate || !hasPassword}
+          >
+            <Card className="w-full max-w-lg">
+              <CardHeader>
+                <CardTitle>{room.title}</CardTitle>
+                <CardDescription>
+                  방 코드{" "}
+                  <span className="font-mono font-semibold text-violet-300">
+                    {room.code}
+                  </span>{" "}
+                  — 코드나 링크를 공유하면 파티원이 바로 들어올 수 있어요.
+                </CardDescription>
+                <div className="pt-2">
+                  <CopyInvite code={room.code} />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <VoiceRoom
+                  roomCode={room.code}
+                  roomId={room.id}
+                  userId={user.id}
+                  nickname={displayName}
+                  maxMembers={room.max_members}
+                  initialHostId={room.host_id ?? room.created_by}
+                  isGuest={isGuest}
+                />
+              </CardContent>
+            </Card>
+          </PasswordGate>
+        </main>
+        <FriendSidebar isGuest={isGuest} currentRoomCode={room.code} />
+      </div>
     </>
   );
 }

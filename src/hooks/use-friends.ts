@@ -9,6 +9,8 @@ export type Friend = {
   nickname: string;
   server: string | null;
   friends_since: string;
+  is_online: boolean;
+  current_room_code: string | null;
 };
 
 export type IncomingRequest = {
@@ -32,6 +34,9 @@ export function useFriends(isGuest: boolean) {
     const [friendsRes, incomingRes] = await Promise.all([
       supabase.rpc("list_friends"),
       supabase.rpc("list_incoming_friend_requests"),
+      // Piggyback the online heartbeat on the same poll cycle instead of
+      // opening a dedicated realtime presence channel.
+      supabase.rpc("touch_presence"),
     ]);
     if (!friendsRes.error) setFriends(friendsRes.data ?? []);
     if (!incomingRes.error) setIncoming(incomingRes.data ?? []);
