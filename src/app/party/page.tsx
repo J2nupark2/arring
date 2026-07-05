@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
 import { FriendSidebar } from "@/components/friends/friend-sidebar";
+import { FriendsProvider } from "@/components/friends/friends-provider";
 import { Button } from "@/components/ui/button";
 import { LinkButton } from "@/components/link-button";
 import { PartyRefresh } from "@/components/party-refresh";
@@ -66,7 +67,7 @@ export default async function PartyPage({
   const publicRooms = (rooms ?? []) as PublicRoom[];
 
   return (
-    <>
+    <FriendsProvider isGuest={isGuest}>
       <AppHeader showFriends isGuest={isGuest} />
       <div className="mx-auto flex w-full max-w-6xl flex-1 gap-6 px-4 py-8 sm:px-6 sm:py-12">
         <main className="flex min-w-0 flex-1 flex-col gap-6">
@@ -171,6 +172,6 @@ export default async function PartyPage({
         </main>
         <FriendSidebar isGuest={isGuest} />
       </div>
-    </>
+    </FriendsProvider>
   );
 }

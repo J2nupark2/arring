@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Users } from "lucide-react";
-import { useFriends } from "@/hooks/use-friends";
+import { useFriendsContext } from "@/components/friends/friends-provider";
 import { LinkButton } from "@/components/link-button";
 import { LogoutButton } from "@/components/logout-button";
 import { Button } from "@/components/ui/button";
@@ -29,9 +29,11 @@ export function AppHeader({
   isGuest?: boolean;
   currentRoomCode?: string;
 }) {
-  // Reused here (in addition to inside FriendListContent) just to surface a
-  // pending-request badge dot on the header trigger; the 15s poll is cheap.
-  const { incoming } = useFriends(showFriends ? isGuest : true);
+  // Shares the FriendsProvider instance mounted around this page (see
+  // party/page.tsx, room/[code]/page.tsx) so the badge here and the full
+  // list in FriendListContent read the same poll instead of each running
+  // their own.
+  const { incoming } = useFriendsContext();
   return (
     <header className="sticky top-0 z-10 border-b bg-background/70 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:px-6">

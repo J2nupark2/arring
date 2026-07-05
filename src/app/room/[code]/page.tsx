@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
 import { FriendSidebar } from "@/components/friends/friend-sidebar";
+import { FriendsProvider } from "@/components/friends/friends-provider";
 import { LinkButton } from "@/components/link-button";
 import { CopyInvite } from "@/components/room/copy-invite";
 import { PasswordGate } from "@/components/room/password-gate";
@@ -140,7 +141,7 @@ export default async function RoomPage({
   const isGuest = user.is_anonymous ?? false;
 
   return (
-    <>
+    <FriendsProvider isGuest={isGuest}>
       <AppHeader showFriends isGuest={isGuest} currentRoomCode={room.code} />
       <div className="mx-auto flex w-full max-w-6xl flex-1 gap-6 px-4 py-10 sm:px-6 sm:py-16">
         <main className="flex min-w-0 flex-1 flex-col items-center justify-center">
@@ -179,6 +180,6 @@ export default async function RoomPage({
         </main>
         <FriendSidebar isGuest={isGuest} currentRoomCode={room.code} />
       </div>
-    </>
+    </FriendsProvider>
   );
 }

@@ -13,7 +13,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useFriends } from "@/hooks/use-friends";
+import { useFriendsContext } from "@/components/friends/friends-provider";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -29,7 +29,7 @@ export function FriendListContent({
   currentRoomCode?: string;
 }) {
   const { friends, incoming, loading, refresh, respond, remove } =
-    useFriends(isGuest);
+    useFriendsContext();
   const [chatWith, setChatWith] = useState<{
     id: string;
     nickname: string;
