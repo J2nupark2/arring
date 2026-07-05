@@ -8,17 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Crown,
   Loader2,
   Mic,
   MicOff,
-  MoreVertical,
   PhoneOff,
   Send,
   UserPlus,
@@ -77,6 +76,8 @@ export function VoiceRoom({
   });
   const [chatText, setChatText] = useState("");
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = participants.find((p) => p.id === selectedId) ?? null;
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ block: "end" });
@@ -109,94 +110,132 @@ export function VoiceRoom({
         </span>
       </div>
 
-      <ul className="flex flex-col gap-2">
+      <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
         {participants.map((p) => (
-          <li key={p.id} className="flex flex-col gap-2 rounded-md border px-3 py-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Avatar
-                  className={`size-7 transition-shadow ${
-                    speaking[p.id]
-                      ? "ring-2 ring-green-500 ring-offset-2 ring-offset-card"
-                      : ""
-                  }`}
-                >
-                  <AvatarFallback>{p.nickname.slice(0, 1)}</AvatarFallback>
-                </Avatar>
-                <span className="flex items-center gap-1 text-sm font-medium">
-                  {p.id === hostId && (
-                    <Crown className="size-4 text-amber-500" aria-label="방장" />
-                  )}
-                  {p.nickname}
-                  {p.isSelf && " (나)"}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                {p.muted ? (
-                  <MicOff className="size-4 text-muted-foreground" />
-                ) : (
-                  <Mic className="size-4 text-muted-foreground" />
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => setSelectedId(p.id)}
+            className="flex flex-col items-center gap-1 rounded-md border px-1.5 py-2 text-center transition-colors hover:bg-muted/50"
+          >
+            <span className="relative">
+              <Avatar
+                className={cn(
+                  "size-10 transition-shadow",
+                  speaking[p.id] &&
+                    "ring-2 ring-green-500 ring-offset-2 ring-offset-card",
                 )}
-                {!p.isSelf && !isGuest && (
+              >
+                <AvatarFallback>{p.nickname.slice(0, 1)}</AvatarFallback>
+              </Avatar>
+              {p.id === hostId && (
+                <Crown
+                  className="absolute -top-1 -right-1 size-3.5 fill-amber-500 text-amber-500"
+                  aria-label="방장"
+                />
+              )}
+              <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-card ring-1 ring-border">
+                {p.muted ? (
+                  <MicOff className="size-2.5 text-muted-foreground" />
+                ) : (
+                  <Mic className="size-2.5 text-muted-foreground" />
+                )}
+              </span>
+            </span>
+            <span className="w-full truncate text-xs font-medium">
+              {p.nickname}
+              {p.isSelf && " (나)"}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <Dialog
+        open={!!selected}
+        onOpenChange={(open) => {
+          if (!open) setSelectedId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-xs">
+          {selected && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Avatar className="size-8">
+                    <AvatarFallback>
+                      {selected.nickname.slice(0, 1)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="flex items-center gap-1">
+                    {selected.id === hostId && (
+                      <Crown className="size-4 text-amber-500" aria-label="방장" />
+                    )}
+                    {selected.nickname}
+                    {selected.isSelf && " (나)"}
+                  </span>
+                </DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-3">
+                {!selected.isSelf && (
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round((volumes[selected.id] ?? 1) * 100)}
+                      onChange={(e) =>
+                        setParticipantVolume(
+                          selected.id,
+                          Number(e.target.value) / 100,
+                        )
+                      }
+                      className="h-1.5 w-full cursor-pointer accent-primary"
+                      aria-label={`${selected.nickname} 소리 크기`}
+                    />
+                    <span className="w-9 shrink-0 text-right text-xs text-muted-foreground">
+                      {Math.round((volumes[selected.id] ?? 1) * 100)}%
+                    </span>
+                  </div>
+                )}
+                {!selected.isSelf && !isGuest && (
                   <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`${p.nickname} 친구 추가`}
-                    onClick={() => sendFriendRequest(p.id)}
+                    variant="outline"
+                    onClick={() => sendFriendRequest(selected.id)}
                   >
                     <UserPlus className="size-4" />
+                    친구 추가
                   </Button>
                 )}
-                {isHost && !p.isSelf && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`${p.nickname} 관리`}
-                      >
-                        <MoreVertical className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => transferHost(p.id)}>
-                        <Crown className="size-4" />
-                        방장 위임
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => kickParticipant(p.id)}
-                      >
-                        <UserX className="size-4" />
-                        추방
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                {isHost && !selected.isSelf && (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        transferHost(selected.id);
+                        setSelectedId(null);
+                      }}
+                    >
+                      <Crown className="size-4" />
+                      방장 위임
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        kickParticipant(selected.id);
+                        setSelectedId(null);
+                      }}
+                    >
+                      <UserX className="size-4" />
+                      추방
+                    </Button>
+                  </>
                 )}
               </div>
-            </div>
-            {!p.isSelf && (
-              <div className="flex items-center gap-2">
-                <Volume2 className="size-4 shrink-0 text-muted-foreground" />
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round((volumes[p.id] ?? 1) * 100)}
-                  onChange={(e) =>
-                    setParticipantVolume(p.id, Number(e.target.value) / 100)
-                  }
-                  className="h-1.5 w-full cursor-pointer accent-primary"
-                  aria-label={`${p.nickname} 소리 크기`}
-                />
-                <span className="w-9 shrink-0 text-right text-xs text-muted-foreground">
-                  {Math.round((volumes[p.id] ?? 1) * 100)}%
-                </span>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <div className="flex flex-col gap-2">
         <span className="text-sm text-muted-foreground">채팅</span>
