@@ -46,6 +46,26 @@ function stageLabel(dungeon: Dungeon | undefined, stage: number) {
   return dungeon.gimmick_stages[stage - 1] ?? "클리어";
 }
 
+function partySizeForDungeon(dungeon: Dungeon | undefined) {
+  return dungeon?.category === "성역" ? 10 : 5;
+}
+
+function memberSlotCountForDungeon(dungeon: Dungeon | undefined) {
+  return Math.max(0, partySizeForDungeon(dungeon) - 1);
+}
+
+function combatPowerToK(value: number | null | undefined) {
+  return Math.max(0, Math.floor((Number(value) || 0) / 1000));
+}
+
+function combatPowerFromK(value: number) {
+  return Math.max(0, Math.trunc(value || 0) * 1000);
+}
+
+function createClassSlots(count: number, preferredClass?: string | null) {
+  return Array.from({ length: count }, () => preferredClass ?? "");
+}
+
 async function requestMatch(body: {
   role: "leader" | "member";
   dungeonId: string;
@@ -87,13 +107,15 @@ export function MatchingPanel({
   const [characterId, setCharacterId] = useState(primaryCharacter?.id ?? "");
   const selectedCharacter = characters.find((character) => character.id === characterId);
   const [stage, setStage] = useState(savedStage);
-  const [minCombatPower, setMinCombatPower] = useState(
-    selectedCharacter?.combatPower ?? profile?.combatPower ?? 0,
+  const [minCombatPowerK, setMinCombatPowerK] = useState(
+    combatPowerToK(selectedCharacter?.combatPower ?? profile?.combatPower),
   );
-  const [maxMembers, setMaxMembers] = useState(6);
-  const [requiredClasses, setRequiredClasses] = useState<string[]>([]);
+  const [requiredClasses, setRequiredClasses] = useState<string[]>(
+    createClassSlots(memberSlotCountForDungeon(selectedDungeon), selectedCharacter?.className),
+  );
   const [pending, setPending] = useState(false);
 
+  const maxMembers = partySizeForDungeon(selectedDungeon);
   const hasLinkedCharacter = characters.length > 0 || (!!profile?.charClass && !!profile.combatPower);
   const stages = useMemo(() => {
     const items = selectedDungeon?.gimmick_stages ?? [];
@@ -102,15 +124,30 @@ export function MatchingPanel({
 
   function changeDungeon(nextDungeonId: string) {
     setDungeonId(nextDungeonId);
+    const nextDungeon = dungeons.find((dungeon) => dungeon.id === nextDungeonId);
     const nextStage = progress.find((item) => item.dungeonId === nextDungeonId)?.stage ?? 0;
     setStage(nextStage);
+    setRequiredClasses((current) => {
+      const nextCount = memberSlotCountForDungeon(nextDungeon);
+      return Array.from(
+        { length: nextCount },
+        (_, index) => current[index] ?? selectedCharacter?.className ?? "",
+      );
+    });
   }
 
-  function toggleClass(className: string) {
+  function changeCharacter(nextCharacterId: string) {
+    setCharacterId(nextCharacterId);
+    const nextCharacter = characters.find(
+      (character) => character.id === nextCharacterId,
+    );
+    if (!nextCharacter) return;
+    setMinCombatPowerK(combatPowerToK(nextCharacter.combatPower));
+  }
+
+  function changeClassSlot(index: number, className: string) {
     setRequiredClasses((current) =>
-      current.includes(className)
-        ? current.filter((item) => item !== className)
-        : [...current, className],
+      current.map((item, itemIndex) => (itemIndex === index ? className : item)),
     );
   }
 
@@ -124,8 +161,8 @@ export function MatchingPanel({
         dungeonId,
         characterId,
         stage,
-        minCombatPower,
-        requiredClasses,
+        minCombatPower: combatPowerFromK(minCombatPowerK),
+        requiredClasses: requiredClasses.filter(Boolean),
         maxMembers,
       });
 
@@ -216,13 +253,7 @@ export function MatchingPanel({
               <select
                 id="match-character"
                 value={characterId}
-                onChange={(e) => {
-                  setCharacterId(e.target.value);
-                  const nextCharacter = characters.find(
-                    (character) => character.id === e.target.value,
-                  );
-                  if (nextCharacter) setMinCombatPower(nextCharacter.combatPower);
-                }}
+                onChange={(e) => changeCharacter(e.target.value)}
                 className="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 {characters.length === 0 && (
@@ -275,44 +306,39 @@ export function MatchingPanel({
             <>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="match-power">최소 투력</Label>
-                  <Input
-                    id="match-power"
-                    type="number"
-                    min={0}
-                    step={1000}
-                    value={minCombatPower}
-                    onChange={(e) => setMinCombatPower(Number(e.target.value))}
-                  />
+                  <Label htmlFor="match-power">최소 투력 (k)</Label>
+                  <div className="relative">
+                    <Input
+                      id="match-power"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={minCombatPowerK}
+                      onChange={(e) => setMinCombatPowerK(Number(e.target.value))}
+                      className="pr-10"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      k
+                    </span>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="match-size">파티 인원</Label>
                   <Input
                     id="match-size"
-                    type="number"
-                    min={2}
-                    max={12}
+                    readOnly
                     value={maxMembers}
-                    onChange={(e) => setMaxMembers(Number(e.target.value))}
                   />
                 </div>
               </div>
               <div className="flex flex-col gap-2">
                 <Label>받을 클래스</Label>
-                <div className="flex flex-wrap gap-2">
-                  {AION2_CLASSES.map((className) => (
-                    <Button
-                      key={className}
-                      type="button"
-                      variant={requiredClasses.includes(className) ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => toggleClass(className)}
-                    >
-                      <Swords className="size-3.5" />
-                      {className}
-                    </Button>
-                  ))}
-                </div>
+                <ClassSlotBoard
+                  dungeon={selectedDungeon}
+                  leaderClass={selectedCharacter?.className}
+                  slots={requiredClasses}
+                  onChange={changeClassSlot}
+                />
               </div>
             </>
           )}
@@ -322,6 +348,7 @@ export function MatchingPanel({
               선택 진도: {stageLabel(selectedDungeon, stage)}
               {selectedCharacter?.className && ` · ${selectedCharacter.name} ${selectedCharacter.className}`}
               {selectedCharacter?.combatPower && ` · 투력 ${formatCombatPower(selectedCharacter.combatPower)}`}
+              {mode === "leader" && ` · 최소 ${minCombatPowerK.toLocaleString()}k · ${maxMembers}명 고정`}
             </span>
             <Button type="submit" disabled={pending || isGuest || !hasLinkedCharacter || !characterId || dungeons.length === 0}>
               {pending && <Loader2 className="size-4 animate-spin" />}
@@ -331,6 +358,92 @@ export function MatchingPanel({
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+function ClassSlotBoard({
+  dungeon,
+  leaderClass,
+  slots,
+  onChange,
+}: {
+  dungeon: Dungeon | undefined;
+  leaderClass?: string | null;
+  slots: string[];
+  onChange: (index: number, className: string) => void;
+}) {
+  const firstPartySlots = dungeon?.category === "성역" ? slots.slice(0, 4) : slots;
+  const secondPartySlots = dungeon?.category === "성역" ? slots.slice(4, 9) : [];
+
+  return (
+    <div className="grid gap-3">
+      <ClassSlotGroup
+        title={dungeon?.category === "성역" ? "1파티" : "1파티"}
+        leaderClass={leaderClass}
+        slots={firstPartySlots}
+        offset={0}
+        onChange={onChange}
+      />
+      {secondPartySlots.length > 0 && (
+        <ClassSlotGroup
+          title="2파티"
+          slots={secondPartySlots}
+          offset={4}
+          onChange={onChange}
+        />
+      )}
+    </div>
+  );
+}
+
+function ClassSlotGroup({
+  title,
+  leaderClass,
+  slots,
+  offset,
+  onChange,
+}: {
+  title: string;
+  leaderClass?: string | null;
+  slots: string[];
+  offset: number;
+  onChange: (index: number, className: string) => void;
+}) {
+  return (
+    <div className="rounded-md border p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          <Swords className="size-4 text-violet-400" />
+          {title}
+        </span>
+        <Badge variant="secondary">{leaderClass ? slots.length + 1 : slots.length}명</Badge>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-5">
+        {leaderClass && (
+          <div className="flex h-9 items-center rounded-md border border-violet-500/40 bg-violet-500/10 px-3 text-sm">
+            방장 · {leaderClass}
+          </div>
+        )}
+        {slots.map((className, index) => (
+          <select
+            key={`${title}-${offset + index}`}
+            value={className}
+            onChange={(e) => onChange(offset + index, e.target.value)}
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            aria-label={`${title} ${index + 1}번 받을 클래스`}
+          >
+            <option value="" className="bg-popover">
+              자유
+            </option>
+            {AION2_CLASSES.map((aionClass) => (
+              <option key={aionClass} value={aionClass} className="bg-popover">
+                {aionClass}
+              </option>
+            ))}
+          </select>
+        ))}
+      </div>
+    </div>
   );
 }
 

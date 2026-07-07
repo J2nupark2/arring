@@ -31,6 +31,18 @@ type MatchRequest = {
   max_members: number;
 };
 
+type Candidate = {
+  row: {
+    id: string;
+    user_id: string;
+    character_row_id: string | null;
+    requested_stage: number;
+    created_at: string;
+  };
+  profile: Profile | undefined;
+  character: CharacterRow | undefined;
+};
+
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
 }
@@ -47,6 +59,10 @@ type AdminClient = NonNullable<ReturnType<typeof getAdmin>>;
 
 function score(profile: Profile) {
   return (profile.manner_temperature ?? 36.5) + (profile.trust_temperature ?? 36.5);
+}
+
+function partySizeForCategory(category: string | null | undefined) {
+  return category === "성역" ? 10 : 5;
 }
 
 async function getUserCharacter(
@@ -192,7 +208,51 @@ async function findCandidates(
       return true;
     })
     .sort((a, b) => score(b.profile!) - score(a.profile!))
-    .slice(0, Math.max(0, request.max_members - 1));
+}
+
+function selectCandidatesForSlots(
+  candidates: Candidate[],
+  requiredClasses: string[],
+  needed: number,
+) {
+  if (needed <= 0) return [];
+
+  const selected: Candidate[] = [];
+  const usedQueueIds = new Set<string>();
+  const fixedSlots = requiredClasses
+    .filter((className) => className.trim())
+    .slice(0, needed);
+
+  const fixedSlotsByScarcity = [...fixedSlots].sort((a, b) => {
+    const aCount = candidates.filter(
+      (candidate) => candidate.character?.class_name === a,
+    ).length;
+    const bCount = candidates.filter(
+      (candidate) => candidate.character?.class_name === b,
+    ).length;
+    return aCount - bCount;
+  });
+
+  for (const className of fixedSlotsByScarcity) {
+    const candidate = candidates.find(
+      (item) =>
+        !usedQueueIds.has(item.row.id) &&
+        item.character?.class_name === className,
+    );
+
+    if (!candidate) return null;
+    selected.push(candidate);
+    usedQueueIds.add(candidate.row.id);
+  }
+
+  for (const candidate of candidates) {
+    if (selected.length >= needed) break;
+    if (usedQueueIds.has(candidate.row.id)) continue;
+    selected.push(candidate);
+    usedQueueIds.add(candidate.row.id);
+  }
+
+  return selected.length >= needed ? selected : null;
 }
 
 async function tryCompleteMatch(
@@ -213,11 +273,16 @@ async function tryCompleteMatch(
 
   const candidates = await findCandidates(admin, request);
   const needed = request.max_members - 1;
-  if (candidates.length < needed) {
+  const chosen = selectCandidatesForSlots(
+    candidates,
+    request.required_classes ?? [],
+    needed,
+  );
+
+  if (!chosen) {
     return { matched: false, waitingCount: candidates.length, needed };
   }
 
-  const chosen = candidates.slice(0, needed);
   const room = await createRoom(
     admin,
     leaderProfile as Profile,
@@ -285,6 +350,20 @@ export async function POST(request: NextRequest) {
   const stage = Math.max(0, Math.trunc(Number(body.stage) || 0));
   if (!dungeonId || !body.role) return jsonError("매칭 조건을 확인해주세요.", 400);
 
+  const { data: dungeon, error: dungeonError } = await admin
+    .from("dungeons")
+    .select("category")
+    .eq("id", dungeonId)
+    .single();
+
+  if (dungeonError || !dungeon) {
+    return jsonError("콘텐츠 정보를 찾을 수 없습니다.", 400);
+  }
+
+  const maxMembers = partySizeForCategory(
+    (dungeon as { category: string | null }).category,
+  );
+
   const selectedCharacter = await getUserCharacter(admin, user.id, body.characterId);
 
   if (!selectedCharacter) {
@@ -299,7 +378,6 @@ export async function POST(request: NextRequest) {
   } as unknown as never);
 
   if (body.role === "leader") {
-    const maxMembers = Math.min(Math.max(Math.trunc(Number(body.maxMembers) || 6), 2), 12);
     const minCombatPower = Math.max(0, Math.trunc(Number(body.minCombatPower) || 0));
     const requiredClasses = Array.isArray(body.requiredClasses)
       ? body.requiredClasses.filter((value) => typeof value === "string" && value.trim())
