@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Crown,
+  Headphones,
   Loader2,
   Mic,
   MicOff,
@@ -93,13 +94,12 @@ export function VoiceRoom({
   return (
     <div className="flex w-full flex-col gap-6">
       {status === "connecting" && (
-        <p className="text-sm text-muted-foreground">
-          마이크에 연결하는 중...
-        </p>
+        <p className="text-sm text-muted-foreground">연결하는 중...</p>
       )}
       {status === "error" && (
         <p className="text-sm text-destructive">
-          마이크 권한이 필요합니다. 브라우저 설정에서 마이크 권한을 허용해주세요.
+          방장은 마이크 권한이 필요합니다. 브라우저 설정에서 마이크 권한을
+          허용해주세요.
         </p>
       )}
 
@@ -135,7 +135,9 @@ export function VoiceRoom({
                 />
               )}
               <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-card ring-1 ring-border">
-                {p.muted ? (
+                {p.id !== hostId ? (
+                  <Headphones className="size-2.5 text-muted-foreground" />
+                ) : p.muted ? (
                   <MicOff className="size-2.5 text-muted-foreground" />
                 ) : (
                   <Mic className="size-2.5 text-muted-foreground" />
@@ -176,7 +178,9 @@ export function VoiceRoom({
                 </DialogTitle>
               </DialogHeader>
               <div className="flex flex-col gap-3">
-                {!selected.isSelf && (
+                {/* Only the host publishes audio, so a volume slider only
+                    makes sense on the host's tile. */}
+                {!selected.isSelf && selected.id === hostId && (
                   <div className="flex items-center gap-2">
                     <Volume2 className="size-4 shrink-0 text-muted-foreground" />
                     <input
@@ -291,32 +295,37 @@ export function VoiceRoom({
         </form>
       </div>
 
-      <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-        <Mic className="size-4 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 text-sm">내 마이크 음량</span>
-        <input
-          type="range"
-          min={0}
-          max={200}
-          value={Math.round(micGain * 100)}
-          onChange={(e) => setMicGain(Number(e.target.value) / 100)}
-          className="h-1.5 w-full cursor-pointer accent-primary"
-          aria-label="내 마이크 음량"
-        />
-        <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
-          {Math.round(micGain * 100)}%
-        </span>
-      </div>
+      {/* Only the host publishes audio — listeners have no mic controls. */}
+      {isHost && (
+        <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+          <Mic className="size-4 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 text-sm">내 마이크 음량</span>
+          <input
+            type="range"
+            min={0}
+            max={200}
+            value={Math.round(micGain * 100)}
+            onChange={(e) => setMicGain(Number(e.target.value) / 100)}
+            className="h-1.5 w-full cursor-pointer accent-primary"
+            aria-label="내 마이크 음량"
+          />
+          <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
+            {Math.round(micGain * 100)}%
+          </span>
+        </div>
+      )}
 
       <div className="flex justify-center gap-3">
-        <Button
-          variant={muted ? "default" : "outline"}
-          size="icon-lg"
-          onClick={toggleMute}
-          aria-label={muted ? "음소거 해제" : "음소거"}
-        >
-          {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
-        </Button>
+        {isHost && (
+          <Button
+            variant={muted ? "default" : "outline"}
+            size="icon-lg"
+            onClick={toggleMute}
+            aria-label={muted ? "음소거 해제" : "음소거"}
+          >
+            {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+          </Button>
+        )}
         <Button
           variant="destructive"
           size="icon-lg"

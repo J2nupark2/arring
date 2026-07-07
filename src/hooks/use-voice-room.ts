@@ -97,11 +97,6 @@ export function useVoiceRoom({
   const onKickedRef = useRef(onKicked);
   onKickedRef.current = onKicked;
 
-  const applyHostChange = useCallback((newHostId: string) => {
-    hostIdRef.current = newHostId;
-    setHostId(newHostId);
-  }, []);
-
   const upsertParticipant = useCallback((p: Participant) => {
     setParticipants((prev) => {
       const others = prev.filter((x) => x.id !== p.id);
@@ -130,9 +125,18 @@ export function useVoiceRoom({
 
   // Feed a stream into an AnalyserNode so the UI can highlight who is
   // actually talking. Muted tracks output silence, so mute is reflected.
+  // Listeners have no mic-owned AudioContext, so create one lazily here.
   const attachAnalyser = useCallback((id: string, stream: MediaStream) => {
+    if (analysersRef.current.has(id)) return;
+    if (!audioCtxRef.current) {
+      try {
+        audioCtxRef.current = new AudioContext();
+        audioCtxRef.current.resume().catch(() => {});
+      } catch {
+        return;
+      }
+    }
     const ctx = audioCtxRef.current;
-    if (!ctx || analysersRef.current.has(id)) return;
     try {
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
@@ -196,6 +200,83 @@ export function useVoiceRoom({
     [send, userId, closePeer, attachAnalyser],
   );
 
+  const captureMic = useCallback(async () => {
+    if (localStreamRef.current) return true;
+    try {
+      const rawStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      // Route the mic through a GainNode so its level can be adjusted
+      // live; peers receive the gain-processed stream.
+      const audioCtx = audioCtxRef.current ?? new AudioContext();
+      audioCtxRef.current = audioCtx;
+      const source = audioCtx.createMediaStreamSource(rawStream);
+      const gainNode = audioCtx.createGain();
+      const destination = audioCtx.createMediaStreamDestination();
+      source.connect(gainNode);
+      gainNode.connect(destination);
+      audioCtx.resume().catch(() => {});
+
+      rawStreamRef.current = rawStream;
+      gainNodeRef.current = gainNode;
+      localStreamRef.current = destination.stream;
+      attachAnalyser(userId, destination.stream);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [userId, attachAnalyser]);
+
+  const releaseMic = useCallback(() => {
+    localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    rawStreamRef.current?.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = null;
+    rawStreamRef.current = null;
+    gainNodeRef.current = null;
+    analysersRef.current.delete(userId);
+  }, [userId]);
+
+  const initiateOfferTo = useCallback(
+    (peerId: string) => {
+      const pc = ensurePeer(peerId);
+      pc.createOffer()
+        .then(async (offer) => {
+          await pc.setLocalDescription(offer);
+          send({ kind: "offer", from: userId, to: peerId, sdp: offer });
+        })
+        .catch(() => {});
+    },
+    [ensurePeer, send, userId],
+  );
+
+  // Audio is a star centered on the host (only the host speaks; everyone
+  // else listens), so a host change tears down every connection and the
+  // new host re-offers to all present listeners with a fresh mic track —
+  // simpler and more robust than renegotiating existing connections.
+  const applyHostChange = useCallback(
+    (newHostId: string) => {
+      const becameHost = newHostId === userId;
+      hostIdRef.current = newHostId;
+      setHostId(newHostId);
+
+      peersRef.current.forEach((_, peerId) => closePeer(peerId));
+
+      if (becameHost) {
+        setMuted(false);
+        captureMic().then((ok) => {
+          if (!ok) {
+            setStatus("error");
+            return;
+          }
+          otherPeerIdsRef.current.forEach((peerId) => initiateOfferTo(peerId));
+        });
+      } else if (localStreamRef.current) {
+        releaseMic();
+      }
+    },
+    [userId, closePeer, captureMic, releaseMic, initiateOfferTo],
+  );
+
   useEffect(() => {
     audioContainerRef.current = document.createElement("div");
     audioContainerRef.current.style.display = "none";
@@ -205,33 +286,18 @@ export function useVoiceRoom({
     const supabase = supabaseRef.current;
 
     async function setup() {
-      try {
-        const rawStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
+      // Only the host publishes audio — listeners join without ever being
+      // asked for mic permission and simply receive the host's stream.
+      if (hostIdRef.current === userId) {
+        const ok = await captureMic();
         if (cancelled) {
-          rawStream.getTracks().forEach((t) => t.stop());
+          releaseMic();
           return;
         }
-
-        // Route the mic through a GainNode so its level can be adjusted
-        // live; peers receive the gain-processed stream.
-        const audioCtx = new AudioContext();
-        const source = audioCtx.createMediaStreamSource(rawStream);
-        const gainNode = audioCtx.createGain();
-        const destination = audioCtx.createMediaStreamDestination();
-        source.connect(gainNode);
-        gainNode.connect(destination);
-        audioCtx.resume().catch(() => {});
-
-        rawStreamRef.current = rawStream;
-        audioCtxRef.current = audioCtx;
-        gainNodeRef.current = gainNode;
-        localStreamRef.current = destination.stream;
-        attachAnalyser(userId, destination.stream);
-      } catch {
-        setStatus("error");
-        return;
+        if (!ok) {
+          setStatus("error");
+          return;
+        }
       }
 
       upsertParticipant({ id: userId, nickname, isSelf: true, muted: false });
@@ -326,15 +392,13 @@ export function useVoiceRoom({
             muted: false,
           });
 
-          // Deterministic glare avoidance: only the "greater" id initiates.
-          if (peerId > userId && !peersRef.current.has(peerId)) {
-            const pc = ensurePeer(peerId);
-            pc.createOffer()
-              .then(async (offer) => {
-                await pc.setLocalDescription(offer);
-                send({ kind: "offer", from: userId, to: peerId, sdp: offer });
-              })
-              .catch(() => {});
+          // Star topology: only the host holds WebRTC connections, so the
+          // host initiates an offer to every newly-present listener.
+          // Listeners never connect to each other — which also means
+          // strangers matched into the same party can't see each other's
+          // IP addresses.
+          if (hostIdRef.current === userId && !peersRef.current.has(peerId)) {
+            initiateOfferTo(peerId);
           }
         }
       });
@@ -442,6 +506,7 @@ export function useVoiceRoom({
   }, [roomCode, roomId, userId, nickname]);
 
   const toggleMute = useCallback(() => {
+    if (hostIdRef.current !== userId || !localStreamRef.current) return;
     setMuted((prev) => {
       const next = !prev;
       localStreamRef.current
