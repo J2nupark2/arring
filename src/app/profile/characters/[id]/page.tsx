@@ -1,17 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import {
-  ExternalLink,
-  Gauge,
-  ShieldCheck,
-  Sparkles,
-  Star,
-  Swords,
-} from "lucide-react";
+import { Gauge, ShieldCheck, Sparkles, Star, Swords } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { LinkButton } from "@/components/link-button";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -74,14 +66,6 @@ export default async function CharacterDetailPage({
   const equipment = normalizeList(character.equipment);
   const skills = normalizeList(character.skills);
   const stigmas = normalizeList(character.stigmas);
-  const officialUrl = buildOfficialUrl(
-    character.server_id,
-    character.character_id,
-  );
-  const atoolUrl = buildAtoolUrl(
-    character.server_id,
-    character.character_name,
-  );
 
   return (
     <>
@@ -101,7 +85,7 @@ export default async function CharacterDetailPage({
           </LinkButton>
         </div>
 
-        <section className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
+        <section>
           <Card className="overflow-hidden">
             <CardHeader className="border-b bg-muted/35">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -149,34 +133,6 @@ export default async function CharacterDetailPage({
                 value={`${formatTemperature(character.proficiency_score)}점`}
                 caption="캐릭터 기준 점수"
               />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">연동 정보</CardTitle>
-              <CardDescription>
-                공식 정보실과 아툴 화면을 함께 열어 비교할 수 있어요.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <InfoRow label="서버 ID" value={String(character.server_id ?? "-")} />
-              <InfoRow label="동기화" value={formatDate(character.synced_at)} />
-              <InfoRow label="연동일" value={formatDate(character.created_at)} />
-              <div className="grid gap-2 pt-2 sm:grid-cols-2 lg:grid-cols-1">
-                <Button asChild variant="outline">
-                  <a href={officialUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink className="size-4" />
-                    공식 정보실
-                  </a>
-                </Button>
-                <Button asChild variant="outline">
-                  <a href={atoolUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink className="size-4" />
-                    아툴 보기
-                  </a>
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </section>
@@ -230,15 +186,6 @@ function ScoreTile({
       </div>
       <div className="mt-2 font-mono text-2xl font-bold">{value}</div>
       <div className="mt-1 text-xs text-muted-foreground">{caption}</div>
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="truncate font-medium">{value}</span>
     </div>
   );
 }
@@ -478,23 +425,4 @@ function isSlotMatch(item: DetailItem, aliases: readonly string[]) {
 
 function formatTemperature(value: number | string | null | undefined) {
   return Number(value ?? 36.5).toFixed(1);
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("ko-KR");
-}
-
-function buildOfficialUrl(serverId: string | number | null, characterId: string | null) {
-  const server = encodeURIComponent(String(serverId ?? ""));
-  const character = encodeURIComponent(characterId ?? "");
-  return `https://aion2.plaync.com/ko-kr/characters/${server}/${character}`;
-}
-
-function buildAtoolUrl(serverId: string | number | null, characterName: string | null) {
-  const server = encodeURIComponent(String(serverId ?? ""));
-  const name = encodeURIComponent(characterName ?? "");
-  return `https://aion2tool.com/char/serverid=${server}/${name}`;
 }
