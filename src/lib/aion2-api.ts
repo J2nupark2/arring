@@ -36,6 +36,9 @@ export type Aion2CharacterProfile = {
   className: string;
   characterLevel: number;
   combatPower: number;
+  equipment: unknown[];
+  skills: unknown[];
+  stigmas: unknown[];
 };
 
 async function plaync<T>(path: string, revalidateSeconds: number): Promise<T> {
@@ -86,14 +89,49 @@ export async function fetchCharacterInfo(
   characterId: string,
   serverId: number,
 ): Promise<Aion2CharacterProfile> {
-  const params = new URLSearchParams({
+  const infoParams = new URLSearchParams({
     lang: "ko-kr",
     characterId,
     serverId: String(serverId),
   });
-  const data = await plaync<{ profile: Aion2CharacterProfile }>(
-    `/api/character/info?${params}`,
-    60,
-  );
-  return data.profile;
+
+  const equipmentParams = new URLSearchParams({
+    lang: "ko",
+    characterId,
+    serverId: String(serverId),
+  });
+
+  const [infoData, equipmentData] = await Promise.all([
+    plaync<{
+      profile: Omit<Aion2CharacterProfile, "equipment" | "skills" | "stigmas">;
+    }>(`/api/character/info?${infoParams}`, 60),
+    plaync<Aion2EquipmentResponse>(
+      `/api/character/equipment?${equipmentParams}`,
+      60,
+    ).catch(() => null),
+  ]);
+
+  const skillList = equipmentData?.skill?.skillList ?? [];
+  return {
+    ...infoData.profile,
+    equipment: equipmentData?.equipment?.equipmentList ?? [],
+    skills: skillList.filter((skill) => !isStigmaSkill(skill)),
+    stigmas: skillList.filter(isStigmaSkill),
+  };
+}
+
+type Aion2EquipmentResponse = {
+  equipment?: {
+    equipmentList?: unknown[];
+  };
+  skill?: {
+    skillList?: unknown[];
+  };
+};
+
+function isStigmaSkill(skill: unknown) {
+  if (!skill || typeof skill !== "object") return false;
+  const record = skill as Record<string, unknown>;
+  const category = String(record.category ?? record.type ?? "").toLowerCase();
+  return category.includes("stigma") || category.includes("스티그마");
 }

@@ -25,17 +25,17 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const EQUIPMENT_SLOTS = [
-  { key: "weapon", label: "무기", aliases: ["무기", "weapon"] },
-  { key: "subWeapon", label: "보조", aliases: ["보조", "방패", "sub", "shield"] },
-  { key: "helmet", label: "투구", aliases: ["투구", "머리", "helmet", "head"] },
-  { key: "armor", label: "상의", aliases: ["상의", "갑옷", "armor", "body", "chest"] },
+  { key: "weapon", label: "무기", aliases: ["무기", "weapon", "mainhand"] },
+  { key: "subWeapon", label: "보조", aliases: ["보조", "방패", "sub", "shield", "subhand"] },
+  { key: "helmet", label: "투구", aliases: ["투구", "머리", "helmet", "head", "helm"] },
+  { key: "armor", label: "상의", aliases: ["상의", "갑옷", "armor", "body", "chest", "torso"] },
   { key: "pants", label: "하의", aliases: ["하의", "pants", "legs"] },
   { key: "gloves", label: "장갑", aliases: ["장갑", "gloves", "hand"] },
   { key: "shoes", label: "신발", aliases: ["신발", "shoes", "boots", "foot"] },
   { key: "necklace", label: "목걸이", aliases: ["목걸이", "necklace"] },
   { key: "earring", label: "귀걸이", aliases: ["귀걸이", "earring"] },
   { key: "ring", label: "반지", aliases: ["반지", "ring"] },
-  { key: "belt", label: "허리띠", aliases: ["허리", "벨트", "belt"] },
+  { key: "belt", label: "허리띠", aliases: ["허리", "벨트", "belt", "waist"] },
   { key: "wing", label: "날개", aliases: ["날개", "wing"] },
 ] as const;
 
@@ -249,6 +249,7 @@ type DetailItem = {
   grade?: string | number;
   slot?: string | number;
   value?: string | number;
+  icon?: string;
 };
 
 function EquipmentBoard({ items }: { items: DetailItem[] }) {
@@ -368,19 +369,30 @@ function DetailSection({
 
 function ItemSummary({ item }: { item: DetailItem }) {
   return (
-    <div className="min-w-0">
-      <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 break-words font-medium">{item.name}</span>
-        {item.level !== undefined && (
-          <Badge variant="secondary" className="shrink-0">
-            Lv.{item.level}
-          </Badge>
-        )}
-      </div>
-      <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-        {item.slot && <span>{item.slot}</span>}
-        {item.grade && <span>{item.grade}</span>}
-        {item.value !== undefined && <span>{item.value}</span>}
+    <div className="flex min-w-0 gap-2">
+      {item.icon && (
+        // Official AION2 item and skill icons are small CDN assets.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.icon}
+          alt=""
+          className="size-9 shrink-0 rounded-md border bg-muted object-cover"
+        />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <span className="min-w-0 break-words font-medium">{item.name}</span>
+          {item.level !== undefined && (
+            <Badge variant="secondary" className="shrink-0">
+              Lv.{item.level}
+            </Badge>
+          )}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+          {item.slot && <span>{item.slot}</span>}
+          {item.grade && <span>{item.grade}</span>}
+          {item.value !== undefined && <span>초월 {item.value}</span>}
+        </div>
       </div>
     </div>
   );
@@ -415,8 +427,22 @@ function normalizeList(value: unknown): DetailItem[] {
       name: String(name),
       level: pickText(source, ["level", "enchantLevel", "skillLevel", "gradeLevel"]),
       grade: pickText(source, ["grade", "rarity", "tier", "rank"]),
-      slot: pickText(source, ["slot", "part", "equipSlot", "category", "type"]),
-      value: pickText(source, ["value", "power", "combatPower", "score"]),
+      icon: pickString(source, ["icon", "iconUrl", "image", "imageUrl"]),
+      slot: pickText(source, [
+        "slot",
+        "part",
+        "equipSlot",
+        "slotPosName",
+        "category",
+        "type",
+      ]),
+      value: pickText(source, [
+        "value",
+        "power",
+        "combatPower",
+        "score",
+        "exceedLevel",
+      ]),
     });
   }
 
@@ -428,6 +454,14 @@ function pickText(record: Record<string, unknown>, keys: string[]) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) return value.trim();
     if (typeof value === "number") return value;
+  }
+  return undefined;
+}
+
+function pickString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
   }
   return undefined;
 }
