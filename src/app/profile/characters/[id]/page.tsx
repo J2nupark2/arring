@@ -184,6 +184,10 @@ type DetailItem = {
   slot?: string | number;
   value?: string | number;
   icon?: string;
+  description?: string;
+  acquired?: string | number;
+  equipped?: string | number;
+  requiredLevel?: string | number;
 };
 
 function EquipmentBoard({ items }: { items: DetailItem[] }) {
@@ -366,8 +370,10 @@ function isStigmaSkill(item: DetailItem) {
 }
 
 function ItemSummary({ item }: { item: DetailItem }) {
+  const hasTooltip = hasSkillTooltip(item);
+
   return (
-    <div className="flex min-w-0 gap-2">
+    <div className="group relative flex min-w-0 gap-2">
       {item.icon && (
         // Official AION2 item and skill icons are small CDN assets.
         // eslint-disable-next-line @next/next/no-img-element
@@ -392,6 +398,35 @@ function ItemSummary({ item }: { item: DetailItem }) {
           {item.value !== undefined && <span>초월 {item.value}</span>}
         </div>
       </div>
+      {hasTooltip && <SkillTooltip item={item} />}
+    </div>
+  );
+}
+
+function SkillTooltip({ item }: { item: DetailItem }) {
+  return (
+    <div className="pointer-events-none absolute left-0 top-11 z-20 hidden w-72 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg group-hover:block">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="break-words text-sm font-semibold">{item.name}</div>
+          <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+            {item.slot && <span>{formatCategory(item.slot)}</span>}
+            {item.level !== undefined && <span>Lv.{item.level}</span>}
+            {item.requiredLevel !== undefined && (
+              <span>요구 Lv.{item.requiredLevel}</span>
+            )}
+          </div>
+        </div>
+        {item.equipped !== undefined && (
+          <Badge variant={Number(item.equipped) === 1 ? "secondary" : "outline"}>
+            {Number(item.equipped) === 1 ? "장착" : "미장착"}
+          </Badge>
+        )}
+      </div>
+      <p className="mt-3 whitespace-pre-line break-words text-xs leading-5 text-muted-foreground">
+        {item.description ||
+          "공식 응답에 별도 설명문은 없지만, 스킬 레벨과 장착 상태를 확인할 수 있어요."}
+      </p>
     </div>
   );
 }
@@ -426,6 +461,16 @@ function normalizeList(value: unknown): DetailItem[] {
       level: pickText(source, ["level", "enchantLevel", "skillLevel", "gradeLevel"]),
       grade: pickText(source, ["grade", "rarity", "tier", "rank"]),
       icon: pickString(source, ["icon", "iconUrl", "image", "imageUrl"]),
+      description: pickString(source, [
+        "desc",
+        "description",
+        "effect",
+        "tooltip",
+        "content",
+      ]),
+      acquired: pickText(source, ["acquired"]),
+      equipped: pickText(source, ["equip", "equipped"]),
+      requiredLevel: pickText(source, ["needLevel", "requiredLevel"]),
       slot: pickText(source, [
         "slot",
         "part",
@@ -476,4 +521,25 @@ function isSlotMatch(item: DetailItem, aliases: readonly string[]) {
 
 function formatTemperature(value: number | string | null | undefined) {
   return Number(value ?? 36.5).toFixed(1);
+}
+
+function hasSkillTooltip(item: DetailItem) {
+  const category = String(item.slot ?? "").toLowerCase();
+  return (
+    !!item.description ||
+    item.requiredLevel !== undefined ||
+    item.equipped !== undefined ||
+    category === "active" ||
+    category === "passive" ||
+    category === "dp" ||
+    category.includes("stigma")
+  );
+}
+
+function formatCategory(value: string | number) {
+  const category = String(value);
+  if (category.toLowerCase() === "active") return "액티브";
+  if (category.toLowerCase() === "passive") return "패시브";
+  if (category.toLowerCase() === "dp") return "스티그마";
+  return category;
 }
