@@ -884,7 +884,7 @@ create table public.match_requests (
   min_combat_power integer not null default 0 check (min_combat_power >= 0),
   required_classes text[] not null default '{}',
   max_members integer not null default 6 check (max_members between 2 and 12),
-  status text not null default 'waiting' check (status in ('waiting', 'matched', 'cancelled')),
+  status text not null default 'waiting' check (status in ('waiting', 'processing', 'matched', 'cancelled')),
   created_at timestamptz not null default now(),
   matched_at timestamptz
 );
@@ -920,12 +920,15 @@ create table public.match_queue (
   match_request_id uuid references public.match_requests (id) on delete set null,
   room_id uuid references public.rooms (id) on delete set null,
   created_at timestamptz not null default now(),
-  matched_at timestamptz,
-  unique (user_id, dungeon_id, status)
+  matched_at timestamptz
 );
 
 create index match_queue_waiting_idx
   on public.match_queue (status, dungeon_id, requested_stage, created_at);
+
+create unique index match_queue_active_unique_idx
+  on public.match_queue (user_id, dungeon_id)
+  where status = 'waiting';
 
 alter table public.match_queue enable row level security;
 

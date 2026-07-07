@@ -30,6 +30,7 @@ type MatchRequest = {
   required_classes: string[];
   max_members: number;
   invited_friend_ids?: string[];
+  created_at?: string;
 };
 
 type ExistingMatch = {
@@ -337,7 +338,7 @@ async function tryCompleteMatch(
     .eq("id", request.id)
     .eq("status", "waiting")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
     )
     .maybeSingle();
 
@@ -355,7 +356,13 @@ async function tryCompleteMatch(
     } | null;
     const roomCode = await getRoomCode(admin, existing?.room_id);
     if (roomCode) return { matched: true, roomCode };
-    return { matched: false, waitingCount: 0, needed: request.max_members - 1 };
+    return {
+      matched: false,
+      active: false,
+      state: "idle" satisfies MatchState,
+      waitingCount: 0,
+      needed: request.max_members - 1,
+    };
   }
 
   const activeRequest = claimedRequest as MatchRequest;
@@ -388,7 +395,15 @@ async function tryCompleteMatch(
       .update({ status: "waiting" } as unknown as never)
       .eq("id", activeRequest.id)
       .eq("status", "processing");
-    return { matched: false, waitingCount: candidates.length, needed };
+    return {
+      matched: false,
+      active: true,
+      state: "waiting" satisfies MatchState,
+      role: "leader",
+      waitingCount: candidates.length,
+      needed,
+      since: activeRequest.created_at,
+    };
   }
 
   const chosenQueueIds = chosen.map(({ row }) => row.id);
@@ -407,7 +422,15 @@ async function tryCompleteMatch(
         .update({ status: "waiting" } as unknown as never)
         .eq("id", activeRequest.id)
         .eq("status", "processing");
-      return { matched: false, waitingCount: Math.max(0, candidates.length - 1), needed };
+      return {
+        matched: false,
+        active: true,
+        state: "waiting" satisfies MatchState,
+        role: "leader",
+        waitingCount: Math.max(0, candidates.length - 1),
+        needed,
+        since: activeRequest.created_at,
+      };
     }
   }
 
@@ -455,15 +478,13 @@ async function getMatchStatus(
   const existing = await findExistingMatch(admin, userId, matchedAfter);
   if (existing.matched) return { ...existing, state: "matched" satisfies MatchState, active: false };
 
-  let requestQuery = admin
+  const requestQuery = admin
     .from("match_requests")
     .select("id, dungeon_id, required_stage, min_combat_power, max_members, created_at, status")
     .eq("leader_id", userId)
     .in("status", ["waiting", "processing", "cancelled"])
     .order("created_at", { ascending: false })
     .limit(1);
-
-  if (matchedAfter) requestQuery = requestQuery.gte("created_at", matchedAfter);
 
   const { data: request } = await requestQuery
     .maybeSingle();
@@ -509,15 +530,13 @@ async function getMatchStatus(
     }
   }
 
-  let queueQuery = admin
+  const queueQuery = admin
     .from("match_queue")
     .select("created_at, status")
     .eq("user_id", userId)
     .in("status", ["waiting", "cancelled"])
     .order("created_at", { ascending: false })
     .limit(1);
-
-  if (matchedAfter) queueQuery = queueQuery.gte("created_at", matchedAfter);
 
   const { data: queue } = await queueQuery
     .maybeSingle();
@@ -583,7 +602,7 @@ export async function DELETE() {
 
   if (!user) return jsonError("로그인이 필요합니다.", 401);
 
-  await Promise.all([
+  const [queueCancel, requestCancel] = await Promise.all([
     admin
       .from("match_queue")
       .update({ status: "cancelled" } as unknown as never)
@@ -595,6 +614,14 @@ export async function DELETE() {
       .eq("leader_id", user.id)
       .in("status", ["waiting", "processing"]),
   ]);
+
+  if (queueCancel.error || requestCancel.error) {
+    return jsonError(
+      "매칭 취소에 실패했습니다: " +
+        (queueCancel.error?.message ?? requestCancel.error?.message ?? ""),
+      500,
+    );
+  }
 
   return NextResponse.json({
     ok: true,
@@ -734,11 +761,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await admin
+    const { error: cancelRequestError } = await admin
       .from("match_requests")
       .update({ status: "cancelled" } as unknown as never)
       .eq("leader_id", user.id)
       .in("status", ["waiting", "processing"]);
+
+    if (cancelRequestError) {
+      return jsonError("기존 매칭 요청 정리에 실패했습니다: " + cancelRequestError.message, 500);
+    }
 
     const { data: matchRequest, error } = await admin
       .from("match_requests")
@@ -753,7 +784,7 @@ export async function POST(request: NextRequest) {
         invited_friend_ids: invitedFriendIds,
       } as unknown as never)
       .select(
-        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids",
+        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
       )
       .single();
 
@@ -765,23 +796,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   }
 
-  await admin
+  const { error: cancelQueueError } = await admin
     .from("match_queue")
     .update({ status: "cancelled" } as unknown as never)
     .eq("user_id", user.id)
     .eq("status", "waiting");
 
-  const { error: queueError } = await admin.from("match_queue").upsert(
+  if (cancelQueueError) {
+    return jsonError("기존 대기열 정리에 실패했습니다: " + cancelQueueError.message, 500);
+  }
+
+  const { data: queueEntry, error: queueError } = await admin.from("match_queue").insert(
     {
       user_id: user.id,
       dungeon_id: dungeonId,
       character_row_id: selectedCharacter.id,
       requested_stage: stage,
       status: "waiting",
-      created_at: new Date().toISOString(),
     } as unknown as never,
-    { onConflict: "user_id,dungeon_id,status" },
-  );
+  )
+    .select("created_at")
+    .single();
 
   if (queueError) {
     return jsonError("대기열 등록에 실패했습니다: " + queueError.message, 500);
@@ -812,5 +847,7 @@ export async function POST(request: NextRequest) {
     matched: false,
     active: true,
     state: "waiting" satisfies MatchState,
+    role: "member",
+    since: (queueEntry as { created_at: string } | null)?.created_at,
   });
 }

@@ -288,6 +288,10 @@ export function MatchingPanel({
         return;
       }
 
+      if (result.since) {
+        matchSessionStartedAt.current = result.since;
+      }
+
       setMatchStatus({
         matched: false,
         active: true,
@@ -295,7 +299,7 @@ export function MatchingPanel({
         role: mode,
         waitingCount: result.waitingCount,
         needed: result.needed,
-        since: new Date().toISOString(),
+        since: result.since,
       });
 
       if (mode === "leader") {
@@ -305,7 +309,6 @@ export function MatchingPanel({
       } else {
         toast.success("대기열에 등록했습니다. 조건이 맞는 파티가 생기면 자동으로 연결됩니다.");
       }
-      router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "매칭 요청에 실패했습니다.");
     } finally {
@@ -317,6 +320,7 @@ export function MatchingPanel({
     setCancelling(true);
     try {
       await cancelMatch();
+      matchSessionStartedAt.current = new Date().toISOString();
       setMatchStatus(null);
       toast.success("매칭 대기를 취소했습니다.");
     } catch (error) {
