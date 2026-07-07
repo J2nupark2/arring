@@ -37,6 +37,8 @@ type ExistingMatch = {
   roomCode?: string;
 };
 
+type MatchState = "idle" | "waiting" | "processing" | "matched" | "cancelled";
+
 type Candidate = {
   row: {
     id: string;
@@ -389,6 +391,26 @@ async function tryCompleteMatch(
     return { matched: false, waitingCount: candidates.length, needed };
   }
 
+  const chosenQueueIds = chosen.map(({ row }) => row.id);
+  if (chosenQueueIds.length > 0) {
+    const { data: stillWaitingQueues, error: waitingQueueError } = await admin
+      .from("match_queue")
+      .select("id")
+      .in("id", chosenQueueIds)
+      .eq("status", "waiting");
+
+    if (waitingQueueError) throw new Error(waitingQueueError.message);
+
+    if ((stillWaitingQueues ?? []).length !== chosenQueueIds.length) {
+      await admin
+        .from("match_requests")
+        .update({ status: "waiting" } as unknown as never)
+        .eq("id", activeRequest.id)
+        .eq("status", "processing");
+      return { matched: false, waitingCount: Math.max(0, candidates.length - 1), needed };
+    }
+  }
+
   const room = await createRoom(
     admin,
     leaderProfile as Profile,
@@ -403,20 +425,24 @@ async function tryCompleteMatch(
       room_id: room.id,
       matched_at: new Date().toISOString(),
     } as unknown as never)
-    .eq("id", activeRequest.id);
+    .eq("id", activeRequest.id)
+    .eq("status", "processing");
 
-  await admin
-    .from("match_queue")
-    .update({
-      status: "matched",
-      match_request_id: activeRequest.id,
-      room_id: room.id,
-      matched_at: new Date().toISOString(),
-    } as unknown as never)
-    .in(
-      "id",
-      chosen.map(({ row }) => row.id),
-    );
+  if (chosenQueueIds.length > 0) {
+    await admin
+      .from("match_queue")
+      .update({
+        status: "matched",
+        match_request_id: activeRequest.id,
+        room_id: room.id,
+        matched_at: new Date().toISOString(),
+      } as unknown as never)
+      .in(
+        "id",
+        chosenQueueIds,
+      )
+      .eq("status", "waiting");
+  }
 
   return { matched: true, roomCode: room.code };
 }
@@ -427,15 +453,19 @@ async function getMatchStatus(
   matchedAfter?: string | null,
 ) {
   const existing = await findExistingMatch(admin, userId, matchedAfter);
-  if (existing.matched) return existing;
+  if (existing.matched) return { ...existing, state: "matched" satisfies MatchState, active: false };
 
-  const { data: request } = await admin
+  let requestQuery = admin
     .from("match_requests")
     .select("id, dungeon_id, required_stage, min_combat_power, max_members, created_at, status")
     .eq("leader_id", userId)
-    .in("status", ["waiting", "processing"])
+    .in("status", ["waiting", "processing", "cancelled"])
     .order("created_at", { ascending: false })
-    .limit(1)
+    .limit(1);
+
+  if (matchedAfter) requestQuery = requestQuery.gte("created_at", matchedAfter);
+
+  const { data: request } = await requestQuery
     .maybeSingle();
 
   if (request) {
@@ -445,47 +475,75 @@ async function getMatchStatus(
       min_combat_power: number;
       max_members: number;
       created_at: string;
-      status: string;
+      status: MatchState;
     };
-    const { count } = await admin
-      .from("match_queue")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "waiting")
-      .eq("dungeon_id", activeRequest.dungeon_id)
-      .gte("requested_stage", activeRequest.required_stage);
 
-    return {
-      matched: false,
-      active: true,
-      role: "leader",
-      waitingCount: count ?? 0,
-      needed: Math.max(0, activeRequest.max_members - 1),
-      since: activeRequest.created_at,
-      status: activeRequest.status,
-    };
+    if (activeRequest.status === "cancelled") {
+      return {
+        matched: false,
+        active: false,
+        state: "cancelled" satisfies MatchState,
+        role: "leader",
+        since: activeRequest.created_at,
+      };
+    }
+
+    if (activeRequest.status === "waiting" || activeRequest.status === "processing") {
+      const { count } = await admin
+        .from("match_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "waiting")
+        .eq("dungeon_id", activeRequest.dungeon_id)
+        .gte("requested_stage", activeRequest.required_stage);
+
+      return {
+        matched: false,
+        active: true,
+        state: activeRequest.status,
+        role: "leader",
+        waitingCount: count ?? 0,
+        needed: Math.max(0, activeRequest.max_members - 1),
+        since: activeRequest.created_at,
+        status: activeRequest.status,
+      };
+    }
   }
 
-  const { data: queue } = await admin
+  let queueQuery = admin
     .from("match_queue")
     .select("created_at, status")
     .eq("user_id", userId)
-    .eq("status", "waiting")
+    .in("status", ["waiting", "cancelled"])
     .order("created_at", { ascending: false })
-    .limit(1)
+    .limit(1);
+
+  if (matchedAfter) queueQuery = queueQuery.gte("created_at", matchedAfter);
+
+  const { data: queue } = await queueQuery
     .maybeSingle();
 
   if (queue) {
-    const activeQueue = queue as { created_at: string; status: string };
+    const activeQueue = queue as { created_at: string; status: MatchState };
+    if (activeQueue.status === "cancelled") {
+      return {
+        matched: false,
+        active: false,
+        state: "cancelled" satisfies MatchState,
+        role: "member",
+        since: activeQueue.created_at,
+      };
+    }
     return {
       matched: false,
       active: true,
+      state: "waiting" satisfies MatchState,
       role: "member",
       since: activeQueue.created_at,
       status: activeQueue.status,
     };
   }
 
-  return { matched: false, active: false };
+  return { matched: false, active: false, state: "idle" satisfies MatchState };
 }
 
 export async function GET(request: NextRequest) {
@@ -501,7 +559,11 @@ export async function GET(request: NextRequest) {
 
   if (!user) return jsonError("로그인이 필요합니다.", 401);
   if (user.is_anonymous) {
-    return NextResponse.json({ matched: false, active: false });
+    return NextResponse.json({
+      matched: false,
+      active: false,
+      state: "idle" satisfies MatchState,
+    });
   }
 
   const matchedAfter = request.nextUrl.searchParams.get("since");
@@ -531,10 +593,15 @@ export async function DELETE() {
       .from("match_requests")
       .update({ status: "cancelled" } as unknown as never)
       .eq("leader_id", user.id)
-      .eq("status", "waiting"),
+      .in("status", ["waiting", "processing"]),
   ]);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    matched: false,
+    active: false,
+    state: "cancelled" satisfies MatchState,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -741,5 +808,9 @@ export async function POST(request: NextRequest) {
     if (result.matched) return NextResponse.json(result);
   }
 
-  return NextResponse.json({ matched: false });
+  return NextResponse.json({
+    matched: false,
+    active: true,
+    state: "waiting" satisfies MatchState,
+  });
 }

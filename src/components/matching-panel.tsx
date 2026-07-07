@@ -47,6 +47,7 @@ type MatchStatus = {
   matched: boolean;
   roomCode?: string;
   active?: boolean;
+  state?: "idle" | "waiting" | "processing" | "matched" | "cancelled";
   role?: "leader" | "member";
   waitingCount?: number;
   needed?: number;
@@ -104,7 +105,7 @@ async function requestMatch(body: {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "매칭 요청에 실패했습니다.");
-  return data as { matched: boolean; roomCode?: string; waitingCount?: number; needed?: number };
+  return data as MatchStatus;
 }
 
 async function fetchMatchStatus(since: string) {
@@ -178,7 +179,11 @@ export function MatchingPanel({
         return;
       }
 
-      setMatchStatus(status.active ? status : null);
+      setMatchStatus(
+        status.state === "waiting" || status.state === "processing" || status.active
+          ? status
+          : null,
+      );
     }
 
     void refreshStatus();
@@ -286,6 +291,7 @@ export function MatchingPanel({
       setMatchStatus({
         matched: false,
         active: true,
+        state: "waiting",
         role: mode,
         waitingCount: result.waitingCount,
         needed: result.needed,
@@ -539,7 +545,7 @@ function MatchFloatingStatus({
           type="button"
           variant="outline"
           size="sm"
-          disabled={cancelling || status.status === "processing"}
+          disabled={cancelling}
           onClick={onCancel}
         >
           {cancelling && <Loader2 className="size-3.5 animate-spin" />}
