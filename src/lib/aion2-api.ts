@@ -133,5 +133,9 @@ function isStigmaSkill(skill: unknown) {
   if (!skill || typeof skill !== "object") return false;
   const record = skill as Record<string, unknown>;
   const category = String(record.category ?? record.type ?? "").toLowerCase();
-  return category.includes("stigma") || category.includes("스티그마");
+  return (
+    category === "dp" ||
+    category.includes("stigma") ||
+    category.includes("스티그마")
+  );
 }

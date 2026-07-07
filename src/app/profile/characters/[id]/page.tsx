@@ -358,7 +358,11 @@ function isPassiveSkill(item: DetailItem) {
 
 function isStigmaSkill(item: DetailItem) {
   const category = String(item.slot ?? "").toLowerCase();
-  return category.includes("stigma") || category.includes("스티그마");
+  return (
+    category === "dp" ||
+    category.includes("stigma") ||
+    category.includes("스티그마")
+  );
 }
 
 function ItemSummary({ item }: { item: DetailItem }) {
