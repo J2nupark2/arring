@@ -43,7 +43,11 @@ create table public.profiles (
   current_room_code text,
   is_admin boolean not null default false,
   char_class text,
-  combat_power integer
+  combat_power integer,
+  aion2_character_id text,
+  aion2_character_name text,
+  aion2_server_id integer,
+  aion2_synced_at timestamptz
 );
 
 alter table public.profiles enable row level security;
@@ -65,14 +69,18 @@ create policy "users can update own profile"
 -- on rooms below — narrow the table-level grant, expose presence only
 -- through list_friends() (SECURITY DEFINER, friends-only).
 revoke select on public.profiles from authenticated, anon;
-grant select (id, nickname, server, created_at, is_admin, char_class, combat_power)
-  on public.profiles to authenticated;
+grant select (
+  id, nickname, server, created_at, is_admin, char_class, combat_power,
+  aion2_character_id, aion2_character_name, aion2_server_id, aion2_synced_at
+) on public.profiles to authenticated;
 
 -- Same trap for UPDATE: the default table-level grant would let any user
 -- set is_admin=true on their own row (RLS restricts WHICH rows, not which
--- columns). Narrow it to the columns users may legitimately edit.
+-- columns). char_class/combat_power are also excluded — they come from the
+-- official site via the /api/aion2/link route (service role), so users
+-- can't fake their combat power.
 revoke update on public.profiles from authenticated, anon;
-grant update (nickname, server, char_class, combat_power) on public.profiles to authenticated;
+grant update (nickname, server) on public.profiles to authenticated;
 
 -- Auto-create a profile row whenever a new auth user signs up.
 create function public.handle_new_user()

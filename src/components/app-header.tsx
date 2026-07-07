@@ -47,6 +47,9 @@ export function AppHeader({
           <LinkButton href="/party" variant="ghost">
             파티 구하기
           </LinkButton>
+          <LinkButton href="/profile" variant="ghost">
+            내 프로필
+          </LinkButton>
           {showFriends && (
             <Sheet>
               <SheetTrigger asChild>

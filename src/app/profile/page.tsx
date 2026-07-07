@@ -1,0 +1,59 @@
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { AppHeader } from "@/components/app-header";
+import { Aion2LinkCard } from "@/components/profile/aion2-link-card";
+
+export const dynamic = "force-dynamic";
+
+export default async function ProfilePage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect(`/guest?next=${encodeURIComponent("/profile")}`);
+  }
+  // Guests can't link characters (matching requires an account anyway).
+  if (user.is_anonymous) {
+    redirect("/party");
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select(
+      "nickname, server, char_class, combat_power, aion2_character_id, aion2_character_name, aion2_server_id, aion2_synced_at",
+    )
+    .eq("id", user.id)
+    .single();
+
+  return (
+    <>
+      <AppHeader />
+      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">내 프로필</h1>
+          <p className="text-sm text-muted-foreground">
+            아이온2 캐릭터를 연동하면 투력과 클래스가 공식 홈페이지 기준으로
+            자동 반영됩니다.
+          </p>
+        </div>
+        <Aion2LinkCard
+          linked={
+            profile?.aion2_character_id
+              ? {
+                  characterId: profile.aion2_character_id,
+                  characterName: profile.aion2_character_name ?? "",
+                  serverId: profile.aion2_server_id ?? 0,
+                  server: profile.server ?? "",
+                  charClass: profile.char_class ?? "",
+                  combatPower: profile.combat_power ?? 0,
+                  syncedAt: profile.aion2_synced_at,
+                }
+              : null
+          }
+        />
+      </main>
+    </>
+  );
+}
