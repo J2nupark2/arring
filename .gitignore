@@ -46,6 +46,7 @@ next-env.d.ts
 deno.lock
 *.log
 .claude/scheduled_tasks.lock
+supabase/.temp/
 
 .vercel
 .env*

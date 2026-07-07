@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { Dungeon } from "@/lib/aion2";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
 import { FriendSidebar } from "@/components/friends/friend-sidebar";
 import { FriendsProvider } from "@/components/friends/friends-provider";
+import { MatchingPanel } from "@/components/matching-panel";
 import { PartyRefresh } from "@/components/party-refresh";
 import { PartyRoomList } from "@/components/party-room-list";
 import { CreateRoomForm, JoinByCodeForm } from "@/components/room-forms";
@@ -38,19 +40,35 @@ export default async function PartyPage({
 
   // list_public_rooms() doesn't depend on the caller's identity, so fetch
   // it alongside getUser() instead of waterfalling two round trips.
-  const [
-    {
-      data: { user },
-    },
-    { data: rooms },
-  ] = await Promise.all([
-    supabase.auth.getUser(),
-    supabase.rpc("list_public_rooms"),
-  ]);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
     redirect(`/guest?next=${encodeURIComponent("/party")}`);
   }
+
+  const [{ data: rooms }, { data: dungeons }, { data: profile }, { data: progress }] =
+    await Promise.all([
+      supabase.rpc("list_public_rooms"),
+      supabase
+        .from("dungeons")
+        .select("id, category, name, gimmick_stages, sort_order, is_active")
+        .eq("is_active", true)
+        .order("category")
+        .order("sort_order"),
+      supabase
+        .from("profiles")
+        .select(
+          "char_class, combat_power, manner_temperature, trust_temperature",
+        )
+        .eq("id", user.id)
+        .single(),
+      supabase
+        .from("dungeon_progress")
+        .select("dungeon_id, stage")
+        .eq("user_id", user.id),
+    ]);
 
   const { error, welcome } = await searchParams;
   const isGuest = user.is_anonymous ?? false;
@@ -65,7 +83,7 @@ export default async function PartyPage({
             <div>
               <h1 className="text-2xl font-bold tracking-tight">파티 구하기</h1>
               <p className="text-sm text-muted-foreground">
-                모집 중인 파티에 바로 입장하거나, 직접 파티를 모집해보세요.
+                조건과 진도를 기준으로 자동매칭하고, 방장은 마이크로 리딩합니다.
               </p>
             </div>
             <PartyRefresh />
@@ -86,10 +104,29 @@ export default async function PartyPage({
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
 
+          <MatchingPanel
+            dungeons={(dungeons ?? []) as Dungeon[]}
+            profile={
+              profile
+                ? {
+                    charClass: profile.char_class,
+                    combatPower: profile.combat_power,
+                    mannerTemperature: profile.manner_temperature,
+                    trustTemperature: profile.trust_temperature,
+                  }
+                : null
+            }
+            progress={(progress ?? []).map((item) => ({
+              dungeonId: item.dungeon_id,
+              stage: item.stage,
+            }))}
+            isGuest={isGuest}
+          />
+
           <div className="grid gap-6 sm:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>통화방 만들기</CardTitle>
+                <CardTitle>수동 통화방 만들기</CardTitle>
                 <CardDescription>
                   공개로 만들면 이 목록에 노출되고, 비공개로 만들면 코드로만
                   입장할 수 있어요. 비밀번호도 선택적으로 걸 수 있습니다.
