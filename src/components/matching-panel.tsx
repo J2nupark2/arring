@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -43,6 +43,17 @@ type MatchCharacter = {
   isPrimary: boolean;
 };
 
+type MatchStatus = {
+  matched: boolean;
+  roomCode?: string;
+  active?: boolean;
+  role?: "leader" | "member";
+  waitingCount?: number;
+  needed?: number;
+  since?: string;
+  status?: string;
+};
+
 function stageLabel(dungeon: Dungeon | undefined, stage: number) {
   if (!dungeon || stage <= 0) return "처음";
   return dungeon.gimmick_stages[stage - 1] ?? "클리어";
@@ -68,8 +79,8 @@ function combatPowerFromK(value: number) {
   return Math.max(0, Math.trunc(value || 0) * 1000);
 }
 
-function createClassSlots(count: number, preferredClass?: string | null) {
-  return Array.from({ length: count }, () => preferredClass ?? "");
+function createClassSlots(count: number) {
+  return Array.from({ length: count }, () => "");
 }
 
 function createInviteSlots(count: number) {
@@ -94,6 +105,20 @@ async function requestMatch(body: {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "매칭 요청에 실패했습니다.");
   return data as { matched: boolean; roomCode?: string; waitingCount?: number; needed?: number };
+}
+
+async function fetchMatchStatus() {
+  const res = await fetch("/api/matching", { method: "GET" });
+  if (!res.ok) return null;
+  return (await res.json()) as MatchStatus;
+}
+
+async function cancelMatch() {
+  const res = await fetch("/api/matching", { method: "DELETE" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.error ?? "매칭 취소에 실패했습니다.");
+  }
 }
 
 export function MatchingPanel({
@@ -123,19 +148,43 @@ export function MatchingPanel({
     defaultMinCombatPowerK(selectedCharacter?.combatPower ?? profile?.combatPower),
   );
   const [requiredClasses, setRequiredClasses] = useState<string[]>(
-    createClassSlots(memberSlotCountForDungeon(selectedDungeon), selectedCharacter?.className),
+    createClassSlots(memberSlotCountForDungeon(selectedDungeon)),
   );
   const [invitedSlots, setInvitedSlots] = useState<(Friend | null)[]>(
     createInviteSlots(memberSlotCountForDungeon(selectedDungeon)),
   );
   const [pending, setPending] = useState(false);
+  const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const maxMembers = partySizeForDungeon(selectedDungeon);
   const hasLinkedCharacter = characters.length > 0 || (!!profile?.charClass && !!profile.combatPower);
-  const stages = useMemo(() => {
-    const items = selectedDungeon?.gimmick_stages ?? [];
-    return ["처음", ...items, "클리어"];
-  }, [selectedDungeon]);
+  const stages = ["처음", ...(selectedDungeon?.gimmick_stages ?? []), "클리어"];
+
+  useEffect(() => {
+    if (isGuest) return;
+
+    let active = true;
+    async function refreshStatus() {
+      const status = await fetchMatchStatus();
+      if (!active || !status) return;
+
+      if (status.matched && status.roomCode) {
+        toast.success("파티가 매칭됐습니다. 방으로 이동합니다.");
+        router.push(`/room/${status.roomCode}`);
+        return;
+      }
+
+      setMatchStatus(status.active ? status : null);
+    }
+
+    void refreshStatus();
+    const id = window.setInterval(refreshStatus, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [isGuest, router]);
 
   function changeDungeon(nextDungeonId: string) {
     setDungeonId(nextDungeonId);
@@ -146,7 +195,7 @@ export function MatchingPanel({
       const nextCount = memberSlotCountForDungeon(nextDungeon);
       return Array.from(
         { length: nextCount },
-        (_, index) => current[index] ?? selectedCharacter?.className ?? "",
+        (_, index) => current[index] ?? "",
       );
     });
     setInvitedSlots((current) => {
@@ -230,6 +279,15 @@ export function MatchingPanel({
         return;
       }
 
+      setMatchStatus({
+        matched: false,
+        active: true,
+        role: mode,
+        waitingCount: result.waitingCount,
+        needed: result.needed,
+        since: new Date().toISOString(),
+      });
+
       if (mode === "leader") {
         toast.success(
           `매칭 요청을 열었습니다. 현재 조건 충족 대기 ${result.waitingCount ?? 0}/${result.needed ?? maxMembers - 1}명`,
@@ -245,9 +303,23 @@ export function MatchingPanel({
     }
   }
 
+  async function onCancelMatch() {
+    setCancelling(true);
+    try {
+      await cancelMatch();
+      setMatchStatus(null);
+      toast.success("매칭 대기를 취소했습니다.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "매칭 취소에 실패했습니다.");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   return (
-    <Card>
-      <CardHeader>
+    <>
+      <Card>
+        <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
@@ -265,8 +337,8 @@ export function MatchingPanel({
             </div>
           )}
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
         {isGuest && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
             <span>자동매칭은 평가와 캐릭터 연동이 필요해서 회원만 이용할 수 있어요.</span>
@@ -419,8 +491,58 @@ export function MatchingPanel({
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+      {matchStatus?.active && (
+        <MatchFloatingStatus
+          status={matchStatus}
+          cancelling={cancelling}
+          onCancel={onCancelMatch}
+        />
+      )}
+    </>
+  );
+}
+
+function MatchFloatingStatus({
+  status,
+  cancelling,
+  onCancel,
+}: {
+  status: MatchStatus;
+  cancelling: boolean;
+  onCancel: () => void;
+}) {
+  const isLeader = status.role === "leader";
+  const waitingCount = status.waitingCount ?? 0;
+  const needed = status.needed ?? 0;
+
+  return (
+    <div className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-md rounded-lg border bg-card/95 p-4 text-card-foreground shadow-xl backdrop-blur">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Loader2 className="size-4 animate-spin text-violet-400" />
+            매칭 대기 중
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {isLeader
+              ? `조건에 맞는 파티원을 찾는 중입니다. ${waitingCount}/${needed}명`
+              : "조건에 맞는 파티가 열리면 자동으로 방에 입장합니다."}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={cancelling || status.status === "processing"}
+          onClick={onCancel}
+        >
+          {cancelling && <Loader2 className="size-3.5 animate-spin" />}
+          취소
+        </Button>
+      </div>
+    </div>
   );
 }
 

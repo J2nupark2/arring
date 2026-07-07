@@ -32,6 +32,11 @@ type MatchRequest = {
   invited_friend_ids?: string[];
 };
 
+type ExistingMatch = {
+  matched: boolean;
+  roomCode?: string;
+};
+
 type Candidate = {
   row: {
     id: string;
@@ -64,6 +69,58 @@ function score(profile: Profile) {
 
 function partySizeForCategory(category: string | null | undefined) {
   return category === "성역" ? 10 : 5;
+}
+
+async function getRoomCode(admin: AdminClient, roomId: string | null | undefined) {
+  if (!roomId) return undefined;
+  const { data } = await admin
+    .from("rooms")
+    .select("code, status, expires_at")
+    .eq("id", roomId)
+    .maybeSingle();
+  const room = data as { code: string; status: string; expires_at: string } | null;
+  if (!room || room.status !== "active") return undefined;
+  if (new Date(room.expires_at).getTime() < Date.now()) return undefined;
+  return room.code;
+}
+
+async function findExistingMatch(
+  admin: AdminClient,
+  userId: string,
+): Promise<ExistingMatch> {
+  const { data: queueRow } = await admin
+    .from("match_queue")
+    .select("room_id")
+    .eq("user_id", userId)
+    .eq("status", "matched")
+    .gte("matched_at", new Date(Date.now() - 10 * 60 * 1000).toISOString())
+    .order("matched_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const queueRoomCode = await getRoomCode(
+    admin,
+    (queueRow as { room_id: string | null } | null)?.room_id,
+  );
+  if (queueRoomCode) return { matched: true, roomCode: queueRoomCode };
+
+  const { data: requestRow } = await admin
+    .from("match_requests")
+    .select("room_id")
+    .eq("leader_id", userId)
+    .eq("status", "matched")
+    .gte("matched_at", new Date(Date.now() - 10 * 60 * 1000).toISOString())
+    .order("matched_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const requestRoomCode = await getRoomCode(
+    admin,
+    (requestRow as { room_id: string | null } | null)?.room_id,
+  );
+  if (requestRoomCode) return { matched: true, roomCode: requestRoomCode };
+
+  return { matched: false };
 }
 
 async function getUserCharacter(
@@ -206,8 +263,6 @@ async function findCandidates(
   const characterById = new Map(
     ((characters ?? []) as CharacterRow[]).map((character) => [character.id, character]),
   );
-  const requiredClasses = request.required_classes ?? [];
-
   return rows
     .map((row) => ({
       row,
@@ -218,9 +273,6 @@ async function findCandidates(
       if (!profile || !character) return false;
       if (invitedFriendIds.has(row.user_id)) return false;
       if (character.combat_power < request.min_combat_power) return false;
-      if (requiredClasses.length > 0 && !requiredClasses.includes(character.class_name)) {
-        return false;
-      }
       return true;
     })
     .sort((a, b) => score(b.profile!) - score(a.profile!))
@@ -275,37 +327,70 @@ async function tryCompleteMatch(
   admin: AdminClient,
   request: MatchRequest,
 ) {
+  const { data: claimedRequest, error: claimError } = await admin
+    .from("match_requests")
+    .update({ status: "processing" } as unknown as never)
+    .eq("id", request.id)
+    .eq("status", "waiting")
+    .select(
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids",
+    )
+    .maybeSingle();
+
+  if (claimError) throw new Error(claimError.message);
+
+  if (!claimedRequest) {
+    const { data: existingRequest } = await admin
+      .from("match_requests")
+      .select("room_id, status")
+      .eq("id", request.id)
+      .maybeSingle();
+    const existing = existingRequest as {
+      room_id: string | null;
+      status: string;
+    } | null;
+    const roomCode = await getRoomCode(admin, existing?.room_id);
+    if (roomCode) return { matched: true, roomCode };
+    return { matched: false, waitingCount: 0, needed: request.max_members - 1 };
+  }
+
+  const activeRequest = claimedRequest as MatchRequest;
   const { data: leaderProfile, error: leaderError } = await admin
     .from("profiles")
     .select(
       "id, nickname, server, manner_temperature, trust_temperature",
     )
-    .eq("id", request.leader_id)
+    .eq("id", activeRequest.leader_id)
     .single();
 
   if (leaderError || !leaderProfile) {
     throw new Error(leaderError?.message ?? "파티장 정보를 찾을 수 없습니다.");
   }
 
-  const candidates = await findCandidates(admin, request);
+  const candidates = await findCandidates(admin, activeRequest);
   const needed = Math.max(
     0,
-    request.max_members - 1 - (request.invited_friend_ids?.length ?? 0),
+    activeRequest.max_members - 1 - (activeRequest.invited_friend_ids?.length ?? 0),
   );
   const chosen = selectCandidatesForSlots(
     candidates,
-    request.required_classes ?? [],
+    activeRequest.required_classes ?? [],
     needed,
   );
 
   if (!chosen) {
+    await admin
+      .from("match_requests")
+      .update({ status: "waiting" } as unknown as never)
+      .eq("id", activeRequest.id)
+      .eq("status", "processing");
     return { matched: false, waitingCount: candidates.length, needed };
   }
 
   const room = await createRoom(
     admin,
     leaderProfile as Profile,
-    request,
+    activeRequest,
     chosen.map(({ row }) => row.user_id),
   );
 
@@ -316,13 +401,13 @@ async function tryCompleteMatch(
       room_id: room.id,
       matched_at: new Date().toISOString(),
     } as unknown as never)
-    .eq("id", request.id);
+    .eq("id", activeRequest.id);
 
   await admin
     .from("match_queue")
     .update({
       status: "matched",
-      match_request_id: request.id,
+      match_request_id: activeRequest.id,
       room_id: room.id,
       matched_at: new Date().toISOString(),
     } as unknown as never)
@@ -332,6 +417,117 @@ async function tryCompleteMatch(
     );
 
   return { matched: true, roomCode: room.code };
+}
+
+async function getMatchStatus(admin: AdminClient, userId: string) {
+  const existing = await findExistingMatch(admin, userId);
+  if (existing.matched) return existing;
+
+  const { data: request } = await admin
+    .from("match_requests")
+    .select("id, dungeon_id, required_stage, min_combat_power, max_members, created_at, status")
+    .eq("leader_id", userId)
+    .in("status", ["waiting", "processing"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (request) {
+    const activeRequest = request as {
+      dungeon_id: string;
+      required_stage: number;
+      min_combat_power: number;
+      max_members: number;
+      created_at: string;
+      status: string;
+    };
+    const { count } = await admin
+      .from("match_queue")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "waiting")
+      .eq("dungeon_id", activeRequest.dungeon_id)
+      .gte("requested_stage", activeRequest.required_stage);
+
+    return {
+      matched: false,
+      active: true,
+      role: "leader",
+      waitingCount: count ?? 0,
+      needed: Math.max(0, activeRequest.max_members - 1),
+      since: activeRequest.created_at,
+      status: activeRequest.status,
+    };
+  }
+
+  const { data: queue } = await admin
+    .from("match_queue")
+    .select("created_at, status")
+    .eq("user_id", userId)
+    .eq("status", "waiting")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (queue) {
+    const activeQueue = queue as { created_at: string; status: string };
+    return {
+      matched: false,
+      active: true,
+      role: "member",
+      since: activeQueue.created_at,
+      status: activeQueue.status,
+    };
+  }
+
+  return { matched: false, active: false };
+}
+
+export async function GET() {
+  const admin = getAdmin();
+  if (!admin) {
+    return jsonError("서버에 SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.", 500);
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return jsonError("로그인이 필요합니다.", 401);
+  if (user.is_anonymous) {
+    return NextResponse.json({ matched: false, active: false });
+  }
+
+  return NextResponse.json(await getMatchStatus(admin, user.id));
+}
+
+export async function DELETE() {
+  const admin = getAdmin();
+  if (!admin) {
+    return jsonError("서버에 SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.", 500);
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return jsonError("로그인이 필요합니다.", 401);
+
+  await Promise.all([
+    admin
+      .from("match_queue")
+      .update({ status: "cancelled" } as unknown as never)
+      .eq("user_id", user.id)
+      .eq("status", "waiting"),
+    admin
+      .from("match_requests")
+      .update({ status: "cancelled" } as unknown as never)
+      .eq("leader_id", user.id)
+      .eq("status", "waiting"),
+  ]);
+
+  return NextResponse.json({ ok: true });
 }
 
 export async function POST(request: NextRequest) {
@@ -349,6 +545,9 @@ export async function POST(request: NextRequest) {
   if (user.is_anonymous) {
     return jsonError("자동매칭은 회원가입 후 이용할 수 있습니다.", 403);
   }
+
+  const existingMatch = await findExistingMatch(admin, user.id);
+  if (existingMatch.matched) return NextResponse.json(existingMatch);
 
   let body: {
     role?: "leader" | "member";
@@ -464,6 +663,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    await admin
+      .from("match_requests")
+      .update({ status: "cancelled" } as unknown as never)
+      .eq("leader_id", user.id)
+      .in("status", ["waiting", "processing"]);
+
     const { data: matchRequest, error } = await admin
       .from("match_requests")
       .insert({
@@ -488,6 +693,12 @@ export async function POST(request: NextRequest) {
     const result = await tryCompleteMatch(admin, matchRequest as MatchRequest);
     return NextResponse.json(result);
   }
+
+  await admin
+    .from("match_queue")
+    .update({ status: "cancelled" } as unknown as never)
+    .eq("user_id", user.id)
+    .eq("status", "waiting");
 
   const { error: queueError } = await admin.from("match_queue").upsert(
     {
@@ -521,12 +732,7 @@ export async function POST(request: NextRequest) {
     return jsonError("매칭 탐색에 실패했습니다: " + requestError.message, 500);
   }
 
-  const compatible = ((requests ?? []) as MatchRequest[]).filter((matchRequest) => {
-    const classes = matchRequest.required_classes ?? [];
-    return classes.length === 0 || classes.includes(selectedCharacter.class_name);
-  });
-
-  for (const matchRequest of compatible) {
+  for (const matchRequest of (requests ?? []) as MatchRequest[]) {
     const result = await tryCompleteMatch(admin, matchRequest);
     if (result.matched) return NextResponse.json(result);
   }
