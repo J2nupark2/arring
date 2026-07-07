@@ -7,29 +7,8 @@ import { FriendSidebar } from "@/components/friends/friend-sidebar";
 import { FriendsProvider } from "@/components/friends/friends-provider";
 import { MatchingPanel } from "@/components/matching-panel";
 import { PartyRefresh } from "@/components/party-refresh";
-import { PartyRoomList } from "@/components/party-room-list";
-import { CreateRoomForm, JoinByCodeForm } from "@/components/room-forms";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
-
-type PublicRoom = {
-  id: string;
-  code: string;
-  title: string;
-  max_members: number;
-  created_at: string;
-  creator_nickname: string;
-  creator_server: string | null;
-  member_count: number;
-  has_password?: boolean;
-};
 
 export default async function PartyPage({
   searchParams,
@@ -38,8 +17,6 @@ export default async function PartyPage({
 }) {
   const supabase = await createClient();
 
-  // list_public_rooms() doesn't depend on the caller's identity, so fetch
-  // it alongside getUser() instead of waterfalling two round trips.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -49,14 +26,12 @@ export default async function PartyPage({
   }
 
   const [
-    { data: rooms },
     { data: dungeons },
     { data: profile },
     { data: progress },
     { data: characters },
   ] =
     await Promise.all([
-      supabase.rpc("list_public_rooms"),
       supabase
         .from("dungeons")
         .select("id, category, name, gimmick_stages, sort_order, is_active")
@@ -86,7 +61,6 @@ export default async function PartyPage({
 
   const { error, welcome } = await searchParams;
   const isGuest = user.is_anonymous ?? false;
-  const publicRooms = (rooms ?? []) as PublicRoom[];
 
   return (
     <FriendsProvider isGuest={isGuest}>
@@ -144,34 +118,6 @@ export default async function PartyPage({
             }))}
             isGuest={isGuest}
           />
-
-          <div className="grid gap-6 sm:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>수동 통화방 만들기</CardTitle>
-                <CardDescription>
-                  공개로 만들면 이 목록에 노출되고, 비공개로 만들면 코드로만
-                  입장할 수 있어요. 비밀번호도 선택적으로 걸 수 있습니다.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <CreateRoomForm />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>코드로 입장하기</CardTitle>
-                <CardDescription>
-                  친구에게 받은 6자리 통화방 코드를 입력하세요.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <JoinByCodeForm />
-              </CardContent>
-            </Card>
-          </div>
-
-          <PartyRoomList rooms={publicRooms} />
         </main>
         <FriendSidebar isGuest={isGuest} />
       </div>
