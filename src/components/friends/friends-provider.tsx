@@ -45,6 +45,7 @@ export function FriendsProvider({
     useRoomInvites(isGuest);
   const seenRequestIds = useRef<Set<string> | null>(null);
   const lastUnread = useRef<Map<string, number> | null>(null);
+  const lastOnline = useRef<Map<string, boolean> | null>(null);
   const seenInviteIds = useRef<Set<string> | null>(null);
 
   useEffect(() => {
@@ -73,6 +74,22 @@ export function FriendsProvider({
     }
     lastUnread.current = new Map(
       value.friends.map((f) => [f.user_id, f.unread_count]),
+    );
+  }, [value.friends, isGuest]);
+
+  useEffect(() => {
+    if (isGuest) return;
+
+    if (lastOnline.current) {
+      for (const friend of value.friends) {
+        const wasOnline = lastOnline.current.get(friend.user_id) ?? false;
+        if (!wasOnline && friend.is_online) {
+          toast(`${friend.nickname}님이 로그인했습니다`);
+        }
+      }
+    }
+    lastOnline.current = new Map(
+      value.friends.map((f) => [f.user_id, f.is_online]),
     );
   }, [value.friends, isGuest]);
 

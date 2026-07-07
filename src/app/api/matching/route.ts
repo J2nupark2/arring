@@ -29,6 +29,7 @@ type MatchRequest = {
   min_combat_power: number;
   required_classes: string[];
   max_members: number;
+  invited_friend_ids?: string[];
 };
 
 type Candidate = {
@@ -134,6 +135,19 @@ async function createRoom(
       .insert(participants as unknown as never);
 
     if (participantError) throw new Error(participantError.message);
+
+    const invitedFriendIds = request.invited_friend_ids ?? [];
+    if (invitedFriendIds.length > 0) {
+      const { error: inviteError } = await admin.from("room_invites").insert(
+        invitedFriendIds.map((receiver_id) => ({
+          sender_id: leader.id,
+          receiver_id,
+          room_code: createdRoom.code,
+        })) as unknown as never,
+      );
+      if (inviteError) throw new Error(inviteError.message);
+    }
+
     return createdRoom;
   }
 
@@ -144,6 +158,7 @@ async function findCandidates(
   admin: AdminClient,
   request: MatchRequest,
 ) {
+  const invitedFriendIds = new Set(request.invited_friend_ids ?? []);
   const { data: queueRows, error: queueError } = await admin
     .from("match_queue")
     .select("id, user_id, character_row_id, requested_stage, created_at")
@@ -199,8 +214,9 @@ async function findCandidates(
       profile: profileById.get(row.user_id),
       character: row.character_row_id ? characterById.get(row.character_row_id) : undefined,
     }))
-    .filter(({ profile, character }) => {
+    .filter(({ row, profile, character }) => {
       if (!profile || !character) return false;
+      if (invitedFriendIds.has(row.user_id)) return false;
       if (character.combat_power < request.min_combat_power) return false;
       if (requiredClasses.length > 0 && !requiredClasses.includes(character.class_name)) {
         return false;
@@ -272,7 +288,10 @@ async function tryCompleteMatch(
   }
 
   const candidates = await findCandidates(admin, request);
-  const needed = request.max_members - 1;
+  const needed = Math.max(
+    0,
+    request.max_members - 1 - (request.invited_friend_ids?.length ?? 0),
+  );
   const chosen = selectCandidatesForSlots(
     candidates,
     request.required_classes ?? [],
@@ -339,6 +358,7 @@ export async function POST(request: NextRequest) {
     requiredClasses?: string[];
     maxMembers?: number;
     characterId?: string;
+    invitedFriendIds?: string[];
   };
   try {
     body = await request.json();
@@ -382,6 +402,67 @@ export async function POST(request: NextRequest) {
     const requiredClasses = Array.isArray(body.requiredClasses)
       ? body.requiredClasses.filter((value) => typeof value === "string" && value.trim())
       : [];
+    const invitedFriendIds = Array.isArray(body.invitedFriendIds)
+      ? [...new Set(
+          body.invitedFriendIds.filter(
+            (value) => typeof value === "string" && value.trim(),
+          ),
+        )].slice(0, Math.max(0, maxMembers - 1))
+      : [];
+
+    if (invitedFriendIds.length > 0) {
+      const { data: invitedFriends, error: invitedError } = await admin
+        .from("friend_requests")
+        .select("sender_id, receiver_id")
+        .eq("status", "accepted")
+        .or(
+          `and(sender_id.eq.${user.id},receiver_id.in.(${invitedFriendIds.join(",")})),and(receiver_id.eq.${user.id},sender_id.in.(${invitedFriendIds.join(",")}))`,
+        );
+
+      if (invitedError) {
+        return jsonError("초대 친구 확인에 실패했습니다: " + invitedError.message, 500);
+      }
+
+      const confirmedFriendIds = new Set(
+        ((invitedFriends ?? []) as { sender_id: string; receiver_id: string }[])
+          .map((row) => (row.sender_id === user.id ? row.receiver_id : row.sender_id)),
+      );
+
+      if (invitedFriendIds.some((friendId) => !confirmedFriendIds.has(friendId))) {
+        return jsonError("친구인 사용자만 초대할 수 있습니다.", 400);
+      }
+
+      const { data: friendCharacters, error: characterError } = await admin
+        .from("aion2_characters")
+        .select("user_id, combat_power")
+        .in("user_id", invitedFriendIds)
+        .order("is_primary", { ascending: false })
+        .order("synced_at", { ascending: false });
+
+      if (characterError) {
+        return jsonError("초대 친구 캐릭터 확인에 실패했습니다: " + characterError.message, 500);
+      }
+
+      const characterByUser = new Map<string, { combat_power: number }>();
+      for (const character of (friendCharacters ?? []) as {
+        user_id: string;
+        combat_power: number;
+      }[]) {
+        if (!characterByUser.has(character.user_id)) {
+          characterByUser.set(character.user_id, character);
+        }
+      }
+
+      if (
+        invitedFriendIds.some(
+          (friendId) =>
+            !characterByUser.has(friendId) ||
+            (characterByUser.get(friendId)?.combat_power ?? 0) < minCombatPower,
+        )
+      ) {
+        return jsonError("초대 친구 중 최소투력 조건을 충족하지 못한 사용자가 있습니다.", 400);
+      }
+    }
 
     const { data: matchRequest, error } = await admin
       .from("match_requests")
@@ -393,9 +474,10 @@ export async function POST(request: NextRequest) {
         min_combat_power: minCombatPower,
         required_classes: requiredClasses,
         max_members: maxMembers,
+        invited_friend_ids: invitedFriendIds,
       } as unknown as never)
       .select(
-        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members",
+        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids",
       )
       .single();
 
@@ -426,7 +508,7 @@ export async function POST(request: NextRequest) {
   const { data: requests, error: requestError } = await admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids",
     )
     .eq("status", "waiting")
     .eq("dungeon_id", dungeonId)

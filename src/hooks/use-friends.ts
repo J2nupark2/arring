@@ -13,6 +13,8 @@ export type Friend = {
   is_online: boolean;
   current_room_code: string | null;
   unread_count: number;
+  class_name: string | null;
+  combat_power: number | null;
 };
 
 export type IncomingRequest = {
@@ -48,7 +50,7 @@ export function useFriends(isGuest: boolean) {
   const channelsRef = useRef<RealtimeChannel[]>([]);
 
   useEffect(() => {
-    refresh();
+    void Promise.resolve().then(() => refresh());
     if (isGuest) return;
 
     const id = setInterval(refresh, POLL_MS);

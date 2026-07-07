@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, RadioTower, ShieldCheck, Swords, Users } from "lucide-react";
 import { AION2_CLASSES, type Dungeon } from "@/lib/aion2";
+import { useFriendsContext } from "@/components/friends/friends-provider";
+import type { Friend } from "@/hooks/use-friends";
 import { LinkButton } from "@/components/link-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,12 +60,20 @@ function combatPowerToK(value: number | null | undefined) {
   return Math.max(0, Math.floor((Number(value) || 0) / 1000));
 }
 
+function defaultMinCombatPowerK(value: number | null | undefined) {
+  return Math.max(0, Math.floor(combatPowerToK(value) / 50) * 50);
+}
+
 function combatPowerFromK(value: number) {
   return Math.max(0, Math.trunc(value || 0) * 1000);
 }
 
 function createClassSlots(count: number, preferredClass?: string | null) {
   return Array.from({ length: count }, () => preferredClass ?? "");
+}
+
+function createInviteSlots(count: number) {
+  return Array.from({ length: count }, () => null as Friend | null);
 }
 
 async function requestMatch(body: {
@@ -74,6 +84,7 @@ async function requestMatch(body: {
   requiredClasses?: string[];
   maxMembers?: number;
   characterId?: string;
+  invitedFriendIds?: string[];
 }) {
   const res = await fetch("/api/matching", {
     method: "POST",
@@ -99,6 +110,7 @@ export function MatchingPanel({
   isGuest: boolean;
 }) {
   const router = useRouter();
+  const { friends } = useFriendsContext();
   const [mode, setMode] = useState<"leader" | "member">("member");
   const [dungeonId, setDungeonId] = useState(dungeons[0]?.id ?? "");
   const selectedDungeon = dungeons.find((d) => d.id === dungeonId);
@@ -108,10 +120,13 @@ export function MatchingPanel({
   const selectedCharacter = characters.find((character) => character.id === characterId);
   const [stage, setStage] = useState(savedStage);
   const [minCombatPowerK, setMinCombatPowerK] = useState(
-    combatPowerToK(selectedCharacter?.combatPower ?? profile?.combatPower),
+    defaultMinCombatPowerK(selectedCharacter?.combatPower ?? profile?.combatPower),
   );
   const [requiredClasses, setRequiredClasses] = useState<string[]>(
     createClassSlots(memberSlotCountForDungeon(selectedDungeon), selectedCharacter?.className),
+  );
+  const [invitedSlots, setInvitedSlots] = useState<(Friend | null)[]>(
+    createInviteSlots(memberSlotCountForDungeon(selectedDungeon)),
   );
   const [pending, setPending] = useState(false);
 
@@ -134,6 +149,10 @@ export function MatchingPanel({
         (_, index) => current[index] ?? selectedCharacter?.className ?? "",
       );
     });
+    setInvitedSlots((current) => {
+      const nextCount = memberSlotCountForDungeon(nextDungeon);
+      return Array.from({ length: nextCount }, (_, index) => current[index] ?? null);
+    });
   }
 
   function changeCharacter(nextCharacterId: string) {
@@ -142,7 +161,7 @@ export function MatchingPanel({
       (character) => character.id === nextCharacterId,
     );
     if (!nextCharacter) return;
-    setMinCombatPowerK(combatPowerToK(nextCharacter.combatPower));
+    setMinCombatPowerK(defaultMinCombatPowerK(nextCharacter.combatPower));
   }
 
   function changeClassSlot(index: number, className: string) {
@@ -151,19 +170,58 @@ export function MatchingPanel({
     );
   }
 
+  function assignFriendToSlot(index: number, friend: Friend | null) {
+    setInvitedSlots((current) => {
+      const next = current.map((item) =>
+        item?.user_id === friend?.user_id ? null : item,
+      );
+      next[index] = friend;
+      return next;
+    });
+
+    if (friend?.class_name) {
+      changeClassSlot(index, friend.class_name);
+    }
+  }
+
+  function moveFriendSlot(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return;
+    setInvitedSlots((current) => {
+      const next = [...current];
+      const moving = next[fromIndex] ?? null;
+      next[fromIndex] = next[toIndex] ?? null;
+      next[toIndex] = moving;
+      return next;
+    });
+    setRequiredClasses((current) => {
+      const next = [...current];
+      const moving = next[fromIndex] ?? "";
+      next[fromIndex] = next[toIndex] ?? "";
+      next[toIndex] = moving;
+      return next;
+    });
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!dungeonId || pending) return;
     setPending(true);
     try {
+      const invitedFriendIds = invitedSlots
+        .map((friend) => friend?.user_id)
+        .filter((id): id is string => !!id);
+      const requiredClassesForMatching = requiredClasses.filter(
+        (className, index) => !!className && !invitedSlots[index],
+      );
       const result = await requestMatch({
         role: mode,
         dungeonId,
         characterId,
         stage,
         minCombatPower: combatPowerFromK(minCombatPowerK),
-        requiredClasses: requiredClasses.filter(Boolean),
+        requiredClasses: requiredClassesForMatching,
         maxMembers,
+        invitedFriendIds,
       });
 
       if (result.matched && result.roomCode) {
@@ -337,7 +395,12 @@ export function MatchingPanel({
                   dungeon={selectedDungeon}
                   leaderClass={selectedCharacter?.className}
                   slots={requiredClasses}
+                  invitedSlots={invitedSlots}
+                  friends={friends}
+                  minCombatPower={combatPowerFromK(minCombatPowerK)}
                   onChange={changeClassSlot}
+                  onAssignFriend={assignFriendToSlot}
+                  onMoveFriend={moveFriendSlot}
                 />
               </div>
             </>
@@ -365,31 +428,98 @@ function ClassSlotBoard({
   dungeon,
   leaderClass,
   slots,
+  invitedSlots,
+  friends,
+  minCombatPower,
   onChange,
+  onAssignFriend,
+  onMoveFriend,
 }: {
   dungeon: Dungeon | undefined;
   leaderClass?: string | null;
   slots: string[];
+  invitedSlots: (Friend | null)[];
+  friends: Friend[];
+  minCombatPower: number;
   onChange: (index: number, className: string) => void;
+  onAssignFriend: (index: number, friend: Friend | null) => void;
+  onMoveFriend: (fromIndex: number, toIndex: number) => void;
 }) {
   const firstPartySlots = dungeon?.category === "성역" ? slots.slice(0, 4) : slots;
   const secondPartySlots = dungeon?.category === "성역" ? slots.slice(4, 9) : [];
+  const firstPartyInvites =
+    dungeon?.category === "성역" ? invitedSlots.slice(0, 4) : invitedSlots;
+  const secondPartyInvites =
+    dungeon?.category === "성역" ? invitedSlots.slice(4, 9) : [];
+  const assignedIds = new Set(
+    invitedSlots.map((friend) => friend?.user_id).filter(Boolean),
+  );
+  const availableFriends = friends.filter(
+    (friend) => !assignedIds.has(friend.user_id),
+  );
 
   return (
     <div className="grid gap-3">
+      {availableFriends.length > 0 && (
+        <div className="rounded-md border border-dashed p-3">
+          <div className="mb-2 text-xs font-medium text-muted-foreground">
+            초대할 친구
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {availableFriends.map((friend) => (
+              <button
+                key={friend.user_id}
+                type="button"
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.setData("friend-id", friend.user_id);
+                  event.dataTransfer.effectAllowed = "move";
+                }}
+                className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs transition-colors hover:bg-muted/50"
+                title="슬롯으로 드래그해서 초대"
+              >
+                <span
+                  className={`size-2 rounded-full ${
+                    friend.is_online ? "bg-green-500" : "bg-muted-foreground/40"
+                  }`}
+                />
+                <span>{friend.nickname}</span>
+                {friend.class_name && (
+                  <span className="text-muted-foreground">
+                    {friend.class_name}
+                    {friend.combat_power
+                      ? ` ${formatCombatPower(friend.combat_power)}`
+                      : ""}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <ClassSlotGroup
         title={dungeon?.category === "성역" ? "1파티" : "1파티"}
         leaderClass={leaderClass}
         slots={firstPartySlots}
+        invitedSlots={firstPartyInvites}
+        friends={friends}
+        minCombatPower={minCombatPower}
         offset={0}
         onChange={onChange}
+        onAssignFriend={onAssignFriend}
+        onMoveFriend={onMoveFriend}
       />
       {secondPartySlots.length > 0 && (
         <ClassSlotGroup
           title="2파티"
           slots={secondPartySlots}
+          invitedSlots={secondPartyInvites}
+          friends={friends}
+          minCombatPower={minCombatPower}
           offset={4}
           onChange={onChange}
+          onAssignFriend={onAssignFriend}
+          onMoveFriend={onMoveFriend}
         />
       )}
     </div>
@@ -400,14 +530,24 @@ function ClassSlotGroup({
   title,
   leaderClass,
   slots,
+  invitedSlots,
+  friends,
+  minCombatPower,
   offset,
   onChange,
+  onAssignFriend,
+  onMoveFriend,
 }: {
   title: string;
   leaderClass?: string | null;
   slots: string[];
+  invitedSlots: (Friend | null)[];
+  friends: Friend[];
+  minCombatPower: number;
   offset: number;
   onChange: (index: number, className: string) => void;
+  onAssignFriend: (index: number, friend: Friend | null) => void;
+  onMoveFriend: (fromIndex: number, toIndex: number) => void;
 }) {
   return (
     <div className="rounded-md border p-3">
@@ -424,24 +564,92 @@ function ClassSlotGroup({
             방장 · {leaderClass}
           </div>
         )}
-        {slots.map((className, index) => (
-          <select
-            key={`${title}-${offset + index}`}
-            value={className}
-            onChange={(e) => onChange(offset + index, e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            aria-label={`${title} ${index + 1}번 받을 클래스`}
-          >
-            <option value="" className="bg-popover">
-              자유
-            </option>
-            {AION2_CLASSES.map((aionClass) => (
-              <option key={aionClass} value={aionClass} className="bg-popover">
-                {aionClass}
-              </option>
-            ))}
-          </select>
-        ))}
+        {slots.map((className, index) => {
+          const globalIndex = offset + index;
+          const invitedFriend = invitedSlots[index];
+          const isUnderPower =
+            !!invitedFriend?.combat_power &&
+            invitedFriend.combat_power < minCombatPower;
+
+          return (
+            <div
+              key={`${title}-${globalIndex}`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const friendId = event.dataTransfer.getData("friend-id");
+                const fromSlot = event.dataTransfer.getData("slot-index");
+                if (fromSlot) {
+                  onMoveFriend(Number(fromSlot), globalIndex);
+                  return;
+                }
+                const friend = friends.find((item) => item.user_id === friendId);
+                if (friend) onAssignFriend(globalIndex, friend);
+              }}
+              className={`rounded-md border p-2 ${
+                invitedFriend ? "bg-muted/25" : "border-dashed"
+              }`}
+            >
+              {invitedFriend ? (
+                <div
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("slot-index", String(globalIndex));
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  className="flex min-h-16 flex-col gap-1"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">
+                        {invitedFriend.nickname}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {(invitedFriend.class_name ?? className) || "직업 미연동"}
+                        {invitedFriend.combat_power
+                          ? ` · ${formatCombatPower(invitedFriend.combat_power)}`
+                          : ""}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="초대 친구 제거"
+                      onClick={() => onAssignFriend(globalIndex, null)}
+                    >
+                      ×
+                    </Button>
+                  </div>
+                  {isUnderPower && (
+                    <span className="text-[11px] text-destructive">
+                      최소투력 미달
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <select
+                  value={className}
+                  onChange={(e) => onChange(globalIndex, e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  aria-label={`${title} ${index + 1}번 받을 클래스`}
+                >
+                  <option value="" className="bg-popover">
+                    자유
+                  </option>
+                  {AION2_CLASSES.map((aionClass) => (
+                    <option key={aionClass} value={aionClass} className="bg-popover">
+                      {aionClass}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
