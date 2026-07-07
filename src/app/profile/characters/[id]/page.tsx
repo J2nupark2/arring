@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { enrichAion2SkillsWithDescriptions } from "@/lib/aion2-api";
 import { formatCombatPower } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
@@ -63,9 +64,21 @@ export default async function CharacterDetailPage({
     .eq("id", user.id)
     .single();
 
+  const rawSkills = Array.isArray(character.skills) ? character.skills : [];
+  const rawStigmas = Array.isArray(character.stigmas) ? character.stigmas : [];
+  const rawSkillCount = rawSkills.length;
+  const describedSkillList = await enrichAion2SkillsWithDescriptions(
+    [...rawSkills, ...rawStigmas],
+    character.class_name,
+    character.server_id,
+    character.character_name,
+  ).catch(() => [...rawSkills, ...rawStigmas]);
+  const describedSkills = describedSkillList.slice(0, rawSkillCount);
+  const describedStigmas = describedSkillList.slice(rawSkillCount);
+
   const equipment = normalizeList(character.equipment);
-  const skills = normalizeList(character.skills);
-  const stigmas = normalizeList(character.stigmas);
+  const skills = normalizeList(describedSkills);
+  const stigmas = normalizeList(describedStigmas);
 
   return (
     <>
@@ -185,6 +198,7 @@ type DetailItem = {
   value?: string | number;
   icon?: string;
   description?: string;
+  notes?: string;
   acquired?: string | number;
   equipped?: string | number;
   requiredLevel?: string | number;
@@ -427,6 +441,11 @@ function SkillTooltip({ item }: { item: DetailItem }) {
         {item.description ||
           "공식 응답에 별도 설명문은 없지만, 스킬 레벨과 장착 상태를 확인할 수 있어요."}
       </p>
+      {item.notes && (
+        <div className="mt-2 rounded border border-primary/20 bg-primary/10 px-2 py-1 text-xs text-primary">
+          {item.notes}
+        </div>
+      )}
     </div>
   );
 }
@@ -468,6 +487,7 @@ function normalizeList(value: unknown): DetailItem[] {
         "tooltip",
         "content",
       ]),
+      notes: pickString(source, ["notes", "note", "memo"]),
       acquired: pickText(source, ["acquired"]),
       equipped: pickText(source, ["equip", "equipped"]),
       requiredLevel: pickText(source, ["needLevel", "requiredLevel"]),
@@ -527,6 +547,7 @@ function hasSkillTooltip(item: DetailItem) {
   const category = String(item.slot ?? "").toLowerCase();
   return (
     !!item.description ||
+    !!item.notes ||
     item.requiredLevel !== undefined ||
     item.equipped !== undefined ||
     category === "active" ||
