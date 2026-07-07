@@ -25,6 +25,14 @@ export type IncomingRequest = {
   created_at: string;
 };
 
+export type FriendCandidate = {
+  user_id: string;
+  nickname: string;
+  server: string | null;
+  email: string | null;
+  relation_status: "none" | "friends" | "sent" | "received";
+};
+
 const POLL_MS = 15000;
 
 export function useFriends(isGuest: boolean) {
@@ -148,4 +156,18 @@ export async function sendFriendRequest(targetId: string) {
     already_sent: "이미 요청을 보냈어요",
   };
   toast(messages[data as string] ?? "요청을 보냈습니다");
+}
+
+export async function searchFriendCandidates(query: string) {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("search_friend_candidates", {
+    search_query: query,
+  });
+
+  if (error) {
+    toast.error("친구 검색에 실패했습니다: " + error.message);
+    return [];
+  }
+
+  return (data ?? []) as FriendCandidate[];
 }

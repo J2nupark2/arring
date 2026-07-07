@@ -6,18 +6,26 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Check,
+  Loader2,
   MessageCircle,
   PhoneIncoming,
   RefreshCw,
+  Search,
   UserMinus,
   UserPlus,
   Users,
   X,
 } from "lucide-react";
 import { useFriendsContext } from "@/components/friends/friends-provider";
+import {
+  searchFriendCandidates,
+  sendFriendRequest,
+  type FriendCandidate,
+} from "@/hooks/use-friends";
 import { sendRoomInvite } from "@/hooks/use-room-invites";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { FriendChatDialog } from "@/components/friends/friend-chat-dialog";
 
@@ -37,6 +45,9 @@ export function FriendListContent({
     id: string;
     nickname: string;
   } | null>(null);
+  const [friendQuery, setFriendQuery] = useState("");
+  const [friendResults, setFriendResults] = useState<FriendCandidate[]>([]);
+  const [searching, setSearching] = useState(false);
 
   async function inviteToMyRoom(friendId: string, nickname: string) {
     if (!currentRoomCode) return;
@@ -47,6 +58,34 @@ export function FriendListContent({
   async function acceptInvite(inviteId: string, roomCode: string) {
     await respondInvite(inviteId, true);
     router.push(`/room/${roomCode}`);
+  }
+
+  async function searchFriends(e: React.FormEvent) {
+    e.preventDefault();
+    const query = friendQuery.trim();
+    if (query.length < 2) {
+      toast.error("닉네임은 2글자 이상, 이메일은 전체 주소를 입력해주세요.");
+      return;
+    }
+
+    setSearching(true);
+    try {
+      setFriendResults(await searchFriendCandidates(query));
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function addFriend(candidate: FriendCandidate) {
+    await sendFriendRequest(candidate.user_id);
+    await refresh();
+    setFriendResults((current) =>
+      current.map((item) =>
+        item.user_id === candidate.user_id
+          ? { ...item, relation_status: "sent" }
+          : item,
+      ),
+    );
   }
 
   if (isGuest) {
@@ -82,6 +121,57 @@ export function FriendListContent({
         >
           <RefreshCw className="size-4" />
         </Button>
+      </div>
+
+      <div className="px-4 pt-3">
+        <form onSubmit={searchFriends} className="flex gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={friendQuery}
+              onChange={(e) => setFriendQuery(e.target.value)}
+              placeholder="닉네임 또는 이메일로 친구 검색"
+              className="pl-9"
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={searching}>
+            {searching ? <Loader2 className="size-4 animate-spin" /> : "검색"}
+          </Button>
+        </form>
+
+        {friendResults.length > 0 && (
+          <div className="mt-2 flex flex-col gap-2">
+            {friendResults.map((candidate) => (
+              <div
+                key={candidate.user_id}
+                className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <Avatar className="size-6 shrink-0">
+                    <AvatarFallback>
+                      {candidate.nickname.slice(0, 1)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm">
+                      {candidate.nickname}
+                      {candidate.server && ` (${candidate.server})`}
+                    </div>
+                    {candidate.email && (
+                      <div className="truncate text-xs text-muted-foreground">
+                        {candidate.email}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <FriendCandidateAction
+                  candidate={candidate}
+                  onAdd={() => addFriend(candidate)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {incoming.length > 0 && (
@@ -288,5 +378,38 @@ export function FriendListContent({
         />
       )}
     </div>
+  );
+}
+
+function FriendCandidateAction({
+  candidate,
+  onAdd,
+}: {
+  candidate: FriendCandidate;
+  onAdd: () => void;
+}) {
+  if (candidate.relation_status === "friends") {
+    return (
+      <span className="shrink-0 text-xs text-muted-foreground">친구</span>
+    );
+  }
+
+  if (candidate.relation_status === "sent") {
+    return (
+      <span className="shrink-0 text-xs text-muted-foreground">요청중</span>
+    );
+  }
+
+  if (candidate.relation_status === "received") {
+    return (
+      <span className="shrink-0 text-xs text-muted-foreground">받은 요청</span>
+    );
+  }
+
+  return (
+    <Button type="button" size="sm" variant="outline" onClick={onAdd}>
+      <UserPlus className="size-3.5" />
+      추가
+    </Button>
   );
 }
