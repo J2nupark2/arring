@@ -39,6 +39,18 @@ export type Aion2CharacterProfile = {
   equipment: unknown[];
   skills: unknown[];
   stigmas: unknown[];
+  stats: unknown[];
+  titles: unknown[];
+  daevanion: unknown[];
+};
+
+type EquipmentListItem = {
+  id?: number;
+  slotPos?: number;
+  enchantLevel?: number;
+  exceedLevel?: number;
+  grade?: string;
+  [key: string]: unknown;
 };
 
 type SkillDescription = {
@@ -118,7 +130,13 @@ export async function fetchCharacterInfo(
 
   const [infoData, equipmentData] = await Promise.all([
     plaync<{
-      profile: Omit<Aion2CharacterProfile, "equipment" | "skills" | "stigmas">;
+      profile: Omit<
+        Aion2CharacterProfile,
+        "equipment" | "skills" | "stigmas" | "stats" | "titles" | "daevanion"
+      >;
+      stat?: { statList?: unknown[] };
+      title?: { titleList?: unknown[] };
+      daevanion?: { boardList?: unknown[] };
     }>(`/api/character/info?${infoParams}`, 60),
     plaync<Aion2EquipmentResponse>(
       `/api/character/equipment?${equipmentParams}`,
@@ -133,11 +151,22 @@ export async function fetchCharacterInfo(
     infoData.profile.characterName,
   ).catch(() => equipmentData?.skill?.skillList ?? []);
 
+  const equipmentList = (equipmentData?.equipment?.equipmentList ??
+    []) as EquipmentListItem[];
+  const enrichedEquipment = await enrichEquipmentWithItemDetail(
+    equipmentList,
+    characterId,
+    serverId,
+  );
+
   return {
     ...infoData.profile,
-    equipment: equipmentData?.equipment?.equipmentList ?? [],
+    equipment: enrichedEquipment,
     skills: skillList.filter((skill) => !isStigmaSkill(skill)),
     stigmas: skillList.filter(isStigmaSkill),
+    stats: infoData.stat?.statList ?? [],
+    titles: infoData.title?.titleList ?? [],
+    daevanion: infoData.daevanion?.boardList ?? [],
   };
 }
 
@@ -149,6 +178,72 @@ type Aion2EquipmentResponse = {
     skillList?: unknown[];
   };
 };
+
+// Item list rows only carry id/enchant/grade — base option, soul/stone
+// engraving, godstone text, and arcana set bonuses live behind a per-item
+// detail call. 20-28 slots per character means firing them all at once
+// would hammer plaync, so we chunk with a small concurrency cap.
+const ITEM_DETAIL_CONCURRENCY = 6;
+
+async function enrichEquipmentWithItemDetail(
+  items: EquipmentListItem[],
+  characterId: string,
+  serverId: number,
+): Promise<EquipmentListItem[]> {
+  const results = [...items];
+  for (let start = 0; start < items.length; start += ITEM_DETAIL_CONCURRENCY) {
+    const chunk = items.slice(start, start + ITEM_DETAIL_CONCURRENCY);
+    const details = await Promise.all(
+      chunk.map((item) => fetchEquipmentItemDetail(characterId, serverId, item)),
+    );
+    details.forEach((detail, index) => {
+      if (!detail) return;
+      results[start + index] = { ...items[start + index], ...detail };
+    });
+  }
+  return results;
+}
+
+export type Aion2EquipmentItemDetail = {
+  mainStats?: unknown[];
+  subStats?: unknown[];
+  subSkills?: unknown[];
+  magicStoneStat?: unknown[];
+  godStoneStat?: unknown[];
+  set?: {
+    name?: string;
+    equippedCount?: number;
+    bonuses?: { degree: number; descriptions: string[] }[];
+  };
+};
+
+export async function fetchEquipmentItemDetail(
+  characterId: string,
+  serverId: number,
+  item: EquipmentListItem,
+): Promise<Aion2EquipmentItemDetail | null> {
+  if (item.id === undefined || item.slotPos === undefined) return null;
+
+  const params = new URLSearchParams({
+    lang: "ko",
+    characterId,
+    serverId: String(serverId),
+    slotPos: String(item.slotPos),
+    id: String(item.id),
+    enchantLevel: String(item.enchantLevel ?? 0),
+    exceedLevel: String(item.exceedLevel ?? 0),
+    grade: String(item.grade ?? ""),
+  });
+
+  try {
+    return await plaync<Aion2EquipmentItemDetail>(
+      `/api/character/equipment/item?${params}`,
+      300,
+    );
+  } catch {
+    return null;
+  }
+}
 
 function isStigmaSkill(skill: unknown) {
   if (!skill || typeof skill !== "object") return false;

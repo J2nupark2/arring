@@ -1,6 +1,16 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Gauge, ShieldCheck, Sparkles, Star, Swords } from "lucide-react";
+import {
+  Award,
+  BarChart3,
+  Gauge,
+  Layers,
+  Network,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  Swords,
+} from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { LinkButton } from "@/components/link-button";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +60,7 @@ export default async function CharacterDetailPage({
   const { data: character } = await supabase
     .from("aion2_characters")
     .select(
-      "id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, proficiency_score, equipment, skills, stigmas, is_primary, synced_at, created_at",
+      "id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, proficiency_score, equipment, skills, stigmas, stat_list, titles, daevanion, is_primary, synced_at, created_at",
     )
     .eq("id", id)
     .eq("user_id", user.id)
@@ -79,6 +89,12 @@ export default async function CharacterDetailPage({
   const equipment = normalizeList(character.equipment);
   const skills = normalizeList(describedSkills);
   const stigmas = normalizeList(describedStigmas);
+  const arcanaSet = equipment.find(
+    (item) => String(item.slot ?? "").startsWith("Arcana") && item.set,
+  )?.set;
+  const statList = normalizeStatList(character.stat_list);
+  const titles = normalizeTitleList(character.titles);
+  const daevanion = normalizeDaevanionList(character.daevanion);
 
   return (
     <>
@@ -155,6 +171,16 @@ export default async function CharacterDetailPage({
           <SkillBoard skills={skills} stigmas={stigmas} />
         </section>
 
+        <section className="grid gap-6 lg:grid-cols-2">
+          <ArcanaCard set={arcanaSet} />
+          <DaevanionCard boards={daevanion} />
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+          <TitleCard titles={titles} />
+          <StatBoard statList={statList} />
+        </section>
+
         <p className="text-sm text-muted-foreground">
           캐릭터 정보가 바뀌었다면{" "}
           <Link href="/profile" className="underline underline-offset-4">
@@ -190,6 +216,15 @@ function ScoreTile({
   );
 }
 
+type NamedStat = { name: string; value?: string | number; extra?: string | number };
+type SubSkillProc = { name: string; level?: string | number; icon?: string };
+type GodStoneEffect = { name: string; desc?: string; grade?: string };
+type ArcanaSetBonus = {
+  name?: string;
+  equippedCount?: number;
+  bonuses: { degree: number; descriptions: string[] }[];
+};
+
 type DetailItem = {
   name: string;
   level?: string | number;
@@ -202,6 +237,12 @@ type DetailItem = {
   acquired?: string | number;
   equipped?: string | number;
   requiredLevel?: string | number;
+  mainStats?: NamedStat[];
+  subStats?: NamedStat[];
+  subSkills?: SubSkillProc[];
+  magicStoneStat?: NamedStat[];
+  godStoneStat?: GodStoneEffect[];
+  set?: ArcanaSetBonus;
 };
 
 function EquipmentBoard({ items }: { items: DetailItem[] }) {
@@ -356,6 +397,197 @@ function SkillGroup({
   );
 }
 
+function ArcanaCard({ set }: { set: ArcanaSetBonus | undefined }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Layers className="size-4" />
+          아르카나 세트 효과
+        </CardTitle>
+        {set?.name && (
+          <CardDescription>
+            {set.name} · {set.equippedCount ?? 0}세트 장착
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent>
+        {!set || set.bonuses.length === 0 ? (
+          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+            아르카나 세트 정보가 없어요.
+          </p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {set.bonuses.map((bonus) => (
+              <div key={bonus.degree} className="rounded-md border px-3 py-2">
+                <Badge variant="outline" className="mb-1.5">
+                  {bonus.degree}세트 효과
+                </Badge>
+                {bonus.descriptions.map((desc, index) => (
+                  <p key={index} className="text-sm text-muted-foreground">
+                    {desc}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DaevanionCard({ boards }: { boards: DaevanionBoard[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Network className="size-4" />
+            데바니온
+          </CardTitle>
+          <Badge variant="outline">{boards.length}개 확인</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {boards.length === 0 ? (
+          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+            데바니온 정보가 없어요.
+          </p>
+        ) : (
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {boards.map((board) => (
+              <div key={board.name} className="rounded-md border px-3 py-2">
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    {board.icon && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={board.icon} alt="" className="size-4 object-contain" />
+                    )}
+                    {board.name}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {board.openNodeCount}/{board.totalNodeCount}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-violet-500"
+                    style={{ width: `${Math.min(100, Math.max(0, board.openPercent))}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TitleCard({ titles }: { titles: TitleEntry[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Award className="size-4" />
+            타이틀
+          </CardTitle>
+          <Badge variant="outline">{titles.length}개 확인</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2.5">
+        {titles.length === 0 ? (
+          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+            장착한 타이틀이 없어요.
+          </p>
+        ) : (
+          titles.map((title, index) => (
+            <div key={`${title.name}-${index}`} className="rounded-md border px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">{title.name}</span>
+                {title.grade && <Badge variant="secondary">{title.grade}</Badge>}
+              </div>
+              {title.totalCount !== undefined && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {title.ownedCount}/{title.totalCount}명 보유
+                  {title.ownedPercent !== undefined && ` (보유율 ${title.ownedPercent}%)`}
+                </div>
+              )}
+              {title.equipStatList.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5 text-xs">
+                  {title.equipStatList.map((effect, effectIndex) => (
+                    <span
+                      key={effectIndex}
+                      className="rounded bg-violet-500/10 px-1.5 py-0.5 text-violet-400"
+                    >
+                      {effect}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatBoard({ statList }: { statList: StatEntry[] }) {
+  const godStats = statList.filter((stat) => GOD_STAT_TYPES.includes(stat.type));
+  const baseStats = statList.filter((stat) => !GOD_STAT_TYPES.includes(stat.type));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <BarChart3 className="size-4" />
+          주신 스탯
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {godStats.length === 0 && baseStats.length === 0 ? (
+          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+            스탯 정보가 없어요.
+          </p>
+        ) : (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {godStats.map((stat) => (
+                <div key={stat.type} className="rounded-md border px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{stat.name}</span>
+                    <span className="font-mono text-sm">{stat.value}</span>
+                  </div>
+                  {stat.effects.length > 0 && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {stat.effects.join(" · ")}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {baseStats.length > 0 && (
+              <div>
+                <div className="mb-1.5 text-xs font-medium text-muted-foreground">일반 스탯</div>
+                <div className="flex flex-wrap gap-2">
+                  {baseStats.map((stat) => (
+                    <Badge key={stat.type} variant="outline">
+                      {stat.name} {stat.value}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function groupSkills(skills: DetailItem[], stigmas: DetailItem[]) {
   const stigmaFromSkills = skills.filter(isStigmaSkill);
   const ordinarySkills = skills.filter((skill) => !isStigmaSkill(skill));
@@ -400,7 +632,7 @@ function ItemSummary({ item }: { item: DetailItem }) {
           <span className="min-w-0 break-words font-medium">{item.name}</span>
           {item.level !== undefined && (
             <Badge variant="secondary" className="shrink-0">
-              Lv.{item.level}
+              +{item.level}
             </Badge>
           )}
         </div>
@@ -473,16 +705,84 @@ function SkillTooltip({
           </Badge>
         )}
       </div>
-      <p className="mt-3 whitespace-pre-line break-words text-xs leading-5 text-muted-foreground">
-        {item.description ||
-          "공식 응답에 별도 설명문은 없지만, 스킬 레벨과 장착 상태를 확인할 수 있어요."}
-      </p>
+      {(item.description || (!hasEquipmentDetail(item) && !item.notes)) && (
+        <p className="mt-3 whitespace-pre-line break-words text-xs leading-5 text-muted-foreground">
+          {item.description ||
+            "공식 응답에 별도 설명문은 없지만, 스킬 레벨과 장착 상태를 확인할 수 있어요."}
+        </p>
+      )}
       {item.notes && (
         <div className="mt-2 rounded border border-primary/20 bg-primary/10 px-2 py-1 text-xs text-primary">
           {item.notes}
         </div>
       )}
+      {hasEquipmentDetail(item) && (
+        <div className="mt-3 space-y-2.5 border-t pt-3">
+          <StatLine title="기본 옵션" stats={item.mainStats} />
+          <StatLine title="영혼 각인" stats={item.subStats} />
+          {item.subSkills && item.subSkills.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold text-muted-foreground">
+                각인 발동 스킬
+              </div>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {item.subSkills.map((skill, index) => (
+                  <span
+                    key={`${skill.name}-${index}`}
+                    className="rounded bg-muted px-1.5 py-0.5 text-[11px]"
+                  >
+                    {skill.name}
+                    {skill.level !== undefined ? ` Lv.${skill.level}` : ""}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <StatLine title="마석 각인" stats={item.magicStoneStat} />
+          {item.godStoneStat && item.godStoneStat.length > 0 && (
+            <div>
+              {item.godStoneStat.map((stone, index) => (
+                <div key={`${stone.name}-${index}`} className="mb-1.5 last:mb-0">
+                  <div className="text-[11px] font-semibold text-amber-500">{stone.name}</div>
+                  {stone.desc && (
+                    <p className="mt-0.5 whitespace-pre-line break-words text-[11px] leading-4 text-muted-foreground">
+                      {stone.desc}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function StatLine({ title, stats }: { title: string; stats?: NamedStat[] }) {
+  if (!stats || stats.length === 0) return null;
+  return (
+    <div>
+      <div className="text-[11px] font-semibold text-muted-foreground">{title}</div>
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
+        {stats.map((stat, index) => (
+          <span key={`${stat.name}-${index}`}>
+            {stat.name}
+            {stat.value !== undefined ? ` +${stat.value}` : ""}
+            {stat.extra ? ` (+${stat.extra})` : ""}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function hasEquipmentDetail(item: DetailItem) {
+  return !!(
+    (item.mainStats && item.mainStats.length > 0) ||
+    (item.subStats && item.subStats.length > 0) ||
+    (item.magicStoneStat && item.magicStoneStat.length > 0) ||
+    (item.godStoneStat && item.godStoneStat.length > 0)
   );
 }
 
@@ -542,10 +842,161 @@ function normalizeList(value: unknown): DetailItem[] {
         "score",
         "exceedLevel",
       ]),
+      mainStats: asStatArray(source.mainStats),
+      subStats: asStatArray(source.subStats),
+      subSkills: asSubSkillArray(source.subSkills),
+      magicStoneStat: asStatArray(source.magicStoneStat),
+      godStoneStat: asGodStoneArray(source.godStoneStat),
+      set: asArcanaSet(source.set),
     });
   }
 
   return items;
+}
+
+function asStatArray(value: unknown): NamedStat[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  return value
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+    .map((entry) => ({
+      name: String(entry.name ?? ""),
+      value: entry.value as string | number | undefined,
+      extra: entry.extra as string | number | undefined,
+    }))
+    .filter((entry) => entry.name);
+}
+
+function asSubSkillArray(value: unknown): SubSkillProc[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  return value
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+    .map((entry) => ({
+      name: String(entry.name ?? ""),
+      level: entry.level as string | number | undefined,
+      icon: typeof entry.icon === "string" ? entry.icon : undefined,
+    }))
+    .filter((entry) => entry.name);
+}
+
+function asGodStoneArray(value: unknown): GodStoneEffect[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  return value
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+    .map((entry) => ({
+      name: String(entry.name ?? ""),
+      desc: typeof entry.desc === "string" ? entry.desc : undefined,
+      grade: typeof entry.grade === "string" ? entry.grade : undefined,
+    }))
+    .filter((entry) => entry.name);
+}
+
+function asArcanaSet(value: unknown): ArcanaSetBonus | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const bonuses = Array.isArray(record.bonuses)
+    ? record.bonuses
+        .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+        .map((entry) => ({
+          degree: Number(entry.degree ?? 0),
+          descriptions: Array.isArray(entry.descriptions)
+            ? entry.descriptions.filter((d): d is string => typeof d === "string")
+            : [],
+        }))
+    : [];
+  if (bonuses.length === 0) return undefined;
+  return {
+    name: typeof record.name === "string" ? record.name : undefined,
+    equippedCount: typeof record.equippedCount === "number" ? record.equippedCount : undefined,
+    bonuses,
+  };
+}
+
+type StatEntry = { type: string; name: string; value: number; effects: string[] };
+
+const GOD_STAT_TYPES = [
+  "Justice",
+  "Freedom",
+  "Illusion",
+  "Life",
+  "Time",
+  "Destruction",
+  "Death",
+  "Wisdom",
+  "Destiny",
+  "Space",
+];
+
+function normalizeStatList(value: unknown): StatEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+    .map((entry) => ({
+      type: String(entry.type ?? ""),
+      name: String(entry.name ?? ""),
+      value: Number(entry.value ?? 0),
+      effects: Array.isArray(entry.statSecondList)
+        ? entry.statSecondList.filter((e): e is string => typeof e === "string")
+        : [],
+    }))
+    .filter((entry) => entry.name);
+}
+
+type TitleEntry = {
+  name: string;
+  grade?: string;
+  equipCategory?: string;
+  ownedCount?: number;
+  totalCount?: number;
+  ownedPercent?: number;
+  statList: string[];
+  equipStatList: string[];
+};
+
+function normalizeTitleList(value: unknown): TitleEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+    .map((entry) => ({
+      name: String(entry.name ?? ""),
+      grade: typeof entry.grade === "string" ? entry.grade : undefined,
+      equipCategory: typeof entry.equipCategory === "string" ? entry.equipCategory : undefined,
+      ownedCount: typeof entry.ownedCount === "number" ? entry.ownedCount : undefined,
+      totalCount: typeof entry.totalCount === "number" ? entry.totalCount : undefined,
+      ownedPercent: typeof entry.ownedPercent === "number" ? entry.ownedPercent : undefined,
+      statList: extractDescList(entry.statList),
+      equipStatList: extractDescList(entry.equipStatList),
+    }))
+    .filter((entry) => entry.name);
+}
+
+function extractDescList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+    .map((entry) => String(entry.desc ?? ""))
+    .filter(Boolean);
+}
+
+type DaevanionBoard = {
+  name: string;
+  openNodeCount: number;
+  totalNodeCount: number;
+  openPercent: number;
+  icon?: string;
+};
+
+function normalizeDaevanionList(value: unknown): DaevanionBoard[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+    .map((entry) => ({
+      name: String(entry.name ?? ""),
+      openNodeCount: Number(entry.openNodeCount ?? 0),
+      totalNodeCount: Number(entry.totalNodeCount ?? 0),
+      openPercent: Number(entry.openPercent ?? 0),
+      icon: typeof entry.icon === "string" ? entry.icon : undefined,
+    }))
+    .filter((entry) => entry.name);
 }
 
 function pickText(record: Record<string, unknown>, keys: string[]) {
@@ -586,6 +1037,7 @@ function hasSkillTooltip(item: DetailItem) {
     !!item.notes ||
     item.requiredLevel !== undefined ||
     item.equipped !== undefined ||
+    hasEquipmentDetail(item) ||
     category === "active" ||
     category === "passive" ||
     category === "dp" ||
