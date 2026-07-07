@@ -139,20 +139,7 @@ export default async function CharacterDetailPage({
 
         <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <EquipmentBoard items={equipment} />
-          <div className="grid gap-6">
-            <DetailSection
-              icon={<Swords className="size-4" />}
-              title="스킬"
-              items={skills}
-              empty="아직 공식 정보실에서 스킬 정보를 가져오지 못했어요."
-            />
-            <DetailSection
-              icon={<Sparkles className="size-4" />}
-              title="스티그마"
-              items={stigmas}
-              empty="아직 공식 정보실에서 스티그마 정보를 가져오지 못했어요."
-            />
-          </div>
+          <SkillBoard skills={skills} stigmas={stigmas} />
         </section>
 
         <p className="text-sm text-muted-foreground">
@@ -276,42 +263,102 @@ function EquipmentBoard({ items }: { items: DetailItem[] }) {
   );
 }
 
-function DetailSection({
-  icon,
-  title,
-  items,
-  empty,
+function SkillBoard({
+  skills,
+  stigmas,
 }: {
-  icon: React.ReactNode;
-  title: string;
-  items: DetailItem[];
-  empty: string;
+  skills: DetailItem[];
+  stigmas: DetailItem[];
 }) {
+  const groups = groupSkills(skills, stigmas);
+  const total = groups.active.length + groups.passive.length + groups.stigma.length;
+
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-base">
-            {icon}
-            {title}
+            <Sparkles className="size-4" />
+            스킬
           </CardTitle>
-          <Badge variant="outline">{items.length}개 확인</Badge>
+          <Badge variant="outline">{total}개 확인</Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-2">
-        {items.length === 0 && (
-          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
-            {empty}
-          </p>
-        )}
-        {items.map((item, index) => (
-          <div key={`${item.name}-${index}`} className="rounded-md border px-3 py-2">
-            <ItemSummary item={item} />
-          </div>
-        ))}
+      <CardContent className="space-y-5">
+        <SkillGroup
+          title="액티브 스킬"
+          items={groups.active}
+          empty="연동된 액티브 스킬이 없어요."
+        />
+        <SkillGroup
+          title="패시브 스킬"
+          items={groups.passive}
+          empty="연동된 패시브 스킬이 없어요."
+        />
+        <SkillGroup
+          title="스티그마 스킬"
+          items={groups.stigma}
+          empty="연동된 스티그마 스킬이 없어요."
+        />
       </CardContent>
     </Card>
   );
+}
+
+function SkillGroup({
+  title,
+  items,
+  empty,
+}: {
+  title: string;
+  items: DetailItem[];
+  empty: string;
+}) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <Badge variant="secondary">{items.length}</Badge>
+      </div>
+      {items.length === 0 ? (
+        <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+          {empty}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item, index) => (
+            <div
+              key={`${title}-${item.name}-${index}`}
+              className="rounded-md border px-3 py-2"
+            >
+              <ItemSummary item={item} />
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function groupSkills(skills: DetailItem[], stigmas: DetailItem[]) {
+  const stigmaFromSkills = skills.filter(isStigmaSkill);
+  const ordinarySkills = skills.filter((skill) => !isStigmaSkill(skill));
+
+  return {
+    active: ordinarySkills.filter((skill) => !isPassiveSkill(skill)),
+    passive: ordinarySkills.filter(isPassiveSkill),
+    stigma: [...stigmas, ...stigmaFromSkills],
+  };
+}
+
+function isPassiveSkill(item: DetailItem) {
+  const category = String(item.slot ?? "").toLowerCase();
+  return category.includes("passive") || category.includes("패시브");
+}
+
+function isStigmaSkill(item: DetailItem) {
+  const category = String(item.slot ?? "").toLowerCase();
+  return category.includes("stigma") || category.includes("스티그마");
 }
 
 function ItemSummary({ item }: { item: DetailItem }) {
