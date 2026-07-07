@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -48,6 +48,27 @@ export function FriendListContent({
   const [friendQuery, setFriendQuery] = useState("");
   const [friendResults, setFriendResults] = useState<FriendCandidate[]>([]);
   const [searching, setSearching] = useState(false);
+  const friendIds = useMemo(
+    () => new Set(friends.map((friend) => friend.user_id)),
+    [friends],
+  );
+  const incomingIds = useMemo(
+    () => new Set(incoming.map((request) => request.sender_id)),
+    [incoming],
+  );
+  const syncedFriendResults = useMemo(
+    () =>
+      friendResults.map((candidate) => {
+        if (friendIds.has(candidate.user_id)) {
+          return { ...candidate, relation_status: "friends" as const };
+        }
+        if (incomingIds.has(candidate.user_id)) {
+          return { ...candidate, relation_status: "received" as const };
+        }
+        return candidate;
+      }),
+    [friendResults, friendIds, incomingIds],
+  );
 
   async function inviteToMyRoom(friendId: string, nickname: string) {
     if (!currentRoomCode) return;
@@ -139,9 +160,9 @@ export function FriendListContent({
           </Button>
         </form>
 
-        {friendResults.length > 0 && (
+        {syncedFriendResults.length > 0 && (
           <div className="mt-2 flex flex-col gap-2">
-            {friendResults.map((candidate) => (
+            {syncedFriendResults.map((candidate) => (
               <div
                 key={candidate.user_id}
                 className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
