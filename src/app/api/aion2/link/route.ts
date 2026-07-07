@@ -3,6 +3,16 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCharacterInfo } from "@/lib/aion2-api";
 
+function pickList(source: unknown, keys: string[]) {
+  if (!source || typeof source !== "object") return [];
+  const record = source as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
 // Links (or re-syncs) the caller's Arring profile to an official Aion2
 // character. The client only tells us WHICH character; class and combat
 // power always come from aion2.plaync.com fetched here, and are written
@@ -62,6 +72,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const rawProfile = profile as unknown;
+
   const admin = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     serviceKey,
@@ -100,6 +112,9 @@ export async function POST(request: NextRequest) {
         class_name: profile.className,
         character_level: profile.characterLevel,
         combat_power: profile.combatPower,
+        equipment: pickList(rawProfile, ["equipment", "equipments", "items", "itemList"]),
+        skills: pickList(rawProfile, ["skills", "skillList"]),
+        stigmas: pickList(rawProfile, ["stigmas", "stigmaList"]),
         is_primary: isPrimary,
         synced_at: new Date().toISOString(),
       } as unknown as never,

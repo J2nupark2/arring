@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatCombatPower } from "@/lib/format";
 
 type Profile = {
   charClass: string | null;
@@ -320,7 +321,7 @@ export function MatchingPanel({
             <span>
               선택 진도: {stageLabel(selectedDungeon, stage)}
               {selectedCharacter?.className && ` · ${selectedCharacter.name} ${selectedCharacter.className}`}
-              {selectedCharacter?.combatPower && ` · 투력 ${selectedCharacter.combatPower.toLocaleString()}`}
+              {selectedCharacter?.combatPower && ` · 투력 ${formatCombatPower(selectedCharacter.combatPower)}`}
             </span>
             <Button type="submit" disabled={pending || isGuest || !hasLinkedCharacter || !characterId || dungeons.length === 0}>
               {pending && <Loader2 className="size-4 animate-spin" />}

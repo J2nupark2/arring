@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { formatCombatPower } from "@/lib/format";
 import {
   Card,
   CardContent,
@@ -105,7 +106,7 @@ export function Aion2LinkCard({
         return;
       }
       toast.success(
-        `${data.character.name} (${data.character.className}, 투력 ${data.character.combatPower.toLocaleString()}) 연동 완료!`,
+        `${data.character.name} (${data.character.className}, 투력 ${formatCombatPower(data.character.combatPower)}) 연동 완료!`,
       );
       setResults(null);
       setName("");
@@ -184,7 +185,7 @@ export function Aion2LinkCard({
                     )}
                     <Badge variant="outline">{character.charClass}</Badge>
                     <Badge variant="secondary">
-                      투력 {character.combatPower.toLocaleString()}
+                      투력 {formatCombatPower(character.combatPower)}
                     </Badge>
                   </div>
                   {character.syncedAt && (
