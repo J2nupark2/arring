@@ -19,13 +19,23 @@ export default async function ProfilePage() {
     redirect("/party");
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select(
-      "nickname, server, char_class, combat_power, aion2_character_id, aion2_character_name, aion2_server_id, aion2_synced_at",
-    )
-    .eq("id", user.id)
-    .single();
+  const [{ data: profile }, { data: characters }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select(
+        "nickname, server, char_class, combat_power, aion2_character_id, aion2_character_name, aion2_server_id, aion2_synced_at",
+      )
+      .eq("id", user.id)
+      .single(),
+    supabase
+      .from("aion2_characters")
+      .select(
+        "id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, is_primary, synced_at",
+      )
+      .eq("user_id", user.id)
+      .order("is_primary", { ascending: false })
+      .order("synced_at", { ascending: false }),
+  ]);
 
   return (
     <>
@@ -39,6 +49,18 @@ export default async function ProfilePage() {
           </p>
         </div>
         <Aion2LinkCard
+          characters={(characters ?? []).map((character) => ({
+            id: character.id,
+            characterId: character.character_id,
+            characterName: character.character_name,
+            serverId: character.server_id,
+            server: character.server_name,
+            charClass: character.class_name,
+            level: character.character_level,
+            combatPower: character.combat_power,
+            isPrimary: character.is_primary,
+            syncedAt: character.synced_at,
+          }))}
           linked={
             profile?.aion2_character_id
               ? {

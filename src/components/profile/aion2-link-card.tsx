@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, Search, Swords } from "lucide-react";
+import { ExternalLink, Loader2, RefreshCw, Search, Star, Swords } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,12 +18,15 @@ import {
 } from "@/components/ui/card";
 
 type LinkedCharacter = {
+  id?: string;
   characterId: string;
   characterName: string;
   serverId: number;
   server: string;
   charClass: string;
+  level?: number;
   combatPower: number;
+  isPrimary?: boolean;
   syncedAt: string | null;
 };
 
@@ -36,7 +40,13 @@ type SearchResult = {
   serverName: string;
 };
 
-export function Aion2LinkCard({ linked }: { linked: LinkedCharacter | null }) {
+export function Aion2LinkCard({
+  linked,
+  characters,
+}: {
+  linked: LinkedCharacter | null;
+  characters: LinkedCharacter[];
+}) {
   const router = useRouter();
   const [servers, setServers] = useState<ServerOption[]>([]);
   const [serverId, setServerId] = useState<number | null>(null);
@@ -45,6 +55,7 @@ export function Aion2LinkCard({ linked }: { linked: LinkedCharacter | null }) {
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [primarying, setPrimarying] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/aion2/servers")
@@ -106,60 +117,128 @@ export function Aion2LinkCard({ linked }: { linked: LinkedCharacter | null }) {
     }
   }
 
-  async function resync() {
-    if (!linked) return;
+  async function resync(character: LinkedCharacter) {
     setSyncing(true);
     try {
-      await link(linked.characterId, linked.serverId);
+      await link(character.characterId, character.serverId);
     } finally {
       setSyncing(false);
     }
   }
 
+  async function setPrimary(id: string) {
+    setPrimarying(id);
+    try {
+      const res = await fetch("/api/aion2/primary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "대표 캐릭터 설정에 실패했습니다.");
+        return;
+      }
+      toast.success("대표 캐릭터를 변경했습니다.");
+      router.refresh();
+    } catch {
+      toast.error("대표 캐릭터 설정에 실패했습니다.");
+    } finally {
+      setPrimarying(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      {linked && (
+      {characters.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Swords className="size-4 text-violet-400" />
               연동된 캐릭터
             </CardTitle>
+            <CardDescription>
+              파티를 구할 때 사용할 캐릭터를 대표로 지정할 수 있습니다.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <span className="font-medium">
-                {linked.characterName}{" "}
-                <span className="text-muted-foreground">({linked.server})</span>
-              </span>
-              <div className="flex items-center gap-1.5">
-                <Badge variant="outline">{linked.charClass}</Badge>
-                <Badge variant="secondary">
-                  투력 {linked.combatPower.toLocaleString()}
-                </Badge>
+          <CardContent className="flex flex-col gap-3">
+            {characters.map((character) => (
+              <div
+                key={character.id ?? character.characterId}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2"
+              >
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="flex flex-wrap items-center gap-1.5 font-medium">
+                    {character.characterName}
+                    <span className="text-muted-foreground">({character.server})</span>
+                    {character.isPrimary && (
+                      <Badge variant="secondary">
+                        <Star className="size-3 fill-current" />
+                        대표
+                      </Badge>
+                    )}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {character.level !== undefined && (
+                      <Badge variant="outline">Lv.{character.level}</Badge>
+                    )}
+                    <Badge variant="outline">{character.charClass}</Badge>
+                    <Badge variant="secondary">
+                      투력 {character.combatPower.toLocaleString()}
+                    </Badge>
+                  </div>
+                  {character.syncedAt && (
+                    <span className="text-xs text-muted-foreground">
+                      마지막 동기화:{" "}
+                      {new Date(character.syncedAt).toLocaleString("ko-KR")}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/profile/characters/${character.id}`}>
+                      <ExternalLink className="size-3.5" />
+                      상세
+                    </Link>
+                  </Button>
+                  {character.id && !character.isPrimary && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPrimary(character.id!)}
+                      disabled={primarying !== null}
+                    >
+                      {primarying === character.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Star className="size-3.5" />
+                      )}
+                      대표로 사용
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => resync(character)}
+                    disabled={syncing}
+                  >
+                    {syncing ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-3.5" />
+                    )}
+                    동기화
+                  </Button>
+                </div>
               </div>
-              {linked.syncedAt && (
-                <span className="text-xs text-muted-foreground">
-                  마지막 동기화:{" "}
-                  {new Date(linked.syncedAt).toLocaleString("ko-KR")}
-                </span>
-              )}
-            </div>
-            <Button variant="outline" onClick={resync} disabled={syncing}>
-              {syncing ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <RefreshCw className="size-4" />
-              )}
-              다시 동기화
-            </Button>
+            ))}
           </CardContent>
         </Card>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>{linked ? "다른 캐릭터로 변경" : "캐릭터 연동"}</CardTitle>
+          <CardTitle>{linked ? "캐릭터 추가 연동" : "캐릭터 연동"}</CardTitle>
           <CardDescription>
             서버를 고르고 캐릭터 이름을 검색하세요. 투력과 클래스는 공식
             홈페이지에서 자동으로 가져옵니다.

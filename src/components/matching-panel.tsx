@@ -31,6 +31,15 @@ type Progress = {
   stage: number;
 };
 
+type MatchCharacter = {
+  id: string;
+  name: string;
+  server: string;
+  className: string;
+  combatPower: number;
+  isPrimary: boolean;
+};
+
 function stageLabel(dungeon: Dungeon | undefined, stage: number) {
   if (!dungeon || stage <= 0) return "처음";
   return dungeon.gimmick_stages[stage - 1] ?? "클리어";
@@ -43,6 +52,7 @@ async function requestMatch(body: {
   minCombatPower?: number;
   requiredClasses?: string[];
   maxMembers?: number;
+  characterId?: string;
 }) {
   const res = await fetch("/api/matching", {
     method: "POST",
@@ -58,11 +68,13 @@ export function MatchingPanel({
   dungeons,
   profile,
   progress,
+  characters,
   isGuest,
 }: {
   dungeons: Dungeon[];
   profile: Profile | null;
   progress: Progress[];
+  characters: MatchCharacter[];
   isGuest: boolean;
 }) {
   const router = useRouter();
@@ -70,13 +82,18 @@ export function MatchingPanel({
   const [dungeonId, setDungeonId] = useState(dungeons[0]?.id ?? "");
   const selectedDungeon = dungeons.find((d) => d.id === dungeonId);
   const savedStage = progress.find((item) => item.dungeonId === dungeonId)?.stage ?? 0;
+  const primaryCharacter = characters.find((character) => character.isPrimary) ?? characters[0];
+  const [characterId, setCharacterId] = useState(primaryCharacter?.id ?? "");
+  const selectedCharacter = characters.find((character) => character.id === characterId);
   const [stage, setStage] = useState(savedStage);
-  const [minCombatPower, setMinCombatPower] = useState(profile?.combatPower ?? 0);
+  const [minCombatPower, setMinCombatPower] = useState(
+    selectedCharacter?.combatPower ?? profile?.combatPower ?? 0,
+  );
   const [maxMembers, setMaxMembers] = useState(6);
   const [requiredClasses, setRequiredClasses] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
 
-  const hasLinkedCharacter = !!profile?.charClass && !!profile.combatPower;
+  const hasLinkedCharacter = characters.length > 0 || (!!profile?.charClass && !!profile.combatPower);
   const stages = useMemo(() => {
     const items = selectedDungeon?.gimmick_stages ?? [];
     return ["처음", ...items, "클리어"];
@@ -104,6 +121,7 @@ export function MatchingPanel({
       const result = await requestMatch({
         role: mode,
         dungeonId,
+        characterId,
         stage,
         minCombatPower,
         requiredClasses,
@@ -191,7 +209,33 @@ export function MatchingPanel({
         </div>
 
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="match-character">매칭 캐릭터</Label>
+              <select
+                id="match-character"
+                value={characterId}
+                onChange={(e) => {
+                  setCharacterId(e.target.value);
+                  const nextCharacter = characters.find(
+                    (character) => character.id === e.target.value,
+                  );
+                  if (nextCharacter) setMinCombatPower(nextCharacter.combatPower);
+                }}
+                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {characters.length === 0 && (
+                  <option value="" className="bg-popover">
+                    캐릭터 없음
+                  </option>
+                )}
+                {characters.map((character) => (
+                  <option key={character.id} value={character.id} className="bg-popover">
+                    {character.name} · {character.className}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="match-dungeon">콘텐츠</Label>
               <select
@@ -275,10 +319,10 @@ export function MatchingPanel({
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm text-muted-foreground">
             <span>
               선택 진도: {stageLabel(selectedDungeon, stage)}
-              {profile?.charClass && ` · 내 클래스 ${profile.charClass}`}
-              {profile?.combatPower && ` · 투력 ${profile.combatPower.toLocaleString()}`}
+              {selectedCharacter?.className && ` · ${selectedCharacter.name} ${selectedCharacter.className}`}
+              {selectedCharacter?.combatPower && ` · 투력 ${selectedCharacter.combatPower.toLocaleString()}`}
             </span>
-            <Button type="submit" disabled={pending || isGuest || !hasLinkedCharacter || dungeons.length === 0}>
+            <Button type="submit" disabled={pending || isGuest || !hasLinkedCharacter || !characterId || dungeons.length === 0}>
               {pending && <Loader2 className="size-4 animate-spin" />}
               {mode === "leader" ? "매칭 열기" : "자동매칭 대기"}
             </Button>

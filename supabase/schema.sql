@@ -10,6 +10,7 @@ drop function if exists public.apply_party_review_temperature cascade;
 drop table if exists public.match_queue cascade;
 drop table if exists public.match_requests cascade;
 drop table if exists public.dungeons cascade;
+drop table if exists public.aion2_characters cascade;
 drop function if exists public.is_admin cascade;
 drop table if exists public.room_invites cascade;
 drop function if exists public.send_room_invite cascade;
@@ -90,6 +91,42 @@ grant select (
 -- can't fake their combat power.
 revoke update on public.profiles from authenticated, anon;
 grant update (nickname, server) on public.profiles to authenticated;
+
+-- aion2 characters ------------------------------------------------------
+
+create table public.aion2_characters (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  character_id text not null,
+  character_name text not null,
+  server_id integer not null,
+  server_name text not null,
+  class_name text not null,
+  character_level integer not null default 0,
+  combat_power integer not null default 0,
+  is_primary boolean not null default false,
+  synced_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (user_id, character_id, server_id)
+);
+
+create index aion2_characters_user_idx
+  on public.aion2_characters (user_id, is_primary desc, synced_at desc);
+
+alter table public.aion2_characters enable row level security;
+
+create policy "characters viewable by authenticated"
+  on public.aion2_characters for select
+  to authenticated
+  using (true);
+
+create policy "users can manage own characters"
+  on public.aion2_characters for all
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+grant select on public.aion2_characters to authenticated;
 
 -- Auto-create a profile row whenever a new auth user signs up.
 create function public.handle_new_user()
@@ -838,6 +875,7 @@ create table public.match_requests (
   leader_id uuid not null references public.profiles (id) on delete cascade,
   dungeon_id uuid not null references public.dungeons (id) on delete cascade,
   room_id uuid references public.rooms (id) on delete set null,
+  character_row_id uuid references public.aion2_characters (id) on delete set null,
   required_stage integer not null default 0 check (required_stage >= 0),
   min_combat_power integer not null default 0 check (min_combat_power >= 0),
   required_classes text[] not null default '{}',
@@ -872,6 +910,7 @@ create table public.match_queue (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
   dungeon_id uuid not null references public.dungeons (id) on delete cascade,
+  character_row_id uuid references public.aion2_characters (id) on delete set null,
   requested_stage integer not null default 0 check (requested_stage >= 0),
   status text not null default 'waiting' check (status in ('waiting', 'matched', 'cancelled')),
   match_request_id uuid references public.match_requests (id) on delete set null,

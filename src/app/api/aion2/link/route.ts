@@ -68,28 +68,78 @@ export async function POST(request: NextRequest) {
     { auth: { persistSession: false } },
   );
 
-  const { error } = await admin
-    .from("profiles")
-    .update({
-      char_class: profile.className,
-      combat_power: profile.combatPower,
-      server: profile.serverName,
-      aion2_character_id: profile.characterId,
-      aion2_character_name: profile.characterName,
-      aion2_server_id: profile.serverId,
-      aion2_synced_at: new Date().toISOString(),
-    })
-    .eq("id", user.id);
+  const { data: existingCharacters } = await admin
+    .from("aion2_characters")
+    .select("id, character_id, server_id, is_primary")
+    .eq("user_id", user.id)
+    .limit(100);
+  const shouldBePrimary = (existingCharacters ?? []).length === 0;
+  const existingCharacter = (existingCharacters ?? []).find(
+    (character) =>
+      character.character_id === profile.characterId &&
+      character.server_id === profile.serverId,
+  ) as { is_primary?: boolean } | undefined;
+  const isPrimary = shouldBePrimary || existingCharacter?.is_primary === true;
 
-  if (error) {
+  if (shouldBePrimary) {
+    await admin
+      .from("aion2_characters")
+      .update({ is_primary: false } as unknown as never)
+      .eq("user_id", user.id);
+  }
+
+  const { data: characterRow, error: characterError } = await admin
+    .from("aion2_characters")
+    .upsert(
+      {
+        user_id: user.id,
+        character_id: profile.characterId,
+        character_name: profile.characterName,
+        server_id: profile.serverId,
+        server_name: profile.serverName,
+        class_name: profile.className,
+        character_level: profile.characterLevel,
+        combat_power: profile.combatPower,
+        is_primary: isPrimary,
+        synced_at: new Date().toISOString(),
+      } as unknown as never,
+      { onConflict: "user_id,character_id,server_id" },
+    )
+    .select("id")
+    .single();
+
+  if (characterError || !characterRow) {
     return NextResponse.json(
-      { error: "프로필 저장에 실패했습니다: " + error.message },
+      { error: "캐릭터 저장에 실패했습니다: " + (characterError?.message ?? "") },
       { status: 500 },
     );
   }
 
+  if (isPrimary) {
+    const { error } = await admin
+      .from("profiles")
+      .update({
+        char_class: profile.className,
+        combat_power: profile.combatPower,
+        server: profile.serverName,
+        aion2_character_id: profile.characterId,
+        aion2_character_name: profile.characterName,
+        aion2_server_id: profile.serverId,
+        aion2_synced_at: new Date().toISOString(),
+      })
+      .eq("id", user.id);
+
+    if (error) {
+      return NextResponse.json(
+        { error: "프로필 저장에 실패했습니다: " + error.message },
+        { status: 500 },
+      );
+    }
+  }
+
   return NextResponse.json({
     character: {
+      id: (characterRow as { id: string }).id,
       name: profile.characterName,
       server: profile.serverName,
       className: profile.className,

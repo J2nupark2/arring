@@ -9,16 +9,22 @@ type Profile = {
   id: string;
   nickname: string;
   server: string | null;
-  char_class: string | null;
-  combat_power: number | null;
   manner_temperature: number | null;
   trust_temperature: number | null;
+};
+
+type CharacterRow = {
+  id: string;
+  user_id: string;
+  class_name: string;
+  combat_power: number;
 };
 
 type MatchRequest = {
   id: string;
   leader_id: string;
   dungeon_id: string;
+  character_row_id: string | null;
   required_stage: number;
   min_combat_power: number;
   required_classes: string[];
@@ -41,6 +47,29 @@ type AdminClient = NonNullable<ReturnType<typeof getAdmin>>;
 
 function score(profile: Profile) {
   return (profile.manner_temperature ?? 36.5) + (profile.trust_temperature ?? 36.5);
+}
+
+async function getUserCharacter(
+  admin: AdminClient,
+  userId: string,
+  characterId?: string,
+) {
+  let query = admin
+    .from("aion2_characters")
+    .select("id, user_id, class_name, combat_power")
+    .eq("user_id", userId);
+
+  if (characterId) {
+    query = query.eq("id", characterId);
+  } else {
+    query = query.order("is_primary", { ascending: false }).order("synced_at", {
+      ascending: false,
+    });
+  }
+
+  const { data, error } = await query.limit(1).single();
+  if (error || !data) return null;
+  return data as CharacterRow;
 }
 
 async function createRoom(
@@ -101,7 +130,7 @@ async function findCandidates(
 ) {
   const { data: queueRows, error: queueError } = await admin
     .from("match_queue")
-    .select("id, user_id, requested_stage, created_at")
+    .select("id, user_id, character_row_id, requested_stage, created_at")
     .eq("status", "waiting")
     .eq("dungeon_id", request.dungeon_id)
     .gte("requested_stage", request.required_stage)
@@ -112,6 +141,7 @@ async function findCandidates(
   const rows = (queueRows ?? []) as {
     id: string;
     user_id: string;
+    character_row_id: string | null;
     requested_stage: number;
     created_at: string;
   }[];
@@ -121,22 +151,42 @@ async function findCandidates(
   const { data: profiles, error: profileError } = await admin
     .from("profiles")
     .select(
-      "id, nickname, server, char_class, combat_power, manner_temperature, trust_temperature",
+      "id, nickname, server, manner_temperature, trust_temperature",
     )
     .in("id", ids);
 
   if (profileError) throw new Error(profileError.message);
 
+  const characterIds = rows
+    .map((row) => row.character_row_id)
+    .filter((id): id is string => !!id);
+  const { data: characters, error: characterError } =
+    characterIds.length > 0
+      ? await admin
+          .from("aion2_characters")
+          .select("id, user_id, class_name, combat_power")
+          .in("id", characterIds)
+      : { data: [], error: null };
+
+  if (characterError) throw new Error(characterError.message);
+
   const profileList = (profiles ?? []) as Profile[];
   const profileById = new Map(profileList.map((p) => [p.id, p]));
+  const characterById = new Map(
+    ((characters ?? []) as CharacterRow[]).map((character) => [character.id, character]),
+  );
   const requiredClasses = request.required_classes ?? [];
 
   return rows
-    .map((row) => ({ row, profile: profileById.get(row.user_id) }))
-    .filter(({ profile }) => {
-      if (!profile) return false;
-      if ((profile.combat_power ?? 0) < request.min_combat_power) return false;
-      if (requiredClasses.length > 0 && !requiredClasses.includes(profile.char_class ?? "")) {
+    .map((row) => ({
+      row,
+      profile: profileById.get(row.user_id),
+      character: row.character_row_id ? characterById.get(row.character_row_id) : undefined,
+    }))
+    .filter(({ profile, character }) => {
+      if (!profile || !character) return false;
+      if (character.combat_power < request.min_combat_power) return false;
+      if (requiredClasses.length > 0 && !requiredClasses.includes(character.class_name)) {
         return false;
       }
       return true;
@@ -152,7 +202,7 @@ async function tryCompleteMatch(
   const { data: leaderProfile, error: leaderError } = await admin
     .from("profiles")
     .select(
-      "id, nickname, server, char_class, combat_power, manner_temperature, trust_temperature",
+      "id, nickname, server, manner_temperature, trust_temperature",
     )
     .eq("id", request.leader_id)
     .single();
@@ -223,6 +273,7 @@ export async function POST(request: NextRequest) {
     minCombatPower?: number;
     requiredClasses?: string[];
     maxMembers?: number;
+    characterId?: string;
   };
   try {
     body = await request.json();
@@ -234,13 +285,9 @@ export async function POST(request: NextRequest) {
   const stage = Math.max(0, Math.trunc(Number(body.stage) || 0));
   if (!dungeonId || !body.role) return jsonError("매칭 조건을 확인해주세요.", 400);
 
-  const { data: profile } = await admin
-    .from("profiles")
-    .select("id, char_class, combat_power")
-    .eq("id", user.id)
-    .single();
+  const selectedCharacter = await getUserCharacter(admin, user.id, body.characterId);
 
-  if (!profile?.char_class || !profile.combat_power) {
+  if (!selectedCharacter) {
     return jsonError("프로필에서 아이온2 캐릭터를 먼저 연동해주세요.", 400);
   }
 
@@ -263,13 +310,14 @@ export async function POST(request: NextRequest) {
       .insert({
         leader_id: user.id,
         dungeon_id: dungeonId,
+        character_row_id: selectedCharacter.id,
         required_stage: stage,
         min_combat_power: minCombatPower,
         required_classes: requiredClasses,
         max_members: maxMembers,
       } as unknown as never)
       .select(
-        "id, leader_id, dungeon_id, required_stage, min_combat_power, required_classes, max_members",
+        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members",
       )
       .single();
 
@@ -285,6 +333,7 @@ export async function POST(request: NextRequest) {
     {
       user_id: user.id,
       dungeon_id: dungeonId,
+      character_row_id: selectedCharacter.id,
       requested_stage: stage,
       status: "waiting",
       created_at: new Date().toISOString(),
@@ -299,12 +348,12 @@ export async function POST(request: NextRequest) {
   const { data: requests, error: requestError } = await admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, required_stage, min_combat_power, required_classes, max_members",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members",
     )
     .eq("status", "waiting")
     .eq("dungeon_id", dungeonId)
     .lte("required_stage", stage)
-    .lte("min_combat_power", profile.combat_power)
+    .lte("min_combat_power", selectedCharacter.combat_power)
     .order("created_at", { ascending: true })
     .limit(10);
 
@@ -314,7 +363,7 @@ export async function POST(request: NextRequest) {
 
   const compatible = ((requests ?? []) as MatchRequest[]).filter((matchRequest) => {
     const classes = matchRequest.required_classes ?? [];
-    return classes.length === 0 || classes.includes(profile.char_class);
+    return classes.length === 0 || classes.includes(selectedCharacter.class_name);
   });
 
   for (const matchRequest of compatible) {

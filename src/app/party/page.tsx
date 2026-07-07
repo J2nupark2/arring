@@ -48,7 +48,13 @@ export default async function PartyPage({
     redirect(`/guest?next=${encodeURIComponent("/party")}`);
   }
 
-  const [{ data: rooms }, { data: dungeons }, { data: profile }, { data: progress }] =
+  const [
+    { data: rooms },
+    { data: dungeons },
+    { data: profile },
+    { data: progress },
+    { data: characters },
+  ] =
     await Promise.all([
       supabase.rpc("list_public_rooms"),
       supabase
@@ -68,6 +74,14 @@ export default async function PartyPage({
         .from("dungeon_progress")
         .select("dungeon_id, stage")
         .eq("user_id", user.id),
+      supabase
+        .from("aion2_characters")
+        .select(
+          "id, character_name, server_name, class_name, combat_power, is_primary",
+        )
+        .eq("user_id", user.id)
+        .order("is_primary", { ascending: false })
+        .order("synced_at", { ascending: false }),
     ]);
 
   const { error, welcome } = await searchParams;
@@ -119,6 +133,14 @@ export default async function PartyPage({
             progress={(progress ?? []).map((item) => ({
               dungeonId: item.dungeon_id,
               stage: item.stage,
+            }))}
+            characters={(characters ?? []).map((character) => ({
+              id: character.id,
+              name: character.character_name,
+              server: character.server_name,
+              className: character.class_name,
+              combatPower: character.combat_power,
+              isPrimary: character.is_primary,
             }))}
             isGuest={isGuest}
           />
