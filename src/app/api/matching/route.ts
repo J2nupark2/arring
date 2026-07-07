@@ -87,13 +87,15 @@ async function getRoomCode(admin: AdminClient, roomId: string | null | undefined
 async function findExistingMatch(
   admin: AdminClient,
   userId: string,
+  matchedAfter?: string | null,
 ): Promise<ExistingMatch> {
+  const after = matchedAfter ?? new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const { data: queueRow } = await admin
     .from("match_queue")
     .select("room_id")
     .eq("user_id", userId)
     .eq("status", "matched")
-    .gte("matched_at", new Date(Date.now() - 10 * 60 * 1000).toISOString())
+    .gte("matched_at", after)
     .order("matched_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -109,7 +111,7 @@ async function findExistingMatch(
     .select("room_id")
     .eq("leader_id", userId)
     .eq("status", "matched")
-    .gte("matched_at", new Date(Date.now() - 10 * 60 * 1000).toISOString())
+    .gte("matched_at", after)
     .order("matched_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -419,8 +421,12 @@ async function tryCompleteMatch(
   return { matched: true, roomCode: room.code };
 }
 
-async function getMatchStatus(admin: AdminClient, userId: string) {
-  const existing = await findExistingMatch(admin, userId);
+async function getMatchStatus(
+  admin: AdminClient,
+  userId: string,
+  matchedAfter?: string | null,
+) {
+  const existing = await findExistingMatch(admin, userId, matchedAfter);
   if (existing.matched) return existing;
 
   const { data: request } = await admin
@@ -482,7 +488,7 @@ async function getMatchStatus(admin: AdminClient, userId: string) {
   return { matched: false, active: false };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const admin = getAdmin();
   if (!admin) {
     return jsonError("서버에 SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.", 500);
@@ -498,7 +504,8 @@ export async function GET() {
     return NextResponse.json({ matched: false, active: false });
   }
 
-  return NextResponse.json(await getMatchStatus(admin, user.id));
+  const matchedAfter = request.nextUrl.searchParams.get("since");
+  return NextResponse.json(await getMatchStatus(admin, user.id, matchedAfter));
 }
 
 export async function DELETE() {
@@ -545,9 +552,6 @@ export async function POST(request: NextRequest) {
   if (user.is_anonymous) {
     return jsonError("자동매칭은 회원가입 후 이용할 수 있습니다.", 403);
   }
-
-  const existingMatch = await findExistingMatch(admin, user.id);
-  if (existingMatch.matched) return NextResponse.json(existingMatch);
 
   let body: {
     role?: "leader" | "member";

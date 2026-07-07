@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -107,8 +107,10 @@ async function requestMatch(body: {
   return data as { matched: boolean; roomCode?: string; waitingCount?: number; needed?: number };
 }
 
-async function fetchMatchStatus() {
-  const res = await fetch("/api/matching", { method: "GET" });
+async function fetchMatchStatus(since: string) {
+  const res = await fetch(`/api/matching?since=${encodeURIComponent(since)}`, {
+    method: "GET",
+  });
   if (!res.ok) return null;
   return (await res.json()) as MatchStatus;
 }
@@ -156,6 +158,7 @@ export function MatchingPanel({
   const [pending, setPending] = useState(false);
   const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const matchSessionStartedAt = useRef(new Date().toISOString());
 
   const maxMembers = partySizeForDungeon(selectedDungeon);
   const hasLinkedCharacter = characters.length > 0 || (!!profile?.charClass && !!profile.combatPower);
@@ -166,7 +169,7 @@ export function MatchingPanel({
 
     let active = true;
     async function refreshStatus() {
-      const status = await fetchMatchStatus();
+      const status = await fetchMatchStatus(matchSessionStartedAt.current);
       if (!active || !status) return;
 
       if (status.matched && status.roomCode) {
@@ -256,6 +259,7 @@ export function MatchingPanel({
     if (!dungeonId || pending) return;
     setPending(true);
     try {
+      matchSessionStartedAt.current = new Date().toISOString();
       const invitedFriendIds = invitedSlots
         .map((friend) => friend?.user_id)
         .filter((id): id is string => !!id);
