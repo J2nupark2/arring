@@ -150,7 +150,7 @@ export default async function CharacterDetailPage({
           </Card>
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.68fr)] 2xl:grid-cols-[minmax(0,1.18fr)_minmax(420px,0.72fr)]">
           <EquipmentBoard items={equipment} />
           <SkillBoard skills={skills} stigmas={stigmas} />
         </section>
@@ -292,7 +292,7 @@ function SkillBoard({
   const total = groups.active.length + groups.passive.length + groups.stigma.length;
 
   return (
-    <Card>
+    <Card className="overflow-visible">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -302,7 +302,7 @@ function SkillBoard({
           <Badge variant="outline">{total}개 확인</Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-4 overflow-visible">
         <SkillGroup
           title="액티브 스킬"
           items={groups.active}
@@ -333,7 +333,7 @@ function SkillGroup({
   empty: string;
 }) {
   return (
-    <section className="space-y-2">
+    <section className="space-y-2 overflow-visible">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">{title}</h3>
         <Badge variant="secondary">{items.length}</Badge>
@@ -343,14 +343,12 @@ function SkillGroup({
           {empty}
         </p>
       ) : (
-        <div className="space-y-2">
+        <div className="flex flex-wrap gap-2 overflow-visible">
           {items.map((item, index) => (
-            <div
+            <SkillIconSummary
               key={`${title}-${item.name}-${index}`}
-              className="rounded-md border px-3 py-2"
-            >
-              <ItemSummary item={item} />
-            </div>
+              item={item}
+            />
           ))}
         </div>
       )}
@@ -417,9 +415,47 @@ function ItemSummary({ item }: { item: DetailItem }) {
   );
 }
 
-function SkillTooltip({ item }: { item: DetailItem }) {
+function SkillIconSummary({ item }: { item: DetailItem }) {
+  const hasTooltip = hasSkillTooltip(item);
+
   return (
-    <div className="pointer-events-none absolute left-0 top-11 z-20 hidden w-72 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg group-hover:block">
+    <div className="group relative z-0 hover:z-50">
+      <div className="relative flex size-12 items-center justify-center rounded-md border bg-muted/20 p-1.5 transition-colors group-hover:border-primary/50 group-hover:bg-primary/10">
+        {item.icon ? (
+          // Official AION2 skill icons are small CDN assets.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.icon}
+            alt=""
+            className="size-9 rounded object-cover"
+          />
+        ) : (
+          <Sparkles className="size-5 text-muted-foreground" />
+        )}
+        {item.level !== undefined && (
+          <span className="absolute -bottom-1 -right-1 rounded bg-background px-1 font-mono text-[10px] font-semibold leading-4 ring-1 ring-border">
+            {item.level}
+          </span>
+        )}
+      </div>
+      {hasTooltip && <SkillTooltip item={item} compact />}
+    </div>
+  );
+}
+
+function SkillTooltip({
+  item,
+  compact = false,
+}: {
+  item: DetailItem;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`pointer-events-none absolute z-50 hidden w-80 max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-3 text-popover-foreground shadow-lg group-hover:block ${
+        compact ? "right-0 top-14" : "left-0 top-11"
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="break-words text-sm font-semibold">{item.name}</div>
