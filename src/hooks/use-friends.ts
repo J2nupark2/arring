@@ -63,14 +63,15 @@ export function useFriends(isGuest: boolean) {
 
     const id = setInterval(refresh, POLL_MS);
     const supabase = createClient();
+    let cancelled = false;
 
     // Friend requests and messages used to only ever update on the next
     // 15s poll tick. That's kept as a fallback (in case a realtime
     // connection drops), but both now also push instantly.
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
+      if (!user || cancelled) return;
       const channel = supabase
-        .channel(`friend-updates:${user.id}`)
+        .channel(`friend-updates:${user.id}:${crypto.randomUUID()}`)
         .on(
           "postgres_changes",
           {
@@ -92,10 +93,15 @@ export function useFriends(isGuest: boolean) {
           () => refresh(),
         )
         .subscribe();
+      if (cancelled) {
+        void supabase.removeChannel(channel);
+        return;
+      }
       channelsRef.current.push(channel);
     });
 
     return () => {
+      cancelled = true;
       clearInterval(id);
       channelsRef.current.forEach((c) => supabase.removeChannel(c));
       channelsRef.current = [];

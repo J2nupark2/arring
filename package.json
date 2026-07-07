@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:matching": "node scripts/matching-smoke-test.mjs",
+    "test:matching:http": "node scripts/matching-api-e2e.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

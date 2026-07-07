@@ -30,16 +30,17 @@ export function useRoomInvites(isGuest: boolean) {
   }, [isGuest]);
 
   useEffect(() => {
-    refresh();
+    void Promise.resolve().then(() => refresh());
     if (isGuest) return;
 
     const id = setInterval(refresh, POLL_MS);
     const supabase = createClient();
+    let cancelled = false;
 
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
+      if (!user || cancelled) return;
       const channel = supabase
-        .channel(`room-invites:${user.id}`)
+        .channel(`room-invites:${user.id}:${crypto.randomUUID()}`)
         .on(
           "postgres_changes",
           {
@@ -51,10 +52,15 @@ export function useRoomInvites(isGuest: boolean) {
           () => refresh(),
         )
         .subscribe();
+      if (cancelled) {
+        void supabase.removeChannel(channel);
+        return;
+      }
       channelRef.current = channel;
     });
 
     return () => {
+      cancelled = true;
       clearInterval(id);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
