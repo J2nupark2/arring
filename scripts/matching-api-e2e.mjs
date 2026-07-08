@@ -215,6 +215,35 @@ try {
   assert(get.ok, `GET /api/matching failed: ${get.status} ${JSON.stringify(get.data)}`);
   assert(get.data?.state === "waiting" && get.data?.active === true, `GET should keep waiting active, got ${JSON.stringify(get.data)}`);
 
+  const leaderPost = await api(jar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "leader",
+      dungeonId: dungeon.id,
+      characterId: user.characterId,
+      stage: 2,
+      minCombatPower: 700_000,
+      requiredClasses: [],
+    }),
+  });
+  assert(leaderPost.ok, `leader POST /api/matching failed: ${leaderPost.status} ${JSON.stringify(leaderPost.data)}`);
+  assert(
+    leaderPost.data?.state === "waiting" &&
+      leaderPost.data?.role === "leader" &&
+      leaderPost.data?.waitingCount === 0,
+    `leader POST should not count the user's previous member queue, got ${JSON.stringify(leaderPost.data)}`,
+  );
+
+  const leaderGet = await api(jar, `/api/matching?since=${encodeURIComponent(startedAt)}`);
+  assert(leaderGet.ok, `leader GET /api/matching failed: ${leaderGet.status} ${JSON.stringify(leaderGet.data)}`);
+  assert(
+    leaderGet.data?.state === "waiting" &&
+      leaderGet.data?.role === "leader" &&
+      leaderGet.data?.waitingCount === 0,
+    `leader GET should show 0 eligible candidates, got ${JSON.stringify(leaderGet.data)}`,
+  );
+
   const del = await api(jar, "/api/matching", { method: "DELETE" });
   assert(del.ok, `DELETE /api/matching failed: ${del.status} ${JSON.stringify(del.data)}`);
   assert(del.data?.state === "cancelled" && del.data?.active === false, `DELETE should return cancelled, got ${JSON.stringify(del.data)}`);
@@ -227,7 +256,7 @@ try {
   );
 
   console.log(`[matching-api-e2e] dungeon ${dungeon.name}`);
-  console.log("[matching-api-e2e] POST waiting -> GET waiting after 3.5s -> DELETE cancelled -> GET cancelled");
+  console.log("[matching-api-e2e] member waiting -> leader 0 candidates -> DELETE cancelled -> GET cancelled");
   console.log("[matching-api-e2e] PASS");
 } finally {
   await cleanup();

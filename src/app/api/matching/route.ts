@@ -276,6 +276,7 @@ async function findCandidates(
     }))
     .filter(({ row, profile, character }) => {
       if (!profile || !character) return false;
+      if (row.user_id === request.leader_id) return false;
       if (invitedFriendIds.has(row.user_id)) return false;
       if (character.combat_power < request.min_combat_power) return false;
       return true;
@@ -480,7 +481,7 @@ async function getMatchStatus(
 
   const requestQuery = admin
     .from("match_requests")
-    .select("id, dungeon_id, required_stage, min_combat_power, max_members, created_at, status")
+    .select("id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at, status")
     .eq("leader_id", userId)
     .in("status", ["waiting", "processing", "cancelled"])
     .order("created_at", { ascending: false })
@@ -491,10 +492,15 @@ async function getMatchStatus(
 
   if (request) {
     const activeRequest = request as {
+      id: string;
+      leader_id: string;
       dungeon_id: string;
+      character_row_id: string | null;
       required_stage: number;
       min_combat_power: number;
+      required_classes: string[];
       max_members: number;
+      invited_friend_ids?: string[];
       created_at: string;
       status: MatchState;
     };
@@ -510,19 +516,14 @@ async function getMatchStatus(
     }
 
     if (activeRequest.status === "waiting" || activeRequest.status === "processing") {
-      const { count } = await admin
-        .from("match_queue")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "waiting")
-        .eq("dungeon_id", activeRequest.dungeon_id)
-        .gte("requested_stage", activeRequest.required_stage);
+      const candidates = await findCandidates(admin, activeRequest);
 
       return {
         matched: false,
         active: true,
         state: activeRequest.status,
         role: "leader",
-        waitingCount: count ?? 0,
+        waitingCount: candidates.length,
         needed: Math.max(0, activeRequest.max_members - 1),
         since: activeRequest.created_at,
         status: activeRequest.status,
@@ -771,6 +772,16 @@ export async function POST(request: NextRequest) {
       return jsonError("기존 매칭 요청 정리에 실패했습니다: " + cancelRequestError.message, 500);
     }
 
+    const { error: cancelOwnQueueError } = await admin
+      .from("match_queue")
+      .update({ status: "cancelled" } as unknown as never)
+      .eq("user_id", user.id)
+      .eq("status", "waiting");
+
+    if (cancelOwnQueueError) {
+      return jsonError("기존 매칭 대기 정리에 실패했습니다: " + cancelOwnQueueError.message, 500);
+    }
+
     const { data: matchRequest, error } = await admin
       .from("match_requests")
       .insert({
@@ -804,6 +815,16 @@ export async function POST(request: NextRequest) {
 
   if (cancelQueueError) {
     return jsonError("기존 대기열 정리에 실패했습니다: " + cancelQueueError.message, 500);
+  }
+
+  const { error: cancelOwnRequestError } = await admin
+    .from("match_requests")
+    .update({ status: "cancelled" } as unknown as never)
+    .eq("leader_id", user.id)
+    .in("status", ["waiting", "processing"]);
+
+  if (cancelOwnRequestError) {
+    return jsonError("기존 매칭 요청 정리에 실패했습니다: " + cancelOwnRequestError.message, 500);
   }
 
   const { data: queueEntry, error: queueError } = await admin.from("match_queue").insert(
