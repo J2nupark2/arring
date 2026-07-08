@@ -409,15 +409,19 @@ async function tryCompleteMatch(
 
   const chosenQueueIds = chosen.map(({ row }) => row.id);
   if (chosenQueueIds.length > 0) {
-    const { data: stillWaitingQueues, error: waitingQueueError } = await admin
+    const { data: claimedQueues, error: claimQueueError } = await admin
       .from("match_queue")
+      .update({
+        status: "processing",
+        match_request_id: activeRequest.id,
+      } as unknown as never)
       .select("id")
       .in("id", chosenQueueIds)
       .eq("status", "waiting");
 
-    if (waitingQueueError) throw new Error(waitingQueueError.message);
+    if (claimQueueError) throw new Error(claimQueueError.message);
 
-    if ((stillWaitingQueues ?? []).length !== chosenQueueIds.length) {
+    if ((claimedQueues ?? []).length !== chosenQueueIds.length) {
       await admin
         .from("match_requests")
         .update({ status: "waiting" } as unknown as never)
@@ -435,12 +439,34 @@ async function tryCompleteMatch(
     }
   }
 
-  const room = await createRoom(
-    admin,
-    leaderProfile as Profile,
-    activeRequest,
-    chosen.map(({ row }) => row.user_id),
-  );
+  let room: { id: string; code: string };
+  try {
+    room = await createRoom(
+      admin,
+      leaderProfile as Profile,
+      activeRequest,
+      chosen.map(({ row }) => row.user_id),
+    );
+  } catch (error) {
+    await Promise.all([
+      admin
+        .from("match_requests")
+        .update({ status: "waiting" } as unknown as never)
+        .eq("id", activeRequest.id)
+        .eq("status", "processing"),
+      chosenQueueIds.length > 0
+        ? admin
+            .from("match_queue")
+            .update({
+              status: "waiting",
+              match_request_id: null,
+            } as unknown as never)
+            .in("id", chosenQueueIds)
+            .eq("status", "processing")
+        : Promise.resolve({ error: null }),
+    ]);
+    throw error;
+  }
 
   await admin
     .from("match_requests")
@@ -462,10 +488,10 @@ async function tryCompleteMatch(
         matched_at: new Date().toISOString(),
       } as unknown as never)
       .in(
-        "id",
-        chosenQueueIds,
-      )
-      .eq("status", "waiting");
+      "id",
+      chosenQueueIds,
+    )
+      .eq("status", "processing");
   }
 
   return { matched: true, roomCode: room.code };
@@ -535,7 +561,7 @@ async function getMatchStatus(
     .from("match_queue")
     .select("created_at, status")
     .eq("user_id", userId)
-    .in("status", ["waiting", "cancelled"])
+    .in("status", ["waiting", "processing", "cancelled"])
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -556,7 +582,7 @@ async function getMatchStatus(
     return {
       matched: false,
       active: true,
-      state: "waiting" satisfies MatchState,
+      state: activeQueue.status,
       role: "member",
       since: activeQueue.created_at,
       status: activeQueue.status,
@@ -608,7 +634,7 @@ export async function DELETE() {
       .from("match_queue")
       .update({ status: "cancelled" } as unknown as never)
       .eq("user_id", user.id)
-      .eq("status", "waiting"),
+      .in("status", ["waiting", "processing"]),
     admin
       .from("match_requests")
       .update({ status: "cancelled" } as unknown as never)
@@ -776,7 +802,7 @@ export async function POST(request: NextRequest) {
       .from("match_queue")
       .update({ status: "cancelled" } as unknown as never)
       .eq("user_id", user.id)
-      .eq("status", "waiting");
+      .in("status", ["waiting", "processing"]);
 
     if (cancelOwnQueueError) {
       return jsonError("기존 매칭 대기 정리에 실패했습니다: " + cancelOwnQueueError.message, 500);
@@ -811,7 +837,7 @@ export async function POST(request: NextRequest) {
     .from("match_queue")
     .update({ status: "cancelled" } as unknown as never)
     .eq("user_id", user.id)
-    .eq("status", "waiting");
+    .in("status", ["waiting", "processing"]);
 
   if (cancelQueueError) {
     return jsonError("기존 대기열 정리에 실패했습니다: " + cancelQueueError.message, 500);

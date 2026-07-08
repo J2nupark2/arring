@@ -65,13 +65,14 @@ function createCookieJar() {
   };
 }
 
-async function createTestUser() {
-  const email = `${runId}@example.test`;
+async function createTestUser(label = "solo", overrides = {}) {
+  const email = `${runId}-${label}@example.test`;
+  const nickname = `${runId}-${label}`;
   const { data, error } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: { nickname: runId, server: "테스트" },
+    user_metadata: { nickname, server: "테스트" },
   });
   if (error) throw new Error(`create auth user: ${error.message}`);
   const userId = data.user?.id;
@@ -83,7 +84,7 @@ async function createTestUser() {
     admin
       .from("profiles")
       .update({
-        nickname: runId,
+        nickname,
         server: "테스트",
         manner_temperature: 40,
         trust_temperature: 40,
@@ -97,13 +98,13 @@ async function createTestUser() {
       .from("aion2_characters")
       .insert({
         user_id: userId,
-        character_id: runId,
-        character_name: runId,
+        character_id: `${runId}-${label}`,
+        character_name: nickname,
         server_id: 9999,
         server_name: "테스트",
-        class_name: "살성",
+        class_name: overrides.className ?? "살성",
         character_level: 55,
-        combat_power: 780_000,
+        combat_power: overrides.combatPower ?? 780_000,
         is_primary: true,
       })
       .select("id")
@@ -174,6 +175,66 @@ async function api(jar, path, init = {}) {
     data = text;
   }
   return { ok: res.ok, status: res.status, data };
+}
+
+async function testFullHttpMatch() {
+  const dungeon = await createIsolatedDungeon();
+  const leader = await createTestUser("leader", { className: "검성", combatPower: 820_000 });
+  const members = [
+    await createTestUser("member1", { className: "호법성", combatPower: 760_000 }),
+    await createTestUser("member2", { className: "치유성", combatPower: 755_000 }),
+    await createTestUser("member3", { className: "마도성", combatPower: 750_000 }),
+    await createTestUser("member4", { className: "궁성", combatPower: 745_000 }),
+  ];
+  const memberJars = [];
+
+  for (const member of members) {
+    const jar = await signIn(member.email);
+    memberJars.push(jar);
+    const response = await api(jar, "/api/matching", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role: "member",
+        dungeonId: dungeon.id,
+        characterId: member.characterId,
+        stage: 3,
+      }),
+    });
+    assert(response.ok, `member queue failed: ${response.status} ${JSON.stringify(response.data)}`);
+    assert(response.data?.state === "waiting", `member should wait, got ${JSON.stringify(response.data)}`);
+  }
+
+  const leaderJar = await signIn(leader.email);
+  const startedAt = new Date().toISOString();
+  const leaderResponse = await api(leaderJar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "leader",
+      dungeonId: dungeon.id,
+      characterId: leader.characterId,
+      stage: 2,
+      minCombatPower: 700_000,
+      requiredClasses: [],
+    }),
+  });
+  assert(leaderResponse.ok, `leader match failed: ${leaderResponse.status} ${JSON.stringify(leaderResponse.data)}`);
+  assert(
+    leaderResponse.data?.matched === true && leaderResponse.data?.roomCode,
+    `leader should create a matched room, got ${JSON.stringify(leaderResponse.data)}`,
+  );
+
+  for (const jar of memberJars) {
+    const status = await api(jar, `/api/matching?since=${encodeURIComponent(startedAt)}`);
+    assert(status.ok, `member matched status failed: ${status.status} ${JSON.stringify(status.data)}`);
+    assert(
+      status.data?.matched === true && status.data?.roomCode === leaderResponse.data.roomCode,
+      `member should see matched room ${leaderResponse.data.roomCode}, got ${JSON.stringify(status.data)}`,
+    );
+  }
+
+  console.log(`[matching-api-e2e] full 5-person HTTP match room ${leaderResponse.data.roomCode}`);
 }
 
 async function cleanup() {
@@ -255,8 +316,10 @@ try {
     `GET after cancel should stay cancelled, got ${JSON.stringify(afterCancel.data)}`,
   );
 
+  await testFullHttpMatch();
+
   console.log(`[matching-api-e2e] dungeon ${dungeon.name}`);
-  console.log("[matching-api-e2e] member waiting -> leader 0 candidates -> DELETE cancelled -> GET cancelled");
+  console.log("[matching-api-e2e] member waiting -> leader 0 candidates -> full 5-person match -> cancel lifecycle");
   console.log("[matching-api-e2e] PASS");
 } finally {
   await cleanup();

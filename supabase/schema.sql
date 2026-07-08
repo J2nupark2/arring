@@ -916,7 +916,7 @@ create table public.match_queue (
   dungeon_id uuid not null references public.dungeons (id) on delete cascade,
   character_row_id uuid references public.aion2_characters (id) on delete set null,
   requested_stage integer not null default 0 check (requested_stage >= 0),
-  status text not null default 'waiting' check (status in ('waiting', 'matched', 'cancelled')),
+  status text not null default 'waiting' check (status in ('waiting', 'processing', 'matched', 'cancelled')),
   match_request_id uuid references public.match_requests (id) on delete set null,
   room_id uuid references public.rooms (id) on delete set null,
   created_at timestamptz not null default now(),
@@ -927,8 +927,12 @@ create index match_queue_waiting_idx
   on public.match_queue (status, dungeon_id, requested_stage, created_at);
 
 create unique index match_queue_active_unique_idx
-  on public.match_queue (user_id, dungeon_id)
-  where status = 'waiting';
+  on public.match_queue (user_id)
+  where status in ('waiting', 'processing');
+
+create unique index match_requests_active_leader_unique_idx
+  on public.match_requests (leader_id)
+  where status in ('waiting', 'processing');
 
 alter table public.match_queue enable row level security;
 
