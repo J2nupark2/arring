@@ -59,7 +59,11 @@ type MatchStatus = {
     responseStatus: "pending" | "accepted" | "rejected" | "expired";
     responses: { userId: string; status: "pending" | "accepted" | "rejected" | "expired" }[];
     score: number;
+    role: "leader" | "member";
   } | null;
+  canAutoLead?: boolean;
+  autoLeadEligibleAt?: string | null;
+  autoLeadAfterSeconds?: number | null;
 };
 
 function stageLabel(dungeon: Dungeon | undefined, stage: number) {
@@ -104,6 +108,9 @@ async function requestMatch(body: {
   maxMembers?: number;
   characterId?: string;
   invitedFriendIds?: string[];
+  canAutoLead?: boolean;
+  autoLeadAfterSeconds?: number;
+  allowConditionRelaxation?: boolean;
 }) {
   const res = await fetch("/api/matching", {
     method: "POST",
@@ -174,6 +181,9 @@ export function MatchingPanel({
   const [invitedSlots, setInvitedSlots] = useState<(Friend | null)[]>(
     createInviteSlots(memberSlotCountForDungeon(selectedDungeon)),
   );
+  const [canAutoLead, setCanAutoLead] = useState(false);
+  const [autoLeadAfterSeconds, setAutoLeadAfterSeconds] = useState(90);
+  const [allowConditionRelaxation, setAllowConditionRelaxation] = useState(false);
   const [pending, setPending] = useState(false);
   const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -215,10 +225,10 @@ export function MatchingPanel({
   }, [isGuest, router]);
 
   useEffect(() => {
-    if (!matchStatus?.temporaryMatch) return;
+    if (!matchStatus?.temporaryMatch && !matchStatus?.autoLeadEligibleAt) return;
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [matchStatus?.temporaryMatch]);
+  }, [matchStatus?.temporaryMatch, matchStatus?.autoLeadEligibleAt]);
 
   function changeDungeon(nextDungeonId: string) {
     setDungeonId(nextDungeonId);
@@ -306,6 +316,9 @@ export function MatchingPanel({
         requiredClasses: requiredClassesForMatching,
         maxMembers,
         invitedFriendIds,
+        canAutoLead: mode === "member" && canAutoLead,
+        autoLeadAfterSeconds,
+        allowConditionRelaxation,
       });
 
       if (result.matched && result.roomCode) {
@@ -332,6 +345,9 @@ export function MatchingPanel({
         waitingCount: result.waitingCount,
         needed: result.needed,
         since: result.since,
+        canAutoLead: result.canAutoLead,
+        autoLeadEligibleAt: result.autoLeadEligibleAt,
+        autoLeadAfterSeconds: result.autoLeadAfterSeconds,
       });
 
       if (mode === "leader") {
@@ -547,6 +563,93 @@ export function MatchingPanel({
             </>
           )}
 
+          {mode === "member" && (
+            <div className="flex flex-col gap-3 rounded-md border px-3 py-3">
+              <label className="flex items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={canAutoLead}
+                  onChange={(event) => setCanAutoLead(event.target.checked)}
+                  className="mt-1 size-4 accent-violet-500"
+                />
+                <span className="flex flex-col gap-1">
+                  <span className="font-medium">파티장 가능</span>
+                  <span className="text-xs text-muted-foreground">
+                    먼저 파티원으로 매칭을 시도하고, 일정 시간 동안 매칭되지 않으면 설정한 조건으로 파티장이 되어 매칭을 진행합니다.
+                  </span>
+                </span>
+              </label>
+
+              {canAutoLead && (
+                <div className="grid gap-3 border-t pt-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="auto-lead-power">최소 투력 (k)</Label>
+                      <div className="relative">
+                        <Input
+                          id="auto-lead-power"
+                          type="number"
+                          min={0}
+                          step={50}
+                          max={combatPowerToK(selectedCharacter?.combatPower)}
+                          value={minCombatPowerK}
+                          onChange={(event) =>
+                            setMinCombatPowerK(
+                              Math.min(
+                                combatPowerToK(selectedCharacter?.combatPower),
+                                Math.max(0, Number(event.target.value)),
+                              ),
+                            )
+                          }
+                          className="pr-10"
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                          k
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="auto-lead-delay">파티장 전환 대기</Label>
+                      <select
+                        id="auto-lead-delay"
+                        value={autoLeadAfterSeconds}
+                        onChange={(event) => setAutoLeadAfterSeconds(Number(event.target.value))}
+                        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                      >
+                        <option value={60} className="bg-popover">60초</option>
+                        <option value={90} className="bg-popover">90초</option>
+                        <option value={120} className="bg-popover">120초</option>
+                      </select>
+                    </div>
+                    <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={allowConditionRelaxation}
+                        onChange={(event) => setAllowConditionRelaxation(event.target.checked)}
+                        className="size-4 accent-violet-500"
+                      />
+                      조건 완화 허용
+                    </label>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>파티장 전환 시 받을 클래스</Label>
+                    <ClassSlotBoard
+                      dungeon={selectedDungeon}
+                      leaderClass={selectedCharacter?.className}
+                      slots={requiredClasses}
+                      invitedSlots={createInviteSlots(requiredClasses.length)}
+                      friends={[]}
+                      minCombatPower={combatPowerFromK(minCombatPowerK)}
+                      onChange={changeClassSlot}
+                      onAssignFriend={() => undefined}
+                      onMoveFriend={() => undefined}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm text-muted-foreground">
             <span>
               선택 진도: {stageLabel(selectedDungeon, stage)}
@@ -604,6 +707,12 @@ function MatchFloatingStatus({
         Math.ceil((new Date(temporaryMatch.expiresAt).getTime() - nowMs) / 1000),
       )
     : 0;
+  const autoLeadRemainingSeconds = status.autoLeadEligibleAt
+    ? Math.max(
+        0,
+        Math.ceil((new Date(status.autoLeadEligibleAt).getTime() - nowMs) / 1000),
+      )
+    : 0;
 
   if (temporaryMatch) {
     return (
@@ -618,6 +727,11 @@ function MatchFloatingStatus({
               전원 수락 시 파티가 확정됩니다. {acceptedCount}/{totalResponses}명
               수락, {remainingSeconds}초 남음
             </p>
+            {temporaryMatch.role === "leader" && (
+              <p className="mt-1 text-xs font-medium text-violet-300">
+                파티장으로 매칭됩니다.
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 gap-2">
             <Button
@@ -657,6 +771,13 @@ function MatchFloatingStatus({
               ? `조건에 맞는 파티원을 찾는 중입니다. ${waitingCount}/${needed}명`
               : "조건에 맞는 파티가 열리면 자동으로 방에 입장합니다."}
           </p>
+          {!isLeader && status.canAutoLead && (
+            <p className="mt-1 text-xs font-medium text-violet-300">
+              {autoLeadRemainingSeconds > 0
+                ? `파티장 전환 가능까지 ${autoLeadRemainingSeconds}초`
+                : "파티장 후보로 전환됨. 설정한 조건으로 파티원을 찾는 중입니다."}
+            </p>
+          )}
         </div>
         <Button
           type="button"

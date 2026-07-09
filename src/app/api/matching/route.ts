@@ -8,6 +8,7 @@ const MATCH_HEARTBEAT_TTL_MS = 2 * 60 * 1000;
 const TEMPORARY_MATCH_RESPONSE_SECONDS = 30;
 const MATCH_RESPONSE_BAN_MS = 5 * 60 * 1000;
 const MATCH_TOP_K = 50;
+const DEFAULT_AUTO_LEAD_AFTER_SECONDS = 90;
 
 type Profile = {
   id: string;
@@ -40,6 +41,21 @@ type MatchRequest = {
   created_at?: string;
 };
 
+type AutoLeadQueueRow = {
+  id: string;
+  user_id: string;
+  dungeon_id: string;
+  character_row_id: string | null;
+  requested_stage: number;
+  created_at: string;
+  auto_lead_eligible_at: string | null;
+  min_power: number | null;
+  required_gimmick_stage: number | null;
+  allowed_classes: string[] | null;
+  required_class_composition: string[] | null;
+  allow_condition_relaxation: boolean | null;
+};
+
 type ExistingMatch = {
   matched: boolean;
   roomCode?: string;
@@ -68,6 +84,7 @@ type TemporaryMatchStatus = {
   responseStatus: MatchResponseStatus;
   responses: { userId: string; status: MatchResponseStatus }[];
   score: number;
+  role: "leader" | "member";
 };
 
 function activeHeartbeatCutoff() {
@@ -543,7 +560,7 @@ async function findPendingTemporaryMatch(
 
   const { data: temp } = await admin
     .from("temporary_matches")
-    .select("id, status, expires_at, score")
+    .select("id, status, expires_at, score, leader_id")
     .eq("id", ownResponse.temporary_match_id)
     .eq("status", "pending_acceptance")
     .maybeSingle();
@@ -553,6 +570,7 @@ async function findPendingTemporaryMatch(
     status: string;
     expires_at: string;
     score: number;
+    leader_id: string;
   } | null;
   if (!temporaryMatch) return null;
 
@@ -565,11 +583,27 @@ async function findPendingTemporaryMatch(
     id: temporaryMatch.id,
     expiresAt: temporaryMatch.expires_at,
     responseStatus: ownResponse.status,
+    role: temporaryMatch.leader_id === userId ? "leader" : "member",
     score: Number(temporaryMatch.score ?? 0),
     responses: ((responses ?? []) as { user_id: string; status: MatchResponseStatus }[]).map(
       (item) => ({ userId: item.user_id, status: item.status }),
     ),
   };
+}
+
+async function isUserLockedForMatching(admin: AdminClient, userId: string) {
+  const pending = await findPendingTemporaryMatch(admin, userId);
+  if (pending) return true;
+
+  const { data: queueRow } = await admin
+    .from("match_queue")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("status", "processing")
+    .limit(1)
+    .maybeSingle();
+
+  return !!queueRow;
 }
 
 async function resetMatchLocks(
@@ -771,6 +805,7 @@ async function createTemporaryMatch(
       id: temporaryMatch.id,
       expiresAt: temporaryMatch.expires_at,
       responseStatus: "pending" satisfies MatchResponseStatus,
+      role: "leader" as const,
       responses: responseUserIds.map((userId) => ({
         userId,
         status: dummyUserIds.has(userId)
@@ -859,6 +894,17 @@ async function confirmTemporaryMatch(admin: AdminClient, temporaryMatchId: strin
         matched_at: matchedAt,
       } as unknown as never)
       .in("id", temp.queue_ids),
+    admin
+      .from("match_queue")
+      .update({
+        status: "matched",
+        match_request_id: temp.match_request_id,
+        room_id: room.id,
+        matched_at: matchedAt,
+      } as unknown as never)
+      .eq("user_id", temp.leader_id)
+      .eq("dungeon_id", matchRequest.dungeon_id)
+      .in("status", ["waiting", "processing"]),
     admin
       .from("profiles")
       .update({
@@ -1026,6 +1072,29 @@ async function tryCompleteMatch(
     };
   }
 
+  if (await isUserLockedForMatching(admin, activeRequest.leader_id)) {
+    await admin
+      .from("match_requests")
+      .update({
+        status: "waiting",
+        heartbeat_at: new Date().toISOString(),
+      } as unknown as never)
+      .eq("id", activeRequest.id)
+      .eq("status", "processing");
+    return {
+      matched: false,
+      active: true,
+      state: "waiting" satisfies MatchState,
+      role: "leader",
+      waitingCount: 0,
+      needed: Math.max(
+        0,
+        activeRequest.max_members - 1 - (activeRequest.invited_friend_ids?.length ?? 0),
+      ),
+      since: activeRequest.created_at,
+    };
+  }
+
   const candidates = await findCandidates(admin, activeRequest);
   const needed = Math.max(
     0,
@@ -1106,6 +1175,185 @@ async function tryCompleteMatch(
   }
 }
 
+function cleanClassList(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && !!item.trim())
+    : [];
+}
+
+function autoLeadPriorityScore(row: AutoLeadQueueRow, profile: Profile | undefined) {
+  const waitedMs = Date.now() - new Date(row.created_at).getTime();
+  const waitTimeScore = clamp01(waitedMs / (10 * 60 * 1000)) * 100;
+  const trustScore = normalizeScore(profile?.trust_temperature);
+  const mannerScore = normalizeScore(profile?.manner_temperature);
+  const failedResponses = Number(profile?.consecutive_failed_response_count ?? 0);
+  const responseRate = Math.max(0, 100 - failedResponses * 35);
+  const partySuccessRate = 50;
+
+  return (
+    waitTimeScore * 0.35 +
+    trustScore * 0.25 +
+    mannerScore * 0.2 +
+    responseRate * 0.15 +
+    partySuccessRate * 0.05
+  );
+}
+
+async function ensureAutoLeadRequest(
+  admin: AdminClient,
+  row: AutoLeadQueueRow,
+  maxMembers: number,
+) {
+  const heartbeatAt = new Date().toISOString();
+  const { data: existingRequest, error: existingError } = await admin
+    .from("match_requests")
+    .select(
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at, status",
+    )
+    .eq("leader_id", row.user_id)
+    .in("status", ["waiting", "processing"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) throw new Error(existingError.message);
+  if (existingRequest) {
+    await admin
+      .from("match_requests")
+      .update({ heartbeat_at: heartbeatAt } as unknown as never)
+      .eq("id", (existingRequest as { id: string }).id);
+    return existingRequest as MatchRequest;
+  }
+
+  const requiredClassComposition = cleanClassList(row.required_class_composition);
+  const allowedClasses = cleanClassList(row.allowed_classes);
+  const requiredClasses =
+    requiredClassComposition.length > 0 ? requiredClassComposition : allowedClasses;
+  const requiredStage = Math.max(
+    0,
+    Math.trunc(Number(row.required_gimmick_stage ?? row.requested_stage) || 0),
+  );
+  const minCombatPower = Math.max(0, Math.trunc(Number(row.min_power) || 0));
+
+  if (!row.character_row_id || row.auto_lead_eligible_at === null) return null;
+
+  const { data: insertedRequest, error: insertError } = await admin
+    .from("match_requests")
+    .insert({
+      leader_id: row.user_id,
+      dungeon_id: row.dungeon_id,
+      character_row_id: row.character_row_id,
+      required_stage: requiredStage,
+      min_combat_power: minCombatPower,
+      required_classes: requiredClasses,
+      max_members: maxMembers,
+      invited_friend_ids: [],
+      heartbeat_at: heartbeatAt,
+    } as unknown as never)
+    .select(
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+    )
+    .maybeSingle();
+
+  if (insertError) {
+    const { data: retryRequest } = await admin
+      .from("match_requests")
+      .select(
+        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+      )
+      .eq("leader_id", row.user_id)
+      .in("status", ["waiting", "processing"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (retryRequest) return retryRequest as MatchRequest;
+    throw new Error(insertError.message);
+  }
+
+  return insertedRequest as MatchRequest | null;
+}
+
+async function tryWaitingLeaderMatches(admin: AdminClient, dungeonId?: string) {
+  let query = admin
+    .from("match_requests")
+    .select(
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+    )
+    .eq("status", "waiting")
+    .gte("heartbeat_at", activeHeartbeatCutoff())
+    .order("created_at", { ascending: true })
+    .limit(10);
+
+  if (dungeonId) query = query.eq("dungeon_id", dungeonId);
+
+  const { data: requests, error } = await query;
+  if (error) throw new Error(error.message);
+
+  for (const matchRequest of (requests ?? []) as MatchRequest[]) {
+    await tryCompleteMatch(admin, matchRequest);
+  }
+}
+
+async function promoteEligibleAutoLeads(admin: AdminClient, dungeonId?: string) {
+  let query = admin
+    .from("match_queue")
+    .select(
+      "id, user_id, dungeon_id, character_row_id, requested_stage, created_at, auto_lead_eligible_at, min_power, required_gimmick_stage, allowed_classes, required_class_composition, allow_condition_relaxation",
+    )
+    .eq("status", "waiting")
+    .eq("can_auto_lead", true)
+    .lte("auto_lead_eligible_at", new Date().toISOString())
+    .gte("heartbeat_at", activeHeartbeatCutoff())
+    .order("auto_lead_eligible_at", { ascending: true })
+    .limit(20);
+
+  if (dungeonId) query = query.eq("dungeon_id", dungeonId);
+
+  const { data: rows, error } = await query;
+  if (error) throw new Error(error.message);
+  const autoLeadRows = (rows ?? []) as AutoLeadQueueRow[];
+  if (autoLeadRows.length === 0) return;
+
+  const userIds = [...new Set(autoLeadRows.map((row) => row.user_id))];
+  const dungeonIds = [...new Set(autoLeadRows.map((row) => row.dungeon_id))];
+  const [{ data: profiles }, { data: dungeons }] = await Promise.all([
+    admin
+      .from("profiles")
+      .select(
+        "id, nickname, server, manner_temperature, trust_temperature, matchmaking_banned_until, consecutive_failed_response_count, current_room_code",
+      )
+      .in("id", userIds),
+    admin.from("dungeons").select("id, category").in("id", dungeonIds),
+  ]);
+
+  const profileById = new Map(((profiles ?? []) as Profile[]).map((profile) => [profile.id, profile]));
+  const categoryByDungeonId = new Map(
+    ((dungeons ?? []) as { id: string; category: string | null }[]).map((dungeon) => [
+      dungeon.id,
+      dungeon.category,
+    ]),
+  );
+
+  const orderedRows = [...autoLeadRows].sort(
+    (a, b) =>
+      autoLeadPriorityScore(b, profileById.get(b.user_id)) -
+      autoLeadPriorityScore(a, profileById.get(a.user_id)),
+  );
+
+  for (const row of orderedRows.slice(0, 5)) {
+    const profile = profileById.get(row.user_id);
+    if (
+      profile?.matchmaking_banned_until &&
+      new Date(profile.matchmaking_banned_until).getTime() > Date.now()
+    ) {
+      continue;
+    }
+    const maxMembers = partySizeForCategory(categoryByDungeonId.get(row.dungeon_id));
+    const request = await ensureAutoLeadRequest(admin, row, maxMembers);
+    if (request) await tryCompleteMatch(admin, request);
+  }
+}
+
 async function getMatchStatus(
   admin: AdminClient,
   userId: string,
@@ -1118,11 +1366,31 @@ async function getMatchStatus(
       active: true,
       state: "processing" satisfies MatchState,
       temporaryMatch: pendingTemporaryMatch,
+      role: pendingTemporaryMatch.role,
     };
   }
 
   const existing = await findExistingMatch(admin, userId, matchedAfter);
   if (existing.matched) return { ...existing, state: "matched" satisfies MatchState, active: false };
+
+  await tryWaitingLeaderMatches(admin);
+  await promoteEligibleAutoLeads(admin);
+
+  const nextPendingTemporaryMatch = await findPendingTemporaryMatch(admin, userId);
+  if (nextPendingTemporaryMatch) {
+    return {
+      matched: false,
+      active: true,
+      state: "processing" satisfies MatchState,
+      temporaryMatch: nextPendingTemporaryMatch,
+      role: nextPendingTemporaryMatch.role,
+    };
+  }
+
+  const nextExisting = await findExistingMatch(admin, userId, matchedAfter);
+  if (nextExisting.matched) {
+    return { ...nextExisting, state: "matched" satisfies MatchState, active: false };
+  }
 
   const { data: activeRequestRow } = await admin
     .from("match_requests")
@@ -1179,7 +1447,7 @@ async function getMatchStatus(
 
   const { data: activeQueueRow } = await admin
     .from("match_queue")
-    .select("created_at, status")
+    .select("created_at, status, can_auto_lead, auto_lead_eligible_at, auto_lead_after_seconds")
     .eq("user_id", userId)
     .in("status", ["waiting", "processing"])
     .order("created_at", { ascending: false })
@@ -1187,7 +1455,13 @@ async function getMatchStatus(
     .maybeSingle();
 
   if (activeQueueRow) {
-    const activeQueue = activeQueueRow as { created_at: string; status: MatchState };
+    const activeQueue = activeQueueRow as {
+      created_at: string;
+      status: MatchState;
+      can_auto_lead: boolean;
+      auto_lead_eligible_at: string | null;
+      auto_lead_after_seconds: number | null;
+    };
     return {
       matched: false,
       active: true,
@@ -1195,6 +1469,9 @@ async function getMatchStatus(
       role: "member",
       since: activeQueue.created_at,
       status: activeQueue.status,
+      canAutoLead: activeQueue.can_auto_lead,
+      autoLeadEligibleAt: activeQueue.auto_lead_eligible_at,
+      autoLeadAfterSeconds: activeQueue.auto_lead_after_seconds,
     };
   }
 
@@ -1386,6 +1663,9 @@ export async function POST(request: NextRequest) {
     maxMembers?: number;
     characterId?: string;
     invitedFriendIds?: string[];
+    canAutoLead?: boolean;
+    autoLeadAfterSeconds?: number;
+    allowConditionRelaxation?: boolean;
   };
   try {
     body = await request.json();
@@ -1571,17 +1851,45 @@ export async function POST(request: NextRequest) {
     return jsonError("기존 매칭 요청 정리에 실패했습니다: " + cancelOwnRequestError.message, 500);
   }
 
+  const canAutoLead = body.canAutoLead === true;
+  const autoLeadAfterSeconds = Math.max(
+    30,
+    Math.min(
+      600,
+      Math.trunc(Number(body.autoLeadAfterSeconds) || DEFAULT_AUTO_LEAD_AFTER_SECONDS),
+    ),
+  );
+  const autoLeadEligibleAt = canAutoLead
+    ? new Date(Date.now() + autoLeadAfterSeconds * 1000).toISOString()
+    : null;
+  const autoLeadMinPower = canAutoLead
+    ? Math.min(
+        selectedCharacter.combat_power,
+        Math.max(0, Math.trunc(Number(body.minCombatPower) || 0)),
+      )
+    : 0;
+  const autoLeadRequiredClasses = canAutoLead ? cleanClassList(body.requiredClasses) : [];
+
   const { data: queueEntry, error: queueError } = await admin.from("match_queue").insert(
     {
       user_id: user.id,
       dungeon_id: dungeonId,
       character_row_id: selectedCharacter.id,
       requested_stage: stage,
+      queue_role: "member",
+      can_auto_lead: canAutoLead,
+      auto_lead_after_seconds: autoLeadAfterSeconds,
+      auto_lead_eligible_at: autoLeadEligibleAt,
+      min_power: autoLeadMinPower,
+      required_gimmick_stage: canAutoLead ? stage : null,
+      allowed_classes: autoLeadRequiredClasses,
+      required_class_composition: autoLeadRequiredClasses,
+      allow_condition_relaxation: canAutoLead && body.allowConditionRelaxation === true,
       status: "waiting",
       heartbeat_at: new Date().toISOString(),
     } as unknown as never,
   )
-    .select("created_at")
+    .select("created_at, can_auto_lead, auto_lead_eligible_at, auto_lead_after_seconds")
     .single();
 
   if (queueError) {
@@ -1610,11 +1918,27 @@ export async function POST(request: NextRequest) {
     if (result.matched) return NextResponse.json(result);
   }
 
+  await promoteEligibleAutoLeads(admin, dungeonId);
+
+  const pendingTemporaryMatch = await findPendingTemporaryMatch(admin, user.id);
+  if (pendingTemporaryMatch) {
+    return NextResponse.json({
+      matched: false,
+      active: true,
+      state: "processing" satisfies MatchState,
+      role: pendingTemporaryMatch.role,
+      temporaryMatch: pendingTemporaryMatch,
+    });
+  }
+
   return NextResponse.json({
     matched: false,
     active: true,
     state: "waiting" satisfies MatchState,
     role: "member",
     since: (queueEntry as { created_at: string } | null)?.created_at,
+    canAutoLead,
+    autoLeadEligibleAt,
+    autoLeadAfterSeconds,
   });
 }
