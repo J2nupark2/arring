@@ -396,13 +396,13 @@ export function MatchingPanel({
               아이온2 자동매칭
             </CardTitle>
             <CardDescription>
-              파티장은 조건을 정하고, 파티원은 진도만 선택하면 온도와 조건을 기준으로 자동 배치됩니다.
+              파티장은 조건을 정하고, 파티원은 진도만 선택하면 점수와 조건을 기준으로 자동 배치됩니다.
             </CardDescription>
           </div>
           {profile && (
             <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">매너 {profile.mannerTemperature?.toFixed(1) ?? "36.5"}°</Badge>
-              <Badge variant="outline">신뢰 {profile.trustTemperature?.toFixed(1) ?? "36.5"}°</Badge>
+              <Badge variant="outline">매너 {profile.mannerTemperature?.toFixed(1) ?? "50.0"}점</Badge>
+              <Badge variant="outline">신뢰 {profile.trustTemperature?.toFixed(1) ?? "50.0"}점</Badge>
             </div>
           )}
         </div>

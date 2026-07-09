@@ -57,8 +57,8 @@ create table public.profiles (
   aion2_character_name text,
   aion2_server_id integer,
   aion2_synced_at timestamptz,
-  manner_temperature numeric(4,1) not null default 36.5,
-  trust_temperature numeric(4,1) not null default 36.5,
+  manner_temperature numeric(4,1) not null default 50.0,
+  trust_temperature numeric(4,1) not null default 50.0,
   matchmaking_banned_until timestamptz,
   consecutive_failed_response_count integer not null default 0
     check (consecutive_failed_response_count >= 0)

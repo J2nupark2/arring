@@ -92,8 +92,8 @@ function clamp01(value: number) {
 }
 
 function normalizeScore(value: number | null | undefined) {
-  const numberValue = Number(value ?? 36.5);
-  return numberValue <= 50 ? numberValue * 2 : numberValue;
+  const numberValue = Number(value ?? 50);
+  return Math.max(0, Math.min(100, numberValue));
 }
 
 function similarity(a: number | null | undefined, b: number | null | undefined) {

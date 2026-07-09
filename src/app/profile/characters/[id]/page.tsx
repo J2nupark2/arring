@@ -569,7 +569,7 @@ function isSlotMatch(item: DetailItem, aliases: readonly string[]) {
 }
 
 function formatScore(value: number | string | null | undefined) {
-  return Number(value ?? 36.5).toFixed(1);
+  return Number(value ?? 50).toFixed(1);
 }
 
 function hasSkillTooltip(item: DetailItem) {
