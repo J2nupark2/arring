@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
@@ -23,7 +23,7 @@ export default function ContactPage() {
         </a>
       </div>
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold">문의 시 포함하면 좋은 정보</h2>
+        <h2 className="text-xl font-semibold">문의 때 포함하면 좋은 정보</h2>
         <ul className="list-disc space-y-2 pl-5 text-muted-foreground">
           <li>사용 중인 계정 이메일 또는 닉네임</li>
           <li>문제가 발생한 페이지 주소</li>

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
@@ -24,14 +24,14 @@ export default function PrivacyPage() {
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">이용 목적</h2>
         <p className="leading-7 text-muted-foreground">
-          수집된 정보는 계정 식별, 파티 자동매칭, 친구 초대, 플레이 기록 확인,
+          수집한 정보는 계정 식별, 파티 자동매칭, 친구 초대, 플레이 기록 확인,
           비매너 평가 반영, 서비스 보안 및 오류 대응에 사용됩니다.
         </p>
       </section>
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">보관과 삭제</h2>
         <p className="leading-7 text-muted-foreground">
-          서비스 운영에 필요한 정보는 계정 유지 기간 동안 보관됩니다. 계정 삭제나
+          서비스 운영에 필요한 정보는 계정 유지 기간 동안 보관합니다. 계정 삭제나
           정보 정정을 원하면 문의 페이지를 통해 요청할 수 있으며, 법적 보관 의무나
           분쟁 대응에 필요한 경우를 제외하고 합리적인 기간 내 처리합니다.
         </p>

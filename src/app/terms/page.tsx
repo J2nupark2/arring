@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
@@ -31,7 +31,7 @@ export default function TermsPage() {
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">평가와 신고</h2>
         <p className="leading-7 text-muted-foreground">
-          매칭 후 평가는 파티 품질을 높이기 위한 참고 자료입니다. 악의적인 허위 평가나
+          매칭 후 평가는 파티 안전망을 높이기 위한 참고 자료입니다. 악의적인 허위 평가와
           반복적인 신고 남용은 제한될 수 있습니다.
         </p>
       </section>

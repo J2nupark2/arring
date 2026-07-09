@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 import { RedirectIfAuthed } from "@/components/redirect-if-authed";
 
 export const metadata: Metadata = {
   title: "Arring - 아이온2 파티 자동매칭",
   description:
-    "아이온2 원정, 초월, 성역 파티를 투력, 기믹 진도, 클래스 조합, 매너 점수 기준으로 자동매칭하는 파티 구하기 서비스입니다.",
+    "아이온2 원정, 초월, 성역 파티를 전투력, 기믹 진도, 클래스 조합, 매너 점수 기준으로 자동 매칭하는 파티 구하기 서비스입니다.",
   alternates: { canonical: "/" },
 };
 
@@ -28,9 +28,9 @@ export default function Home() {
                   아이온2 파티를 조건에 맞게 자동매칭하세요
                 </h1>
                 <p className="max-w-2xl text-base leading-7 text-muted-foreground">
-                  Arring은 원정, 초월, 성역 파티를 투력, 기믹 진도, 클래스 조합,
+                  Arring은 원정, 초월, 성역 파티를 전투력, 기믹 진도, 클래스 조합,
                   매너 점수 기준으로 연결하는 아이온2 파티 구하기 서비스입니다.
-                  파티장은 원하는 조합을 정하고, 파티원은 자신의 캐릭터와 진도를
+                  파티장은 원하는 조합을 정하고, 파티원은 연동한 캐릭터와 진도를
                   선택해 빠르게 매칭을 시작할 수 있습니다.
                 </p>
               </div>
@@ -62,11 +62,11 @@ export default function Home() {
           {[
             {
               title: "콘텐츠별 고정 인원",
-              body: "원정과 초월은 5인, 성역은 10인 기준으로 파티 구성을 나눠 관리합니다.",
+              body: "원정과 초월은 5명, 성역은 10명 기준으로 파티 구성을 나누어 관리합니다.",
             },
             {
               title: "기믹 진도와 투력 조건",
-              body: "파티장이 요구 진도와 최소 투력을 지정하면 조건을 만족하는 캐릭터만 매칭합니다.",
+              body: "파티장이 요구 진도와 최소 전투력을 지정하면 조건을 만족하는 캐릭터만 매칭됩니다.",
             },
             {
               title: "매너와 신뢰 점수",
@@ -85,17 +85,17 @@ export default function Home() {
             <article>
               <h2 className="text-xl font-semibold">파티장에게 필요한 기능</h2>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                파티장은 받을 클래스 슬롯, 최소 투력, 요구 기믹 단계, 친구 초대
-                상태를 한 화면에서 확인합니다. 초대한 친구가 준비 완료되면 부족한
-                인원을 자동매칭으로 채울 수 있습니다.
+                받을 클래스 조합, 최소 전투력, 요구 기믹 단계, 친구 초대 상태를
+                한 화면에서 확인합니다. 초대한 친구가 준비되면 부족한 인원을
+                자동매칭으로 채울 수 있습니다.
               </p>
             </article>
             <article>
               <h2 className="text-xl font-semibold">파티원에게 필요한 기능</h2>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                파티원은 연동한 캐릭터 중 하나를 선택하고 자신의 진도를 기준으로
-                대기열에 들어갑니다. 파티장 후보 설정을 켜면 일정 시간 후 직접
-                파티장이 되어 매칭을 이어갈 수 있습니다.
+                연동한 캐릭터 중 하나를 선택하고 자신의 기믹 진도를 기준으로
+                대기열에 참여합니다. 조건에 맞는 파티가 생기면 수락 화면을 통해
+                방으로 이동할 수 있습니다.
               </p>
             </article>
           </div>
