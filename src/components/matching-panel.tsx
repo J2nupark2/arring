@@ -134,6 +134,13 @@ async function fetchDraftInviteStatuses(draftId: string) {
   return (data.inviteStatuses ?? []) as NonNullable<MatchStatus["inviteStatuses"]>;
 }
 
+function requestNotificationPermission() {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    void Notification.requestPermission();
+  }
+}
+
 export function MatchingPanel({
   dungeons,
   profile,
@@ -364,6 +371,7 @@ export function MatchingPanel({
     if (!dungeonId || pending) return;
     setPending(true);
     try {
+      requestNotificationPermission();
       const invitedFriendIds = invitedSlots
         .map((friend) => friend?.user_id)
         .filter((id): id is string => !!id);

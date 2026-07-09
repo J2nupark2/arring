@@ -37,6 +37,62 @@ async function respondTemporaryMatch(action: "accept" | "reject") {
   return data as MatchStatus;
 }
 
+function showBrowserNotification(title: string, body: string) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  const notification = new Notification(title, {
+    body,
+    icon: "/icon.svg",
+    tag: "arring-matching",
+  });
+  notification.onclick = () => {
+    window.focus();
+    notification.close();
+  };
+}
+
+function playMatchingSound() {
+  if (typeof window === "undefined") return;
+  const AudioContextClass =
+    window.AudioContext ||
+    (window as Window & { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  try {
+    const context = new AudioContextClass();
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.75);
+    gain.connect(context.destination);
+
+    [0, 0.16, 0.32].forEach((offset, index) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(
+        [784, 988, 1175][index],
+        context.currentTime + offset,
+      );
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime + offset);
+      oscillator.stop(context.currentTime + offset + 0.16);
+    });
+
+    window.setTimeout(() => void context.close(), 1100);
+  } catch {
+    // Browsers can block audio before the user interacts with the site.
+  }
+}
+
+const MATCH_CONFIRMED_TITLE = "\uD30C\uD2F0 \uB9E4\uCE6D \uC644\uB8CC";
+const MATCH_CONFIRMED_BODY =
+  "\uD30C\uD2F0\uAC00 \uD655\uC815\uB418\uC5B4 \uBC29\uC73C\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4.";
+const MATCH_READY_TITLE =
+  "\uB9E4\uCE6D \uD6C4\uBCF4\uAC00 \uC7A1\uD614\uC2B5\uB2C8\uB2E4";
+const MATCH_READY_BODY =
+  "30\uCD08 \uC548\uC5D0 \uC218\uB77D\uD574\uC57C \uD30C\uD2F0\uAC00 \uD655\uC815\uB429\uB2C8\uB2E4.";
+
 export function GlobalMatchingProvider() {
   const router = useRouter();
   const pathname = usePathname();
@@ -48,6 +104,7 @@ export function GlobalMatchingProvider() {
   const refreshTimer = useRef<number | null>(null);
   const suppressRealtimeRefreshUntil = useRef(0);
   const lastNavigatedRoomCode = useRef<string | null>(null);
+  const lastNotifiedKey = useRef<string | null>(null);
   const pathnameRef = useRef(pathname);
 
   useEffect(() => {
@@ -68,6 +125,8 @@ export function GlobalMatchingProvider() {
         setMatchStatus(null);
         if (lastNavigatedRoomCode.current !== status.roomCode) {
           lastNavigatedRoomCode.current = status.roomCode;
+          playMatchingSound();
+          showBrowserNotification(MATCH_CONFIRMED_TITLE, MATCH_CONFIRMED_BODY);
           toast.success("파티가 매칭됐습니다. 방으로 이동합니다.");
         }
         if (pathnameRef.current !== `/room/${status.roomCode}`) {
@@ -197,6 +256,15 @@ export function GlobalMatchingProvider() {
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [matchStatus?.autoLeadEligibleAt, matchStatus?.temporaryMatch?.expiresAt, router]);
 
+  useEffect(() => {
+    if (!matchStatus?.temporaryMatch) return;
+    const key = `temporary:${matchStatus.temporaryMatch.id}`;
+    if (lastNotifiedKey.current === key) return;
+    lastNotifiedKey.current = key;
+    playMatchingSound();
+    showBrowserNotification(MATCH_READY_TITLE, MATCH_READY_BODY);
+  }, [matchStatus?.temporaryMatch]);
+
   async function onCancelMatch() {
     setCancelling(true);
     try {
@@ -217,6 +285,8 @@ export function GlobalMatchingProvider() {
       const result = await respondTemporaryMatch(action);
       if (result.matched && result.roomCode) {
         setMatchStatus(null);
+        playMatchingSound();
+        showBrowserNotification(MATCH_CONFIRMED_TITLE, MATCH_CONFIRMED_BODY);
         toast.success("파티가 확정됐습니다. 방으로 이동합니다.");
         router.push(`/room/${result.roomCode}`);
         return;
