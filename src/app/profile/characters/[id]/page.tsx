@@ -50,10 +50,9 @@ export default async function CharacterDetailPage({
   const { data: character } = await supabase
     .from("aion2_characters")
     .select(
-      "id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, proficiency_score, equipment, skills, stigmas, is_primary, synced_at, created_at",
+      "id, user_id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, proficiency_score, equipment, skills, stigmas, is_primary, synced_at, created_at",
     )
     .eq("id", id)
-    .eq("user_id", user.id)
     .single();
 
   if (!character) notFound();
@@ -61,7 +60,7 @@ export default async function CharacterDetailPage({
   const { data: profile } = await supabase
     .from("profiles")
     .select("manner_temperature, trust_temperature")
-    .eq("id", user.id)
+    .eq("id", character.user_id)
     .single();
 
   const rawSkills = Array.isArray(character.skills) ? character.skills : [];
