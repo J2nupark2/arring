@@ -1,9 +1,9 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { RedirectIfAuthed } from "@/components/redirect-if-authed";
 
 export const metadata: Metadata = {
-  title: "Arring - 아이온2 파티 자동매칭",
+  title: "아링(Arring) - 아이온2 파티 자동매칭",
   description:
     "아이온2 원정, 초월, 성역 파티를 전투력, 기믹 진도, 클래스 조합, 매너 점수 기준으로 자동 매칭하는 파티 구하기 서비스입니다.",
   alternates: { canonical: "/" },
