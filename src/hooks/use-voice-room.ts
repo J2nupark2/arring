@@ -26,6 +26,8 @@ export type Participant = {
   nickname: string;
   isSelf: boolean;
   muted: boolean;
+  characterRowId: string | null;
+  isFriend: boolean;
 };
 
 export type RoomChatMessage = {
@@ -95,12 +97,21 @@ export function useVoiceRoom({
   const hostIdRef = useRef(initialHostId);
   const joinedRef = useRef(false);
   const onKickedRef = useRef(onKicked);
-  onKickedRef.current = onKicked;
+
+  useEffect(() => {
+    onKickedRef.current = onKicked;
+  }, [onKicked]);
 
   const upsertParticipant = useCallback((p: Participant) => {
     setParticipants((prev) => {
+      const existing = prev.find((x) => x.id === p.id);
       const others = prev.filter((x) => x.id !== p.id);
-      return [...others, p].sort((a, b) =>
+      const next = {
+        ...p,
+        characterRowId: p.characterRowId ?? existing?.characterRowId ?? null,
+        isFriend: p.isFriend || existing?.isFriend || false,
+      };
+      return [...others, next].sort((a, b) =>
         a.nickname.localeCompare(b.nickname),
       );
     });
@@ -300,7 +311,14 @@ export function useVoiceRoom({
         }
       }
 
-      upsertParticipant({ id: userId, nickname, isSelf: true, muted: false });
+      upsertParticipant({
+        id: userId,
+        nickname,
+        isSelf: true,
+        muted: false,
+        characterRowId: null,
+        isFriend: false,
+      });
 
       const channel = supabase.channel(`room:${roomCode}`, {
         config: { presence: { key: userId } },
@@ -390,6 +408,8 @@ export function useVoiceRoom({
             nickname: presence.nickname,
             isSelf: false,
             muted: false,
+            characterRowId: null,
+            isFriend: false,
           });
 
           // Star topology: only the host holds WebRTC connections, so the
@@ -504,6 +524,60 @@ export function useVoiceRoom({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode, roomId, userId, nickname]);
+
+  const participantIds = participants.map((p) => p.id).sort().join("|");
+
+  useEffect(() => {
+    if (!participantIds) return;
+
+    let cancelled = false;
+    const ids = participantIds.split("|").filter(Boolean);
+    const supabase = supabaseRef.current;
+
+    async function loadParticipantProfiles() {
+      const [characterResult, friendResult] = await Promise.all([
+        supabase
+          .from("aion2_characters")
+          .select("id, user_id")
+          .in("user_id", ids)
+          .order("is_primary", { ascending: false })
+          .order("synced_at", { ascending: false }),
+        supabase.rpc("list_friends"),
+      ]);
+
+      if (cancelled) return;
+
+      const characterByUser = new Map<string, string>();
+      for (const character of (characterResult.data ?? []) as {
+        id: string;
+        user_id: string;
+      }[]) {
+        if (!characterByUser.has(character.user_id)) {
+          characterByUser.set(character.user_id, character.id);
+        }
+      }
+
+      const friendIds = new Set(
+        ((friendResult.data ?? []) as { user_id: string }[]).map(
+          (friend) => friend.user_id,
+        ),
+      );
+
+      setParticipants((prev) =>
+        prev.map((participant) => ({
+          ...participant,
+          characterRowId: characterByUser.get(participant.id) ?? null,
+          isFriend: friendIds.has(participant.id),
+        })),
+      );
+    }
+
+    void loadParticipantProfiles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [participantIds, userId]);
 
   const toggleMute = useCallback(() => {
     if (hostIdRef.current !== userId || !localStreamRef.current) return;

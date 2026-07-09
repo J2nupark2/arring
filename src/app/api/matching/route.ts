@@ -317,7 +317,7 @@ async function findCandidates(
     .select("id, user_id, character_row_id, requested_stage, created_at")
     .eq("status", "waiting")
     .eq("dungeon_id", request.dungeon_id)
-    .gte("requested_stage", request.required_stage)
+    .eq("requested_stage", request.required_stage)
     .gte("heartbeat_at", activeHeartbeatCutoff())
     .order("created_at", { ascending: true })
     .limit(50);
@@ -342,9 +342,10 @@ async function findCandidates(
 
   if (profileError) throw new Error(profileError.message);
 
-  const characterIds = rows
-    .map((row) => row.character_row_id)
-    .filter((id): id is string => !!id);
+  const characterIds = [
+    ...rows.map((row) => row.character_row_id),
+    request.character_row_id,
+  ].filter((id): id is string => !!id);
   const { data: characters, error: characterError } =
     characterIds.length > 0
       ? await admin
@@ -361,6 +362,13 @@ async function findCandidates(
     ((characters ?? []) as CharacterRow[]).map((character) => [character.id, character]),
   );
   const leaderProfile = profileById.get(request.leader_id);
+  const leaderCharacter = request.character_row_id
+    ? characterById.get(request.character_row_id)
+    : undefined;
+  const targetCombatPower = Math.max(
+    request.min_combat_power,
+    leaderCharacter?.combat_power ?? request.min_combat_power,
+  );
   const requiredClasses = (request.required_classes ?? []).filter((className) =>
     className.trim(),
   );
@@ -388,13 +396,19 @@ async function findCandidates(
       return true;
     })
     .map((candidate) => {
-      const powerScore = clamp01(
-        request.min_combat_power <= 0
+      const combatPower = candidate.character!.combat_power;
+      const powerScore =
+        targetCombatPower <= 0
           ? 1
-          : candidate.character!.combat_power / Math.max(request.min_combat_power, 1),
-      );
-      const maxStage = Math.max(request.required_stage, candidate.row.requested_stage, 1);
-      const gimmickScore = clamp01(candidate.row.requested_stage / maxStage);
+          : clamp01(
+              1 -
+                Math.min(
+                  Math.abs(combatPower - targetCombatPower) /
+                    Math.max(targetCombatPower, 1),
+                  1,
+                ),
+            );
+      const gimmickScore = 1;
       const classFitScore =
         requiredClasses.length === 0
           ? 1
@@ -456,9 +470,7 @@ function selectCandidatesForSlots(
     const avgPower =
       combatPowers.reduce((sum, value) => sum + value, 0) / Math.max(combatPowers.length, 1);
     const powerBalanceScore = clamp01(1 - stddev(combatPowers) / Math.max(avgPower, 1));
-    const minStage = Math.min(...group.map((candidate) => candidate.row.requested_stage));
-    const maxStage = Math.max(...group.map((candidate) => candidate.row.requested_stage), 1);
-    const gimmickCoverageScore = clamp01(minStage / maxStage);
+    const gimmickCoverageScore = 1;
     const mannerScores = group.map((candidate) =>
       normalizeScore(candidate.profile?.manner_temperature),
     );
@@ -1557,7 +1569,7 @@ export async function POST(request: NextRequest) {
     .eq("status", "waiting")
     .eq("dungeon_id", dungeonId)
     .gte("heartbeat_at", activeHeartbeatCutoff())
-    .lte("required_stage", stage)
+    .eq("required_stage", stage)
     .lte("min_combat_power", selectedCharacter.combat_power)
     .order("created_at", { ascending: true })
     .limit(10);

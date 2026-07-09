@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Check,
+  Eye,
   Loader2,
   MessageCircle,
   PhoneIncoming,
@@ -13,6 +14,7 @@ import {
   Search,
   UserMinus,
   UserPlus,
+  UserCheck,
   Users,
   X,
 } from "lucide-react";
@@ -326,6 +328,18 @@ export function FriendListContent({
                     </span>
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5">
+                    {friend.character_row_id && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`${friend.nickname} 상세 프로필`}
+                        asChild
+                      >
+                        <Link href={`/profile/characters/${friend.character_row_id}`}>
+                          <Eye className="size-4 text-muted-foreground" />
+                        </Link>
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -411,7 +425,10 @@ function FriendCandidateAction({
 }) {
   if (candidate.relation_status === "friends") {
     return (
-      <span className="shrink-0 text-xs text-muted-foreground">친구</span>
+      <Button type="button" size="sm" variant="secondary" disabled>
+        <UserCheck className="size-3.5" />
+        친구
+      </Button>
     );
   }
 

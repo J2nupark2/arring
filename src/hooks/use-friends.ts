@@ -13,6 +13,7 @@ export type Friend = {
   is_online: boolean;
   current_room_code: string | null;
   unread_count: number;
+  character_row_id: string | null;
   class_name: string | null;
   combat_power: number | null;
 };
@@ -30,6 +31,7 @@ export type FriendCandidate = {
   nickname: string;
   server: string | null;
   email: string | null;
+  character_row_id: string | null;
   relation_status: "none" | "friends" | "sent" | "received";
 };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useVoiceRoom } from "@/hooks/use-voice-room";
 import { sendFriendRequest } from "@/hooks/use-friends";
@@ -14,7 +15,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Check,
   Crown,
+  Eye,
   Headphones,
   Loader2,
   Mic,
@@ -22,6 +25,7 @@ import {
   PhoneOff,
   Send,
   UserPlus,
+  UserCheck,
   UserX,
   Volume2,
 } from "lucide-react";
@@ -202,14 +206,30 @@ export function VoiceRoom({
                     </span>
                   </div>
                 )}
-                {!selected.isSelf && !isGuest && (
-                  <Button
-                    variant="outline"
-                    onClick={() => sendFriendRequest(selected.id)}
-                  >
-                    <UserPlus className="size-4" />
-                    친구 추가
+                {selected.characterRowId && (
+                  <Button variant="outline" asChild>
+                    <Link href={`/profile/characters/${selected.characterRowId}`}>
+                      <Eye className="size-4" />
+                      상세 프로필
+                    </Link>
                   </Button>
+                )}
+                {!selected.isSelf && !isGuest && (
+                  selected.isFriend ? (
+                    <Button variant="secondary" disabled>
+                      <UserCheck className="size-4" />
+                      친구
+                      <Check className="size-3.5" />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={() => sendFriendRequest(selected.id)}
+                    >
+                      <UserPlus className="size-4" />
+                      친구 추가
+                    </Button>
+                  )
                 )}
                 {isHost && !selected.isSelf && (
                   <>

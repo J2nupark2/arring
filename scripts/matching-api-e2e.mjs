@@ -111,7 +111,13 @@ async function createTestUser(label = "solo", overrides = {}) {
       .single(),
   );
 
-  return { email, userId, characterId: character.id };
+  return {
+    email,
+    userId,
+    characterId: character.id,
+    className: overrides.className ?? "?댁꽦",
+    combatPower: overrides.combatPower ?? 780_000,
+  };
 }
 
 async function createIsolatedDungeon() {
@@ -315,9 +321,9 @@ async function testFullHttpMatch() {
       role: "leader",
       dungeonId: dungeon.id,
       characterId: leader.characterId,
-      stage: 2,
+      stage: 3,
       minCombatPower: 700_000,
-      requiredClasses: [],
+      requiredClasses: members.map((member) => member.className),
     }),
   });
   assert(leaderResponse.ok, `leader match failed: ${leaderResponse.status} ${JSON.stringify(leaderResponse.data)}`);
@@ -356,6 +362,57 @@ async function testFullHttpMatch() {
   }
 
   console.log(`[matching-api-e2e] full 5-person HTTP match room ${confirmed.data.roomCode}`);
+}
+
+async function testGimmickStageMustMatchExactly() {
+  const dungeon = await createIsolatedDungeon();
+  const leader = await createTestUser("exact-stage-leader", { className: "Warrior", combatPower: 820_000 });
+  const members = [
+    await createTestUser("exact-stage-member1", { className: "Templar", combatPower: 760_000 }),
+    await createTestUser("exact-stage-member2", { className: "Cleric", combatPower: 755_000 }),
+    await createTestUser("exact-stage-member3", { className: "Sorcerer", combatPower: 750_000 }),
+    await createTestUser("exact-stage-member4", { className: "Ranger", combatPower: 745_000 }),
+  ];
+
+  for (const member of members) {
+    const jar = await signIn(member.email);
+    const response = await api(jar, "/api/matching", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role: "member",
+        dungeonId: dungeon.id,
+        characterId: member.characterId,
+        stage: 3,
+      }),
+    });
+    assert(response.ok, `exact-stage member queue failed: ${response.status} ${JSON.stringify(response.data)}`);
+    assert(response.data?.state === "waiting", `exact-stage member should wait, got ${JSON.stringify(response.data)}`);
+  }
+
+  const leaderJar = await signIn(leader.email);
+  const leaderResponse = await api(leaderJar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "leader",
+      dungeonId: dungeon.id,
+      characterId: leader.characterId,
+      stage: 2,
+      minCombatPower: 700_000,
+      requiredClasses: [],
+    }),
+  });
+
+  assert(leaderResponse.ok, `exact-stage leader failed: ${leaderResponse.status} ${JSON.stringify(leaderResponse.data)}`);
+  assert(
+    leaderResponse.data?.state === "waiting" &&
+      !leaderResponse.data?.temporaryMatch?.id &&
+      leaderResponse.data?.waitingCount === 0,
+    `stage 2 leader must not match stage 3 members, got ${JSON.stringify(leaderResponse.data)}`,
+  );
+
+  console.log("[matching-api-e2e] gimmick stage matches exactly");
 }
 
 async function testDummyInviteRematchCountsInvites() {
@@ -409,7 +466,7 @@ async function testDummyInviteRematchCountsInvites() {
       role: "leader",
       dungeonId: dungeon.id,
       characterId: leader.characterId,
-      stage: 2,
+      stage: 3,
       minCombatPower: 700_000,
       requiredClasses: [],
       invitedFriendIds: dummies.map((dummy) => dummy.userId),
@@ -490,7 +547,7 @@ async function testDummyInvitesAutoAccept() {
       role: "leader",
       dungeonId: dungeon.id,
       characterId: leader.characterId,
-      stage: 2,
+      stage: 3,
       minCombatPower: 700_000,
       requiredClasses: [],
       invitedFriendIds: dummies.map((dummy) => dummy.userId),
@@ -595,12 +652,13 @@ try {
 
   await testStaleQueueExpires();
   await testMemberQueueWinsOverCancelledLeaderRequest();
+  await testGimmickStageMustMatchExactly();
   await testFullHttpMatch();
   await testDummyInvitesAutoAccept();
   await testDummyInviteRematchCountsInvites();
 
   console.log(`[matching-api-e2e] dungeon ${dungeon.name}`);
-  console.log("[matching-api-e2e] member waiting -> stale expiry -> cancelled leader ignored -> full match -> dummy auto accept/rematch -> cancel lifecycle");
+  console.log("[matching-api-e2e] member waiting -> stale expiry -> cancelled leader ignored -> exact stage -> full match -> dummy auto accept/rematch -> cancel lifecycle");
   console.log("[matching-api-e2e] PASS");
 } finally {
   await cleanup();
