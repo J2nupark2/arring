@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatCombatPower } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
+import type { MatchStatus } from "@/components/matching-floating-status";
 
 type Profile = {
   charClass: string | null;
@@ -43,33 +44,6 @@ type MatchCharacter = {
   className: string;
   combatPower: number;
   isPrimary: boolean;
-};
-
-type MatchStatus = {
-  matched: boolean;
-  roomCode?: string;
-  active?: boolean;
-  state?: "idle" | "waiting" | "processing" | "matched" | "cancelled";
-  role?: "leader" | "member";
-  waitingCount?: number;
-  needed?: number;
-  since?: string;
-  status?: string;
-  inviteStatuses?: {
-    userId: string;
-    status: "pending" | "accepted" | "declined" | "cancelled";
-  }[];
-  temporaryMatch?: {
-    id: string;
-    expiresAt: string;
-    responseStatus: "pending" | "accepted" | "rejected" | "expired";
-    responses: { userId: string; status: "pending" | "accepted" | "rejected" | "expired" }[];
-    score: number;
-    role: "leader" | "member";
-  } | null;
-  canAutoLead?: boolean;
-  autoLeadEligibleAt?: string | null;
-  autoLeadAfterSeconds?: number | null;
 };
 
 function stageLabel(dungeon: Dungeon | undefined, stage: number) {
@@ -128,33 +102,6 @@ async function requestMatch(body: {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "매칭 요청에 실패했습니다.");
-  return data as MatchStatus;
-}
-
-async function fetchMatchStatus(since: string) {
-  const res = await fetch(`/api/matching?since=${encodeURIComponent(since)}`, {
-    method: "GET",
-  });
-  if (!res.ok) return null;
-  return (await res.json()) as MatchStatus;
-}
-
-async function cancelMatch() {
-  const res = await fetch("/api/matching", { method: "DELETE" });
-  if (!res.ok) {
-    const data = await res.json().catch(() => null);
-    throw new Error(data?.error ?? "매칭 취소에 실패했습니다.");
-  }
-}
-
-async function respondTemporaryMatch(action: "accept" | "reject") {
-  const res = await fetch("/api/matching", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "매칭 응답 처리에 실패했습니다.");
   return data as MatchStatus;
 }
 
@@ -227,15 +174,8 @@ export function MatchingPanel({
   const [autoLeadAfterSeconds, setAutoLeadAfterSeconds] = useState(90);
   const [allowConditionRelaxation, setAllowConditionRelaxation] = useState(false);
   const [pending, setPending] = useState(false);
-  const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
   const [localInviteStatuses, setLocalInviteStatuses] = useState<MatchStatus["inviteStatuses"]>([]);
   const [inviteDraftId, setInviteDraftId] = useState(() => crypto.randomUUID());
-  const [cancelling, setCancelling] = useState(false);
-  const [responding, setResponding] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  const matchSessionStartedAt = useRef(new Date().toISOString());
-  const suppressRealtimeRefreshUntil = useRef(0);
-  const statusRefreshTimer = useRef<number | null>(null);
 
   const maxMembers = partySizeForDungeon(selectedDungeon);
   const slottedFriendIds = invitedSlots
@@ -264,124 +204,6 @@ export function MatchingPanel({
   const categoryDungeons = dungeons.filter(
     (dungeon) => dungeon.category === contentCategory,
   );
-
-  useEffect(() => {
-    if (isGuest) return;
-
-    const supabase = createClient();
-    const channels: RealtimeChannel[] = [];
-    let active = true;
-
-    async function refreshStatus() {
-      suppressRealtimeRefreshUntil.current = Date.now() + 1200;
-      const status = await fetchMatchStatus(matchSessionStartedAt.current);
-      if (!active || !status) return;
-
-      if (status.matched && status.roomCode) {
-        toast.success("파티가 매칭됐습니다. 방으로 이동합니다.");
-        router.push(`/room/${status.roomCode}`);
-        return;
-      }
-
-      setMatchStatus(
-        status.state === "waiting" || status.state === "processing" || status.active
-          ? status
-          : null,
-      );
-    }
-
-    function scheduleRefresh(delay = 80) {
-      if (Date.now() < suppressRealtimeRefreshUntil.current) return;
-      if (statusRefreshTimer.current) {
-        window.clearTimeout(statusRefreshTimer.current);
-      }
-      statusRefreshTimer.current = window.setTimeout(() => {
-        statusRefreshTimer.current = null;
-        void refreshStatus();
-      }, delay);
-    }
-
-    void refreshStatus();
-
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user || !active) return;
-
-      const ownRows = supabase
-        .channel(`matching-status:${user.id}:${crypto.randomUUID()}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "match_requests",
-            filter: `leader_id=eq.${user.id}`,
-          },
-          () => scheduleRefresh(),
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "match_queue",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => scheduleRefresh(),
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "matching_invites",
-            filter: `receiver_id=eq.${user.id}`,
-          },
-          () => scheduleRefresh(),
-        )
-        .subscribe();
-
-      const acceptanceRows = supabase
-        .channel(`matching-acceptance:${user.id}:${crypto.randomUUID()}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "temporary_matches",
-          },
-          () => scheduleRefresh(),
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "match_responses",
-          },
-          () => scheduleRefresh(),
-        )
-        .subscribe();
-
-      channels.push(ownRows, acceptanceRows);
-    });
-
-    return () => {
-      active = false;
-      if (statusRefreshTimer.current) {
-        window.clearTimeout(statusRefreshTimer.current);
-        statusRefreshTimer.current = null;
-      }
-      channels.forEach((channel) => {
-        void supabase.removeChannel(channel);
-      });
-    };
-  }, [isGuest, router]);
-
-  useEffect(() => {
-    if (!matchStatus?.temporaryMatch && !matchStatus?.autoLeadEligibleAt) return;
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [matchStatus?.temporaryMatch, matchStatus?.autoLeadEligibleAt]);
 
   useEffect(() => {
     if (isGuest || mode !== "leader" || slottedFriendIds.length === 0) return;
@@ -423,33 +245,6 @@ export function MatchingPanel({
       }
     };
   }, [inviteDraftId, isGuest, mode, slottedFriendIds.length]);
-
-  useEffect(() => {
-    if (!matchStatus?.active) return;
-    const id = window.setInterval(() => {
-      void fetchMatchStatus(matchSessionStartedAt.current);
-    }, 45000);
-    return () => window.clearInterval(id);
-  }, [matchStatus?.active]);
-
-  useEffect(() => {
-    const timestamps = [
-      matchStatus?.autoLeadEligibleAt,
-      matchStatus?.temporaryMatch?.expiresAt,
-    ].filter((value): value is string => !!value);
-    if (timestamps.length === 0) return;
-
-    const timers = timestamps.map((timestamp) => {
-      const delay = Math.max(0, new Date(timestamp).getTime() - Date.now() + 150);
-      return window.setTimeout(() => {
-        void fetchMatchStatus(matchSessionStartedAt.current).then((status) => {
-          if (status) setMatchStatus(status.active ? status : null);
-        });
-      }, delay);
-    });
-
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [matchStatus?.autoLeadEligibleAt, matchStatus?.temporaryMatch?.expiresAt]);
 
   function changeDungeon(nextDungeonId: string) {
     setDungeonId(nextDungeonId);
@@ -569,7 +364,6 @@ export function MatchingPanel({
     if (!dungeonId || pending) return;
     setPending(true);
     try {
-      matchSessionStartedAt.current = new Date().toISOString();
       const invitedFriendIds = invitedSlots
         .map((friend) => friend?.user_id)
         .filter((id): id is string => !!id);
@@ -602,28 +396,9 @@ export function MatchingPanel({
       }
 
       if (result.temporaryMatch) {
-        setMatchStatus(result);
         toast.success("매칭 후보가 잡혔습니다. 30초 안에 수락해주세요.");
         return;
       }
-
-      if (result.since) {
-        matchSessionStartedAt.current = result.since;
-      }
-
-      setMatchStatus({
-        matched: false,
-        active: true,
-        state: "waiting",
-        role: mode,
-        waitingCount: result.waitingCount,
-        needed: result.needed,
-        since: result.since,
-        canAutoLead: result.canAutoLead,
-        autoLeadEligibleAt: result.autoLeadEligibleAt,
-        autoLeadAfterSeconds: result.autoLeadAfterSeconds,
-        inviteStatuses: result.inviteStatuses,
-      });
 
       if (mode === "leader") {
         toast.success(
@@ -639,48 +414,8 @@ export function MatchingPanel({
     }
   }
 
-  async function onCancelMatch() {
-    setCancelling(true);
-    try {
-      await cancelMatch();
-      matchSessionStartedAt.current = new Date().toISOString();
-      setMatchStatus(null);
-      setLocalInviteStatuses([]);
-      setInviteDraftId(crypto.randomUUID());
-      toast.success("매칭 대기를 취소했습니다.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "매칭 취소에 실패했습니다.");
-    } finally {
-      setCancelling(false);
-    }
-  }
-
-  async function onRespondTemporaryMatch(action: "accept" | "reject") {
-    setResponding(true);
-    try {
-      const result = await respondTemporaryMatch(action);
-      if (result.matched && result.roomCode) {
-        toast.success("파티가 확정됐습니다. 방으로 이동합니다.");
-        router.push(`/room/${result.roomCode}`);
-        return;
-      }
-      if (action === "accept") {
-        toast.success("수락했습니다. 다른 파티원의 응답을 기다립니다.");
-        setMatchStatus(result.active ? result : null);
-      } else {
-        toast.success("매칭을 거절했습니다.");
-        setMatchStatus(null);
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "매칭 응답 처리에 실패했습니다.");
-    } finally {
-      setResponding(false);
-    }
-  }
-
   return (
-    <>
-      <Card>
+    <Card>
         <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -912,7 +647,7 @@ export function MatchingPanel({
                   leaderClass={selectedCharacter?.className}
                   slots={requiredClasses}
                   invitedSlots={invitedSlots}
-                  inviteStatuses={matchStatus?.inviteStatuses ?? localInviteStatuses}
+                  inviteStatuses={localInviteStatuses}
                   inviteStarted={slottedFriendIds.length > 0}
                   friends={friends}
                   minCombatPower={combatPowerFromK(minCombatPowerK)}
@@ -1036,133 +771,7 @@ export function MatchingPanel({
           </div>
         </form>
         </CardContent>
-      </Card>
-      {matchStatus?.active && (
-        <MatchFloatingStatus
-          status={matchStatus}
-          cancelling={cancelling}
-          responding={responding}
-          nowMs={nowMs}
-          onCancel={onCancelMatch}
-          onRespond={onRespondTemporaryMatch}
-        />
-      )}
-    </>
-  );
-}
-
-function MatchFloatingStatus({
-  status,
-  cancelling,
-  responding,
-  nowMs,
-  onCancel,
-  onRespond,
-}: {
-  status: MatchStatus;
-  cancelling: boolean;
-  responding: boolean;
-  nowMs: number;
-  onCancel: () => void;
-  onRespond: (action: "accept" | "reject") => void;
-}) {
-  const isLeader = status.role === "leader";
-  const waitingCount = status.waitingCount ?? 0;
-  const needed = status.needed ?? 0;
-  const temporaryMatch = status.temporaryMatch;
-  const acceptedCount =
-    temporaryMatch?.responses.filter((response) => response.status === "accepted").length ?? 0;
-  const totalResponses = temporaryMatch?.responses.length ?? 5;
-  const remainingSeconds = temporaryMatch
-    ? Math.max(
-        0,
-        Math.ceil((new Date(temporaryMatch.expiresAt).getTime() - nowMs) / 1000),
-      )
-    : 0;
-  const autoLeadRemainingSeconds = status.autoLeadEligibleAt
-    ? Math.max(
-        0,
-        Math.ceil((new Date(status.autoLeadEligibleAt).getTime() - nowMs) / 1000),
-      )
-    : 0;
-
-  if (temporaryMatch) {
-    return (
-      <div className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-md rounded-lg border bg-card/95 p-4 text-card-foreground shadow-xl backdrop-blur">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Loader2 className="size-4 animate-spin text-violet-400" />
-              매칭 수락 대기 중
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              전원 수락 시 파티가 확정됩니다. {acceptedCount}/{totalResponses}명
-              수락, {remainingSeconds}초 남음
-            </p>
-            {temporaryMatch.role === "leader" && (
-              <p className="mt-1 text-xs font-medium text-violet-300">
-                파티장으로 매칭됩니다.
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={responding || temporaryMatch.responseStatus === "accepted"}
-              onClick={() => onRespond("reject")}
-            >
-              거절
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={responding || temporaryMatch.responseStatus === "accepted"}
-              onClick={() => onRespond("accept")}
-            >
-              {responding && <Loader2 className="size-3.5 animate-spin" />}
-              {temporaryMatch.responseStatus === "accepted" ? "수락 완료" : "수락"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-md rounded-lg border bg-card/95 p-4 text-card-foreground shadow-xl backdrop-blur">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Loader2 className="size-4 animate-spin text-violet-400" />
-            매칭 대기 중
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {isLeader
-              ? `조건에 맞는 파티원을 찾는 중입니다. ${waitingCount}/${needed}명`
-              : "조건에 맞는 파티가 열리면 자동으로 방에 입장합니다."}
-          </p>
-          {!isLeader && status.canAutoLead && (
-            <p className="mt-1 text-xs font-medium text-violet-300">
-              {autoLeadRemainingSeconds > 0
-                ? `파티장 전환 가능까지 ${autoLeadRemainingSeconds}초`
-                : "파티장 후보로 전환됨. 설정한 조건으로 파티원을 찾는 중입니다."}
-            </p>
-          )}
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={cancelling}
-          onClick={onCancel}
-        >
-          {cancelling && <Loader2 className="size-3.5 animate-spin" />}
-          취소
-        </Button>
-      </div>
-    </div>
+    </Card>
   );
 }
 
