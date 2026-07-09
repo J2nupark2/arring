@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -112,6 +112,7 @@ async function requestMatch(body: {
   maxMembers?: number;
   characterId?: string;
   invitedFriendIds?: string[];
+  draftId?: string;
   canAutoLead?: boolean;
   autoLeadAfterSeconds?: number;
   allowConditionRelaxation?: boolean;
@@ -153,6 +154,35 @@ async function respondTemporaryMatch(action: "accept" | "reject") {
   return data as MatchStatus;
 }
 
+async function sendMatchingInvite(body: {
+  draftId: string;
+  receiverId: string;
+  dungeonId: string;
+  stage: number;
+  minCombatPower: number;
+  maxMembers: number;
+  characterId?: string;
+  requiredClasses: string[];
+}) {
+  const res = await fetch("/api/matching/invites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "파티 초대에 실패했습니다.");
+  return data as {
+    inviteStatus: NonNullable<MatchStatus["inviteStatuses"]>[number];
+  };
+}
+
+async function fetchDraftInviteStatuses(draftId: string) {
+  const res = await fetch(`/api/matching/invites?draftId=${encodeURIComponent(draftId)}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.inviteStatuses ?? []) as NonNullable<MatchStatus["inviteStatuses"]>;
+}
+
 export function MatchingPanel({
   dungeons,
   profile,
@@ -190,12 +220,25 @@ export function MatchingPanel({
   const [allowConditionRelaxation, setAllowConditionRelaxation] = useState(false);
   const [pending, setPending] = useState(false);
   const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
+  const [localInviteStatuses, setLocalInviteStatuses] = useState<MatchStatus["inviteStatuses"]>([]);
+  const [inviteDraftId, setInviteDraftId] = useState(() => crypto.randomUUID());
   const [cancelling, setCancelling] = useState(false);
   const [responding, setResponding] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const matchSessionStartedAt = useRef(new Date().toISOString());
 
   const maxMembers = partySizeForDungeon(selectedDungeon);
+  const slottedFriendIds = invitedSlots
+    .map((friend) => friend?.user_id)
+    .filter((id): id is string => !!id);
+  const currentInviteStatusByUser = new Map(
+    (localInviteStatuses ?? []).map((status) => [status.userId, status.status]),
+  );
+  const hasUnreadyInvitedFriends =
+    mode === "leader" &&
+    slottedFriendIds.some(
+      (userId) => currentInviteStatusByUser.get(userId) !== "accepted",
+    );
   const hasLinkedCharacter = characters.length > 0 || (!!profile?.charClass && !!profile.combatPower);
   const stages = ["처음", ...(selectedDungeon?.gimmick_stages ?? []), "클리어"];
 
@@ -234,8 +277,31 @@ export function MatchingPanel({
     return () => window.clearInterval(id);
   }, [matchStatus?.temporaryMatch, matchStatus?.autoLeadEligibleAt]);
 
+  useEffect(() => {
+    if (isGuest || mode !== "leader" || slottedFriendIds.length === 0) return;
+
+    let active = true;
+    async function refreshInviteStatuses() {
+      const statuses = await fetchDraftInviteStatuses(inviteDraftId);
+      if (!active || statuses.length === 0) return;
+      setLocalInviteStatuses(statuses);
+    }
+
+    const initialId = window.setTimeout(() => {
+      void refreshInviteStatuses();
+    }, 0);
+    const id = window.setInterval(refreshInviteStatuses, 3000);
+    return () => {
+      active = false;
+      window.clearTimeout(initialId);
+      window.clearInterval(id);
+    };
+  }, [inviteDraftId, isGuest, mode, slottedFriendIds.length]);
+
   function changeDungeon(nextDungeonId: string) {
     setDungeonId(nextDungeonId);
+    setInviteDraftId(crypto.randomUUID());
+    setLocalInviteStatuses([]);
     const nextDungeon = dungeons.find((dungeon) => dungeon.id === nextDungeonId);
     const nextStage = progress.find((item) => item.dungeonId === nextDungeonId)?.stage ?? 0;
     setStage(nextStage);
@@ -267,7 +333,8 @@ export function MatchingPanel({
     );
   }
 
-  function assignFriendToSlot(index: number, friend: Friend | null) {
+  async function assignFriendToSlot(index: number, friend: Friend | null) {
+    const previousFriendId = invitedSlots[index]?.user_id;
     setInvitedSlots((current) => {
       const next = current.map((item) =>
         item?.user_id === friend?.user_id ? null : item,
@@ -278,6 +345,49 @@ export function MatchingPanel({
 
     if (friend?.class_name) {
       changeClassSlot(index, friend.class_name);
+    }
+
+    if (!friend) {
+      if (previousFriendId) {
+        setLocalInviteStatuses((current) =>
+          current?.filter((status) => status.userId !== previousFriendId) ?? [],
+        );
+      }
+      return;
+    }
+
+    setLocalInviteStatuses((current) => [
+      ...(current?.filter((status) => status.userId !== friend.user_id) ?? []),
+      { userId: friend.user_id, status: "pending" },
+    ]);
+
+    if (mode !== "leader") return;
+
+    try {
+      const result = await sendMatchingInvite({
+        draftId: inviteDraftId,
+        receiverId: friend.user_id,
+        dungeonId,
+        characterId,
+        stage,
+        minCombatPower: combatPowerFromK(minCombatPowerK),
+        maxMembers,
+        requiredClasses: requiredClasses.filter(Boolean),
+      });
+      setLocalInviteStatuses((current) => [
+        ...(current?.filter((status) => status.userId !== friend.user_id) ?? []),
+        result.inviteStatus,
+      ]);
+      toast.success(
+        result.inviteStatus.status === "accepted"
+          ? `${friend.nickname}님은 준비 완료되었습니다.`
+          : `${friend.nickname}님에게 파티 초대를 보냈습니다.`,
+      );
+    } catch (error) {
+      setLocalInviteStatuses((current) =>
+        current?.filter((status) => status.userId !== friend.user_id) ?? [],
+      );
+      toast.error(error instanceof Error ? error.message : "파티 초대에 실패했습니다.");
     }
   }
 
@@ -308,6 +418,10 @@ export function MatchingPanel({
       const invitedFriendIds = invitedSlots
         .map((friend) => friend?.user_id)
         .filter((id): id is string => !!id);
+      if (mode === "leader" && hasUnreadyInvitedFriends) {
+        toast.error("초대 친구가 모두 준비 완료된 뒤 매칭을 시작할 수 있습니다.");
+        return;
+      }
       const requiredClassesForMatching = requiredClasses.filter(
         (className, index) => !!className && !invitedSlots[index],
       );
@@ -320,6 +434,7 @@ export function MatchingPanel({
         requiredClasses: requiredClassesForMatching,
         maxMembers,
         invitedFriendIds,
+        draftId: inviteDraftId,
         canAutoLead: mode === "member" && canAutoLead,
         autoLeadAfterSeconds,
         allowConditionRelaxation,
@@ -375,6 +490,8 @@ export function MatchingPanel({
       await cancelMatch();
       matchSessionStartedAt.current = new Date().toISOString();
       setMatchStatus(null);
+      setLocalInviteStatuses([]);
+      setInviteDraftId(crypto.randomUUID());
       toast.success("매칭 대기를 취소했습니다.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "매칭 취소에 실패했습니다.");
@@ -558,7 +675,8 @@ export function MatchingPanel({
                   leaderClass={selectedCharacter?.className}
                   slots={requiredClasses}
                   invitedSlots={invitedSlots}
-                  inviteStatuses={matchStatus?.inviteStatuses}
+                  inviteStatuses={matchStatus?.inviteStatuses ?? localInviteStatuses}
+                  inviteStarted={slottedFriendIds.length > 0}
                   friends={friends}
                   minCombatPower={combatPowerFromK(minCombatPowerK)}
                   onChange={changeClassSlot}
@@ -664,7 +782,17 @@ export function MatchingPanel({
               {selectedCharacter?.combatPower && ` · 투력 ${formatCombatPower(selectedCharacter.combatPower)}`}
               {mode === "leader" && ` · 최소 ${minCombatPowerK.toLocaleString()}k · ${maxMembers}명 고정`}
             </span>
-            <Button type="submit" disabled={pending || isGuest || !hasLinkedCharacter || !characterId || dungeons.length === 0}>
+            <Button
+              type="submit"
+              disabled={
+                pending ||
+                isGuest ||
+                !hasLinkedCharacter ||
+                !characterId ||
+                dungeons.length === 0 ||
+                hasUnreadyInvitedFriends
+              }
+            >
               {pending && <Loader2 className="size-4 animate-spin" />}
               {mode === "leader" ? "매칭 열기" : "자동매칭 대기"}
             </Button>
@@ -807,6 +935,7 @@ function ClassSlotBoard({
   slots,
   invitedSlots,
   inviteStatuses,
+  inviteStarted,
   friends,
   minCombatPower,
   onChange,
@@ -821,6 +950,7 @@ function ClassSlotBoard({
     userId: string;
     status: "pending" | "accepted" | "declined" | "cancelled";
   }[];
+  inviteStarted?: boolean;
   friends: Friend[];
   minCombatPower: number;
   onChange: (index: number, className: string) => void;
@@ -888,6 +1018,7 @@ function ClassSlotBoard({
         slots={firstPartySlots}
         invitedSlots={firstPartyInvites}
         inviteStatusByUser={inviteStatusByUser}
+        inviteStarted={inviteStarted}
         friends={friends}
         minCombatPower={minCombatPower}
         offset={0}
@@ -901,6 +1032,7 @@ function ClassSlotBoard({
           slots={secondPartySlots}
           invitedSlots={secondPartyInvites}
           inviteStatusByUser={inviteStatusByUser}
+          inviteStarted={inviteStarted}
           friends={friends}
           minCombatPower={minCombatPower}
           offset={4}
@@ -919,6 +1051,7 @@ function ClassSlotGroup({
   slots,
   invitedSlots,
   inviteStatusByUser,
+  inviteStarted,
   friends,
   minCombatPower,
   offset,
@@ -931,6 +1064,7 @@ function ClassSlotGroup({
   slots: string[];
   invitedSlots: (Friend | null)[];
   inviteStatusByUser: Map<string, "pending" | "accepted" | "declined" | "cancelled">;
+  inviteStarted?: boolean;
   friends: Friend[];
   minCombatPower: number;
   offset: number;
@@ -959,6 +1093,10 @@ function ClassSlotGroup({
           const inviteStatus = invitedFriend
             ? inviteStatusByUser.get(invitedFriend.user_id)
             : undefined;
+          const visibleInviteStatus = invitedFriend
+            ? inviteStatus ?? (inviteStarted ? "pending" : "ready")
+            : undefined;
+          const isWaitingInvite = visibleInviteStatus === "pending";
           const isUnderPower =
             !!invitedFriend?.combat_power &&
             invitedFriend.combat_power < minCombatPower;
@@ -982,7 +1120,11 @@ function ClassSlotGroup({
                 if (friend) onAssignFriend(globalIndex, friend);
               }}
               className={`rounded-md border p-2 ${
-                invitedFriend ? "bg-muted/25" : "border-dashed"
+                invitedFriend
+                  ? isWaitingInvite
+                    ? "bg-muted/15 opacity-60"
+                    : "bg-muted/25"
+                  : "border-dashed"
               }`}
             >
               {invitedFriend ? (
@@ -1021,15 +1163,21 @@ function ClassSlotGroup({
                       최소투력 미달
                     </span>
                   )}
-                  {inviteStatus && (
-                    <span className="text-[11px] text-violet-300">
-                      {inviteStatus === "pending"
-                        ? "초대중"
-                        : inviteStatus === "accepted"
-                          ? "수락"
-                          : inviteStatus === "declined"
-                            ? "거절"
-                            : "취소됨"}
+                  {visibleInviteStatus && (
+                    <span
+                      className={`text-[11px] ${
+                        visibleInviteStatus === "accepted" ? "text-green-400" : "text-violet-300"
+                      }`}
+                    >
+                      {visibleInviteStatus === "ready"
+                        ? "초대 예정"
+                        : visibleInviteStatus === "pending"
+                          ? "초대중"
+                          : visibleInviteStatus === "accepted"
+                            ? "준비 완료"
+                            : visibleInviteStatus === "declined"
+                              ? "거절"
+                              : "취소됨"}
                     </span>
                   )}
                 </div>
@@ -1057,7 +1205,6 @@ function ClassSlotGroup({
     </div>
   );
 }
-
 function HeadsetLabel({
   icon,
   title,
@@ -1077,3 +1224,4 @@ function HeadsetLabel({
     </span>
   );
 }
+

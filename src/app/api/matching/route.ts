@@ -1721,6 +1721,7 @@ export async function POST(request: NextRequest) {
     maxMembers?: number;
     characterId?: string;
     invitedFriendIds?: string[];
+    draftId?: string;
     canAutoLead?: boolean;
     autoLeadAfterSeconds?: number;
     allowConditionRelaxation?: boolean;
@@ -1789,6 +1790,7 @@ export async function POST(request: NextRequest) {
         )].slice(0, Math.max(0, maxMembers - 1))
       : [];
     let autoAcceptedInvitedFriendIds: string[] = [];
+    const draftId = body.draftId?.trim();
 
     if (invitedFriendIds.length > 0) {
       const { data: invitedFriends, error: invitedError } = await admin
@@ -1860,6 +1862,33 @@ export async function POST(request: NextRequest) {
       autoAcceptedInvitedFriendIds = invitedFriendIds.filter((friendId) =>
         dummyFriendIds.has(friendId),
       );
+
+      if (draftId) {
+        const { data: draftInvites, error: draftInviteError } = await admin
+          .from("matching_invites")
+          .select("receiver_id, status")
+          .eq("sender_id", user.id)
+          .eq("draft_id", draftId)
+          .in("receiver_id", invitedFriendIds);
+
+        if (draftInviteError) {
+          return jsonError("매칭 초대 상태 확인에 실패했습니다: " + draftInviteError.message, 500);
+        }
+
+        const inviteStatusByUser = new Map(
+          ((draftInvites ?? []) as { receiver_id: string; status: string }[]).map((invite) => [
+            invite.receiver_id,
+            invite.status,
+          ]),
+        );
+        const notReadyFriendIds = invitedFriendIds.filter(
+          (friendId) => inviteStatusByUser.get(friendId) !== "accepted",
+        );
+        if (notReadyFriendIds.length > 0) {
+          return jsonError("초대 친구가 모두 준비 완료된 뒤 매칭을 시작할 수 있습니다.", 400);
+        }
+        autoAcceptedInvitedFriendIds = invitedFriendIds;
+      }
     }
 
     const { error: cancelRequestError } = await admin
@@ -1905,7 +1934,17 @@ export async function POST(request: NextRequest) {
     }
 
     const createdMatchRequest = matchRequest as MatchRequest;
-    if (invitedFriendIds.length > 0) {
+    if (draftId && invitedFriendIds.length > 0) {
+      const { error: linkInviteError } = await admin
+        .from("matching_invites")
+        .update({ match_request_id: createdMatchRequest.id } as unknown as never)
+        .eq("sender_id", user.id)
+        .eq("draft_id", draftId)
+        .in("receiver_id", invitedFriendIds);
+      if (linkInviteError) {
+        return jsonError("매칭 초대 연결에 실패했습니다: " + linkInviteError.message, 500);
+      }
+    } else if (invitedFriendIds.length > 0) {
       const acceptedIds = new Set(autoAcceptedInvitedFriendIds);
       const now = new Date().toISOString();
       const { error: inviteInsertError } = await admin.from("matching_invites").insert(
