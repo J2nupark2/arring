@@ -14,9 +14,9 @@ import {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-24 sm:px-6">
@@ -29,10 +29,11 @@ export default async function LoginPage({
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>로그인</CardTitle>
-          <CardDescription>아링 계정으로 로그인하세요.</CardDescription>
+          <CardDescription>계정으로 로그인해야 서비스를 이용할 수 있어요.</CardDescription>
         </CardHeader>
         <CardContent>
           <form action={login} className="flex flex-col gap-4">
+            <input type="hidden" name="next" value={next ?? "/party"} />
             <div className="grid gap-2">
               <Label htmlFor="email">이메일</Label>
               <Input

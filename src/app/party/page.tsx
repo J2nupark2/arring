@@ -21,8 +21,8 @@ export default async function PartyPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect(`/guest?next=${encodeURIComponent("/party")}`);
+  if (!user || user.is_anonymous) {
+    redirect(`/login?next=${encodeURIComponent("/party")}`);
   }
 
   const [
@@ -60,7 +60,7 @@ export default async function PartyPage({
     ]);
 
   const { error, welcome } = await searchParams;
-  const isGuest = user.is_anonymous ?? false;
+  const isGuest = false;
 
   return (
     <FriendsProvider isGuest={isGuest}>

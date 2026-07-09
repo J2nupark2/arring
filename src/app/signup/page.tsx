@@ -30,26 +30,11 @@ export default async function SignupPage({
         <CardHeader>
           <CardTitle>회원가입</CardTitle>
           <CardDescription>
-            아링 계정을 만들고 바로 통화방을 시작하세요.
+            이메일과 비밀번호로 계정을 만든 뒤, 프로필에서 아이온2 캐릭터를 연동해주세요.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form action={signup} className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-2">
-                <Label htmlFor="nickname">닉네임</Label>
-                <Input
-                  id="nickname"
-                  name="nickname"
-                  placeholder="아이온2 캐릭터명"
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="server">서버</Label>
-                <Input id="server" name="server" placeholder="예: 지켈" />
-              </div>
-            </div>
             <div className="grid gap-2">
               <Label htmlFor="email">이메일</Label>
               <Input

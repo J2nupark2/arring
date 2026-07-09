@@ -43,8 +43,8 @@ export default async function CharacterDetailPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect(`/guest?next=${encodeURIComponent(`/profile/characters/${id}`)}`);
+  if (!user || user.is_anonymous) {
+    redirect(`/login?next=${encodeURIComponent(`/profile/characters/${id}`)}`);
   }
 
   const { data: character } = await supabase

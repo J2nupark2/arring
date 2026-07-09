@@ -12,12 +12,8 @@ export default async function ProfilePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect(`/guest?next=${encodeURIComponent("/profile")}`);
-  }
-  // Guests can't link characters (matching requires an account anyway).
-  if (user.is_anonymous) {
-    redirect("/party");
+  if (!user || user.is_anonymous) {
+    redirect(`/login?next=${encodeURIComponent("/profile")}`);
   }
 
   const [{ data: profile }, { data: characters }] = await Promise.all([

@@ -55,12 +55,8 @@ export default async function PlayHistoryPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect(`/guest?next=${encodeURIComponent("/profile/history")}`);
-  }
-
-  if (user.is_anonymous) {
-    redirect("/party");
+  if (!user || user.is_anonymous) {
+    redirect(`/login?next=${encodeURIComponent("/profile/history")}`);
   }
 
   const { data: ownRows } = await supabase

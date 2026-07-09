@@ -41,10 +41,11 @@ export default async function RoomPage({
       .maybeSingle(),
   ]);
 
-  if (!user) {
-    redirect(`/guest?next=${encodeURIComponent(`/room/${code}`)}`);
+  if (!user || user.is_anonymous) {
+    redirect(`/login?next=${encodeURIComponent(`/room/${code}`)}`);
   }
 
+  // eslint-disable-next-line react-hooks/purity -- Server Component request-time expiry check.
   const isExpired = room && new Date(room.expires_at).getTime() < Date.now();
   const isInvalid = !room || room.status === "ended" || isExpired;
 
@@ -138,7 +139,7 @@ export default async function RoomPage({
   const skipPasswordGate = !!ownActiveRow || room.created_by === user.id;
   const hasPassword = !!hasPasswordRaw;
 
-  const isGuest = user.is_anonymous ?? false;
+  const isGuest = false;
 
   return (
     <FriendsProvider isGuest={isGuest}>

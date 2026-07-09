@@ -1,5 +1,5 @@
-import { GuestEntryCard } from "@/components/guest-entry-card";
+import { redirect } from "next/navigation";
 
 export default function GuestPage() {
-  return <GuestEntryCard />;
+  redirect("/login");
 }

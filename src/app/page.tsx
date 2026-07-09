@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { GuestEntryCard } from "@/components/guest-entry-card";
 import { RedirectIfAuthed } from "@/components/redirect-if-authed";
 
 export const metadata: Metadata = {
@@ -16,7 +15,7 @@ export default function Home() {
       <RedirectIfAuthed to="/party" />
       <main className="flex flex-1 flex-col">
         <section className="border-b">
-          <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-14 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:py-20">
+          <div className="mx-auto flex w-full max-w-6xl px-4 py-14 sm:px-6 lg:py-20">
             <div className="flex flex-col justify-center gap-6">
               <Link
                 href="/"
@@ -37,10 +36,16 @@ export default function Home() {
               </div>
               <div className="flex flex-wrap gap-3">
                 <Link
-                  href="/guest"
+                  href="/login"
                   className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
                 >
-                  바로 시작하기
+                  로그인하고 시작하기
+                </Link>
+                <Link
+                  href="/signup"
+                  className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted"
+                >
+                  회원가입
                 </Link>
                 <Link
                   href="/about"
@@ -50,7 +55,6 @@ export default function Home() {
                 </Link>
               </div>
             </div>
-            <GuestEntryCard compact />
           </div>
         </section>
 

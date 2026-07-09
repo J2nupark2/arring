@@ -134,6 +134,7 @@ export async function POST(request: NextRequest) {
     const { error } = await admin
       .from("profiles")
       .update({
+        nickname: profile.characterName,
         char_class: profile.className,
         combat_power: profile.combatPower,
         server: profile.serverName,

@@ -11,8 +11,8 @@ export default async function AdminPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect(`/guest?next=${encodeURIComponent("/admin")}`);
+  if (!user || user.is_anonymous) {
+    redirect(`/login?next=${encodeURIComponent("/admin")}`);
   }
 
   const { data: me } = await supabase
