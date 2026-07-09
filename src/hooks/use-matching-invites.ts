@@ -16,8 +16,6 @@ export type MatchingInvite = {
   createdAt: string;
 };
 
-const POLL_MS = 15000;
-
 export function useMatchingInvites(isGuest: boolean) {
   const [incoming, setIncoming] = useState<MatchingInvite[]>([]);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -33,10 +31,7 @@ export function useMatchingInvites(isGuest: boolean) {
   useEffect(() => {
     if (isGuest) return;
 
-    const initialId = window.setTimeout(() => {
-      void refresh();
-    }, 0);
-    const id = window.setInterval(refresh, POLL_MS);
+    void Promise.resolve().then(() => refresh());
     const supabase = createClient();
     let cancelled = false;
 
@@ -64,8 +59,6 @@ export function useMatchingInvites(isGuest: boolean) {
 
     return () => {
       cancelled = true;
-      window.clearTimeout(initialId);
-      window.clearInterval(id);
       if (channelRef.current) {
         void supabase.removeChannel(channelRef.current);
         channelRef.current = null;

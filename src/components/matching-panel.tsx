@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { Loader2, RadioTower, ShieldCheck, Swords, Users } from "lucide-react";
 import { AION2_CLASSES, type Dungeon } from "@/lib/aion2";
@@ -21,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatCombatPower } from "@/lib/format";
+import { createClient } from "@/lib/supabase/client";
 
 type Profile = {
   charClass: string | null;
@@ -226,6 +228,8 @@ export function MatchingPanel({
   const [responding, setResponding] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const matchSessionStartedAt = useRef(new Date().toISOString());
+  const suppressRealtimeRefreshUntil = useRef(0);
+  const statusRefreshTimer = useRef<number | null>(null);
 
   const maxMembers = partySizeForDungeon(selectedDungeon);
   const slottedFriendIds = invitedSlots
@@ -245,8 +249,12 @@ export function MatchingPanel({
   useEffect(() => {
     if (isGuest) return;
 
+    const supabase = createClient();
+    const channels: RealtimeChannel[] = [];
     let active = true;
+
     async function refreshStatus() {
+      suppressRealtimeRefreshUntil.current = Date.now() + 1200;
       const status = await fetchMatchStatus(matchSessionStartedAt.current);
       if (!active || !status) return;
 
@@ -263,11 +271,90 @@ export function MatchingPanel({
       );
     }
 
+    function scheduleRefresh(delay = 80) {
+      if (Date.now() < suppressRealtimeRefreshUntil.current) return;
+      if (statusRefreshTimer.current) {
+        window.clearTimeout(statusRefreshTimer.current);
+      }
+      statusRefreshTimer.current = window.setTimeout(() => {
+        statusRefreshTimer.current = null;
+        void refreshStatus();
+      }, delay);
+    }
+
     void refreshStatus();
-    const id = window.setInterval(refreshStatus, 3000);
+
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user || !active) return;
+
+      const ownRows = supabase
+        .channel(`matching-status:${user.id}:${crypto.randomUUID()}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "match_requests",
+            filter: `leader_id=eq.${user.id}`,
+          },
+          () => scheduleRefresh(),
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "match_queue",
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => scheduleRefresh(),
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "matching_invites",
+            filter: `receiver_id=eq.${user.id}`,
+          },
+          () => scheduleRefresh(),
+        )
+        .subscribe();
+
+      const acceptanceRows = supabase
+        .channel(`matching-acceptance:${user.id}:${crypto.randomUUID()}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "temporary_matches",
+          },
+          () => scheduleRefresh(),
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "match_responses",
+          },
+          () => scheduleRefresh(),
+        )
+        .subscribe();
+
+      channels.push(ownRows, acceptanceRows);
+    });
+
     return () => {
       active = false;
-      window.clearInterval(id);
+      if (statusRefreshTimer.current) {
+        window.clearTimeout(statusRefreshTimer.current);
+        statusRefreshTimer.current = null;
+      }
+      channels.forEach((channel) => {
+        void supabase.removeChannel(channel);
+      });
     };
   }, [isGuest, router]);
 
@@ -287,16 +374,63 @@ export function MatchingPanel({
       setLocalInviteStatuses(statuses);
     }
 
-    const initialId = window.setTimeout(() => {
-      void refreshInviteStatuses();
-    }, 0);
-    const id = window.setInterval(refreshInviteStatuses, 3000);
+    const supabase = createClient();
+    let channel: RealtimeChannel | null = null;
+
+    void refreshInviteStatuses();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user || !active) return;
+      channel = supabase
+        .channel(`draft-invites:${inviteDraftId}:${crypto.randomUUID()}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "matching_invites",
+            filter: `sender_id=eq.${user.id}`,
+          },
+          () => {
+            void refreshInviteStatuses();
+          },
+        )
+        .subscribe();
+    });
+
     return () => {
       active = false;
-      window.clearTimeout(initialId);
-      window.clearInterval(id);
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
     };
   }, [inviteDraftId, isGuest, mode, slottedFriendIds.length]);
+
+  useEffect(() => {
+    if (!matchStatus?.active) return;
+    const id = window.setInterval(() => {
+      void fetchMatchStatus(matchSessionStartedAt.current);
+    }, 45000);
+    return () => window.clearInterval(id);
+  }, [matchStatus?.active]);
+
+  useEffect(() => {
+    const timestamps = [
+      matchStatus?.autoLeadEligibleAt,
+      matchStatus?.temporaryMatch?.expiresAt,
+    ].filter((value): value is string => !!value);
+    if (timestamps.length === 0) return;
+
+    const timers = timestamps.map((timestamp) => {
+      const delay = Math.max(0, new Date(timestamp).getTime() - Date.now() + 150);
+      return window.setTimeout(() => {
+        void fetchMatchStatus(matchSessionStartedAt.current).then((status) => {
+          if (status) setMatchStatus(status.active ? status : null);
+        });
+      }, delay);
+    });
+
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [matchStatus?.autoLeadEligibleAt, matchStatus?.temporaryMatch?.expiresAt]);
 
   function changeDungeon(nextDungeonId: string) {
     setDungeonId(nextDungeonId);

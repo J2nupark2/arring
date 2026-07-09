@@ -35,8 +35,6 @@ export type FriendCandidate = {
   relation_status: "none" | "friends" | "sent" | "received";
 };
 
-const POLL_MS = 15000;
-
 export function useFriends(isGuest: boolean) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incoming, setIncoming] = useState<IncomingRequest[]>([]);
@@ -48,22 +46,26 @@ export function useFriends(isGuest: boolean) {
     const [friendsRes, incomingRes] = await Promise.all([
       supabase.rpc("list_friends"),
       supabase.rpc("list_incoming_friend_requests"),
-      // Piggyback the online heartbeat on the same poll cycle instead of
-      // opening a dedicated realtime presence channel.
-      supabase.rpc("touch_presence"),
     ]);
     if (!friendsRes.error) setFriends(friendsRes.data ?? []);
     if (!incomingRes.error) setIncoming(incomingRes.data ?? []);
     setLoading(false);
   }, [isGuest]);
 
+  const touchPresence = useCallback(async () => {
+    if (isGuest) return;
+    const supabase = createClient();
+    await supabase.rpc("touch_presence");
+  }, [isGuest]);
+
   const channelsRef = useRef<RealtimeChannel[]>([]);
 
   useEffect(() => {
     void Promise.resolve().then(() => refresh());
+    void Promise.resolve().then(() => touchPresence());
     if (isGuest) return;
 
-    const id = setInterval(refresh, POLL_MS);
+    const heartbeatId = setInterval(touchPresence, 30000);
     const supabase = createClient();
     let cancelled = false;
 
@@ -87,6 +89,15 @@ export function useFriends(isGuest: boolean) {
         .on(
           "postgres_changes",
           {
+            event: "UPDATE",
+            schema: "public",
+            table: "friend_requests",
+          },
+          () => refresh(),
+        )
+        .on(
+          "postgres_changes",
+          {
             event: "INSERT",
             schema: "public",
             table: "direct_messages",
@@ -104,11 +115,11 @@ export function useFriends(isGuest: boolean) {
 
     return () => {
       cancelled = true;
-      clearInterval(id);
+      clearInterval(heartbeatId);
       channelsRef.current.forEach((c) => supabase.removeChannel(c));
       channelsRef.current = [];
     };
-  }, [refresh, isGuest]);
+  }, [refresh, touchPresence, isGuest]);
 
   const respond = useCallback(
     async (requestId: string, accept: boolean) => {

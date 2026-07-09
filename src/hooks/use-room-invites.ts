@@ -13,8 +13,6 @@ export type RoomInvite = {
   created_at: string;
 };
 
-const POLL_MS = 15000;
-
 // A call invite should feel instant, unlike the friend-request/message
 // badges which piggyback on the 15s poll — so this also holds a realtime
 // subscription on top of the same poll-as-fallback pattern.
@@ -33,7 +31,6 @@ export function useRoomInvites(isGuest: boolean) {
     void Promise.resolve().then(() => refresh());
     if (isGuest) return;
 
-    const id = setInterval(refresh, POLL_MS);
     const supabase = createClient();
     let cancelled = false;
 
@@ -61,7 +58,6 @@ export function useRoomInvites(isGuest: boolean) {
 
     return () => {
       cancelled = true;
-      clearInterval(id);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;

@@ -4,15 +4,42 @@ import { useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
 
-// Keeps the party list fresh: silent refresh every 15s plus a manual button.
 export function PartyRefresh() {
   const router = useRouter();
   const [refreshing, startRefreshing] = useTransition();
 
   useEffect(() => {
-    const id = setInterval(() => router.refresh(), 15000);
-    return () => clearInterval(id);
+    const supabase = createClient();
+    let refreshTimer: number | null = null;
+
+    function scheduleRefresh() {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        router.refresh();
+      }, 120);
+    }
+
+    const channel = supabase
+      .channel(`party-page:${crypto.randomUUID()}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "match_requests" },
+        scheduleRefresh,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "match_queue" },
+        scheduleRefresh,
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      void supabase.removeChannel(channel);
+    };
   }, [router]);
 
   return (
