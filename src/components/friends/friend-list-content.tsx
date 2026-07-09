@@ -41,8 +41,18 @@ export function FriendListContent({
   currentRoomCode?: string;
 }) {
   const router = useRouter();
-  const { friends, incoming, loading, refresh, respond, remove, incomingInvites, respondInvite } =
-    useFriendsContext();
+  const {
+    friends,
+    incoming,
+    loading,
+    refresh,
+    respond,
+    remove,
+    incomingInvites,
+    respondInvite,
+    incomingMatchingInvites,
+    respondMatchingInvite,
+  } = useFriendsContext();
   const [chatWith, setChatWith] = useState<{
     id: string;
     nickname: string;
@@ -282,10 +292,55 @@ export function FriendListContent({
         </div>
       )}
 
+      {incomingMatchingInvites.length > 0 && (
+        <div className="flex flex-col gap-2 px-4 pt-3">
+          <span className="text-xs font-medium text-muted-foreground">
+            받은 파티 초대
+          </span>
+          {incomingMatchingInvites.map((invite) => (
+            <div
+              key={invite.inviteId}
+              className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">
+                  {invite.nickname}님의 파티
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {invite.dungeonName}
+                  {invite.minCombatPower > 0 &&
+                    ` · 최소 ${Math.floor(invite.minCombatPower / 1000)}k`}
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => respondMatchingInvite(invite.inviteId, true)}
+                >
+                  <Check className="size-3.5" />
+                  수락
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="파티 초대 거절"
+                  onClick={() => respondMatchingInvite(invite.inviteId, false)}
+                >
+                  <X className="size-4 text-destructive" />
+                </Button>
+              </div>
+            </div>
+          ))}
+          <Separator className="mt-1" />
+        </div>
+      )}
+
       {!loading &&
         friends.length === 0 &&
         incoming.length === 0 &&
-        incomingInvites.length === 0 && (
+        incomingInvites.length === 0 &&
+        incomingMatchingInvites.length === 0 && (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-10 text-center">
           <Users className="size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">아직 친구가 없어요.</p>

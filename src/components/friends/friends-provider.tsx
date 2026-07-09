@@ -4,11 +4,17 @@ import { createContext, useContext, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useFriends } from "@/hooks/use-friends";
+import {
+  useMatchingInvites,
+  type MatchingInvite,
+} from "@/hooks/use-matching-invites";
 import { useRoomInvites, type RoomInvite } from "@/hooks/use-room-invites";
 
 type FriendsValue = ReturnType<typeof useFriends> & {
   incomingInvites: RoomInvite[];
   respondInvite: (inviteId: string, accept: boolean) => Promise<void>;
+  incomingMatchingInvites: MatchingInvite[];
+  respondMatchingInvite: (inviteId: string, accept: boolean) => Promise<void>;
 };
 
 // Inert fallback for the rare AppHeader usages with no wrapping provider
@@ -24,6 +30,8 @@ const inertValue: FriendsValue = {
   remove: async () => {},
   incomingInvites: [],
   respondInvite: async () => {},
+  incomingMatchingInvites: [],
+  respondMatchingInvite: async () => {},
 };
 
 const FriendsContext = createContext<FriendsValue>(inertValue);
@@ -43,10 +51,15 @@ export function FriendsProvider({
   const value = useFriends(isGuest);
   const { incoming: incomingInvites, respond: respondInvite } =
     useRoomInvites(isGuest);
+  const {
+    incoming: incomingMatchingInvites,
+    respond: respondMatchingInvite,
+  } = useMatchingInvites(isGuest);
   const seenRequestIds = useRef<Set<string> | null>(null);
   const lastUnread = useRef<Map<string, number> | null>(null);
   const lastOnline = useRef<Map<string, boolean> | null>(null);
   const seenInviteIds = useRef<Set<string> | null>(null);
+  const seenMatchingInviteIds = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     if (isGuest) return;
@@ -114,9 +127,37 @@ export function FriendsProvider({
     seenInviteIds.current = new Set(incomingInvites.map((i) => i.invite_id));
   }, [incomingInvites, isGuest, respondInvite, router]);
 
+  useEffect(() => {
+    if (isGuest) return;
+
+    if (seenMatchingInviteIds.current) {
+      for (const invite of incomingMatchingInvites) {
+        if (!seenMatchingInviteIds.current.has(invite.inviteId)) {
+          toast(`${invite.nickname}님이 파티 매칭에 초대했습니다`, {
+            action: {
+              label: "수락",
+              onClick: async () => {
+                await respondMatchingInvite(invite.inviteId, true);
+              },
+            },
+          });
+        }
+      }
+    }
+    seenMatchingInviteIds.current = new Set(
+      incomingMatchingInvites.map((invite) => invite.inviteId),
+    );
+  }, [incomingMatchingInvites, isGuest, respondMatchingInvite]);
+
   return (
     <FriendsContext.Provider
-      value={{ ...value, incomingInvites, respondInvite }}
+      value={{
+        ...value,
+        incomingInvites,
+        respondInvite,
+        incomingMatchingInvites,
+        respondMatchingInvite,
+      }}
     >
       {children}
     </FriendsContext.Provider>

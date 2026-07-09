@@ -87,6 +87,11 @@ type TemporaryMatchStatus = {
   role: "leader" | "member";
 };
 
+type MatchingInviteStatus = {
+  userId: string;
+  status: "pending" | "accepted" | "declined" | "cancelled";
+};
+
 function activeHeartbeatCutoff() {
   return new Date(Date.now() - MATCH_HEARTBEAT_TTL_MS).toISOString();
 }
@@ -606,6 +611,24 @@ async function isUserLockedForMatching(admin: AdminClient, userId: string) {
   return !!queueRow;
 }
 
+async function getMatchingInviteStatuses(
+  admin: AdminClient,
+  matchRequestId: string,
+): Promise<MatchingInviteStatus[]> {
+  const { data, error } = await admin
+    .from("matching_invites")
+    .select("receiver_id, status")
+    .eq("match_request_id", matchRequestId);
+
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as { receiver_id: string; status: MatchingInviteStatus["status"] }[])
+    .map((invite) => ({
+      userId: invite.receiver_id,
+      status: invite.status,
+    }));
+}
+
 async function resetMatchLocks(
   admin: AdminClient,
   temp: {
@@ -1095,6 +1118,38 @@ async function tryCompleteMatch(
     };
   }
 
+  const { count: pendingInviteCount, error: pendingInviteError } = await admin
+    .from("matching_invites")
+    .select("id", { count: "exact", head: true })
+    .eq("match_request_id", activeRequest.id)
+    .eq("status", "pending");
+
+  if (pendingInviteError) throw new Error(pendingInviteError.message);
+
+  if ((pendingInviteCount ?? 0) > 0) {
+    await admin
+      .from("match_requests")
+      .update({
+        status: "waiting",
+        heartbeat_at: new Date().toISOString(),
+      } as unknown as never)
+      .eq("id", activeRequest.id)
+      .eq("status", "processing");
+    return {
+      matched: false,
+      active: true,
+      state: "waiting" satisfies MatchState,
+      role: "leader",
+      waitingCount: 0,
+      needed: Math.max(
+        0,
+        activeRequest.max_members - 1 - (activeRequest.invited_friend_ids?.length ?? 0),
+      ),
+      since: activeRequest.created_at,
+      inviteStatuses: await getMatchingInviteStatuses(admin, activeRequest.id),
+    };
+  }
+
   const candidates = await findCandidates(admin, activeRequest);
   const needed = Math.max(
     0,
@@ -1123,6 +1178,7 @@ async function tryCompleteMatch(
       waitingCount: candidates.length,
       needed,
       since: activeRequest.created_at,
+      inviteStatuses: await getMatchingInviteStatuses(admin, activeRequest.id),
     };
   }
 
@@ -1158,6 +1214,7 @@ async function tryCompleteMatch(
         waitingCount: Math.max(0, candidates.length - 1),
         needed,
         since: activeRequest.created_at,
+        inviteStatuses: await getMatchingInviteStatuses(admin, activeRequest.id),
       };
     }
   }
@@ -1442,6 +1499,7 @@ async function getMatchStatus(
       needed,
       since: activeRequest.created_at,
       status: activeRequest.status,
+      inviteStatuses: await getMatchingInviteStatuses(admin, activeRequest.id),
     };
   }
 
@@ -1730,6 +1788,7 @@ export async function POST(request: NextRequest) {
           ),
         )].slice(0, Math.max(0, maxMembers - 1))
       : [];
+    let autoAcceptedInvitedFriendIds: string[] = [];
 
     if (invitedFriendIds.length > 0) {
       const { data: invitedFriends, error: invitedError } = await admin
@@ -1783,6 +1842,24 @@ export async function POST(request: NextRequest) {
       ) {
         return jsonError("초대 친구 중 최소투력 조건을 충족하지 못한 사용자가 있습니다.", 400);
       }
+
+      const { data: invitedProfiles, error: profileError } = await admin
+        .from("profiles")
+        .select("id, nickname")
+        .in("id", invitedFriendIds);
+
+      if (profileError) {
+        return jsonError("초대 친구 프로필 확인에 실패했습니다: " + profileError.message, 500);
+      }
+
+      const dummyFriendIds = new Set(
+        ((invitedProfiles ?? []) as { id: string; nickname: string }[])
+          .filter((profile) => profile.nickname.startsWith("더미"))
+          .map((profile) => profile.id),
+      );
+      autoAcceptedInvitedFriendIds = invitedFriendIds.filter((friendId) =>
+        dummyFriendIds.has(friendId),
+      );
     }
 
     const { error: cancelRequestError } = await admin
@@ -1815,7 +1892,7 @@ export async function POST(request: NextRequest) {
         min_combat_power: minCombatPower,
         required_classes: requiredClasses,
         max_members: maxMembers,
-        invited_friend_ids: invitedFriendIds,
+        invited_friend_ids: autoAcceptedInvitedFriendIds,
         heartbeat_at: new Date().toISOString(),
       } as unknown as never)
       .select(
@@ -1827,8 +1904,29 @@ export async function POST(request: NextRequest) {
       return jsonError("매칭 요청 생성에 실패했습니다: " + (error?.message ?? ""), 500);
     }
 
-    const result = await tryCompleteMatch(admin, matchRequest as MatchRequest);
-    return NextResponse.json(result);
+    const createdMatchRequest = matchRequest as MatchRequest;
+    if (invitedFriendIds.length > 0) {
+      const acceptedIds = new Set(autoAcceptedInvitedFriendIds);
+      const now = new Date().toISOString();
+      const { error: inviteInsertError } = await admin.from("matching_invites").insert(
+        invitedFriendIds.map((friendId) => ({
+          match_request_id: createdMatchRequest.id,
+          sender_id: user.id,
+          receiver_id: friendId,
+          status: acceptedIds.has(friendId) ? "accepted" : "pending",
+          responded_at: acceptedIds.has(friendId) ? now : null,
+        })) as unknown as never,
+      );
+      if (inviteInsertError) {
+        return jsonError("매칭 초대 생성에 실패했습니다: " + inviteInsertError.message, 500);
+      }
+    }
+
+    const result = await tryCompleteMatch(admin, createdMatchRequest);
+    return NextResponse.json({
+      ...result,
+      inviteStatuses: await getMatchingInviteStatuses(admin, createdMatchRequest.id),
+    });
   }
 
   const { error: cancelQueueError } = await admin

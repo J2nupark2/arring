@@ -53,6 +53,10 @@ type MatchStatus = {
   needed?: number;
   since?: string;
   status?: string;
+  inviteStatuses?: {
+    userId: string;
+    status: "pending" | "accepted" | "declined" | "cancelled";
+  }[];
   temporaryMatch?: {
     id: string;
     expiresAt: string;
@@ -348,6 +352,7 @@ export function MatchingPanel({
         canAutoLead: result.canAutoLead,
         autoLeadEligibleAt: result.autoLeadEligibleAt,
         autoLeadAfterSeconds: result.autoLeadAfterSeconds,
+        inviteStatuses: result.inviteStatuses,
       });
 
       if (mode === "leader") {
@@ -553,6 +558,7 @@ export function MatchingPanel({
                   leaderClass={selectedCharacter?.className}
                   slots={requiredClasses}
                   invitedSlots={invitedSlots}
+                  inviteStatuses={matchStatus?.inviteStatuses}
                   friends={friends}
                   minCombatPower={combatPowerFromK(minCombatPowerK)}
                   onChange={changeClassSlot}
@@ -638,6 +644,7 @@ export function MatchingPanel({
                       leaderClass={selectedCharacter?.className}
                       slots={requiredClasses}
                       invitedSlots={createInviteSlots(requiredClasses.length)}
+                      inviteStatuses={[]}
                       friends={[]}
                       minCombatPower={combatPowerFromK(minCombatPowerK)}
                       onChange={changeClassSlot}
@@ -799,6 +806,7 @@ function ClassSlotBoard({
   leaderClass,
   slots,
   invitedSlots,
+  inviteStatuses,
   friends,
   minCombatPower,
   onChange,
@@ -809,6 +817,10 @@ function ClassSlotBoard({
   leaderClass?: string | null;
   slots: string[];
   invitedSlots: (Friend | null)[];
+  inviteStatuses?: {
+    userId: string;
+    status: "pending" | "accepted" | "declined" | "cancelled";
+  }[];
   friends: Friend[];
   minCombatPower: number;
   onChange: (index: number, className: string) => void;
@@ -823,6 +835,9 @@ function ClassSlotBoard({
     dungeon?.category === "성역" ? invitedSlots.slice(4, 9) : [];
   const assignedIds = new Set(
     invitedSlots.map((friend) => friend?.user_id).filter(Boolean),
+  );
+  const inviteStatusByUser = new Map(
+    (inviteStatuses ?? []).map((invite) => [invite.userId, invite.status]),
   );
   const availableFriends = friends.filter(
     (friend) => !assignedIds.has(friend.user_id),
@@ -872,6 +887,7 @@ function ClassSlotBoard({
         leaderClass={leaderClass}
         slots={firstPartySlots}
         invitedSlots={firstPartyInvites}
+        inviteStatusByUser={inviteStatusByUser}
         friends={friends}
         minCombatPower={minCombatPower}
         offset={0}
@@ -884,6 +900,7 @@ function ClassSlotBoard({
           title="2파티"
           slots={secondPartySlots}
           invitedSlots={secondPartyInvites}
+          inviteStatusByUser={inviteStatusByUser}
           friends={friends}
           minCombatPower={minCombatPower}
           offset={4}
@@ -901,6 +918,7 @@ function ClassSlotGroup({
   leaderClass,
   slots,
   invitedSlots,
+  inviteStatusByUser,
   friends,
   minCombatPower,
   offset,
@@ -912,6 +930,7 @@ function ClassSlotGroup({
   leaderClass?: string | null;
   slots: string[];
   invitedSlots: (Friend | null)[];
+  inviteStatusByUser: Map<string, "pending" | "accepted" | "declined" | "cancelled">;
   friends: Friend[];
   minCombatPower: number;
   offset: number;
@@ -937,6 +956,9 @@ function ClassSlotGroup({
         {slots.map((className, index) => {
           const globalIndex = offset + index;
           const invitedFriend = invitedSlots[index];
+          const inviteStatus = invitedFriend
+            ? inviteStatusByUser.get(invitedFriend.user_id)
+            : undefined;
           const isUnderPower =
             !!invitedFriend?.combat_power &&
             invitedFriend.combat_power < minCombatPower;
@@ -997,6 +1019,17 @@ function ClassSlotGroup({
                   {isUnderPower && (
                     <span className="text-[11px] text-destructive">
                       최소투력 미달
+                    </span>
+                  )}
+                  {inviteStatus && (
+                    <span className="text-[11px] text-violet-300">
+                      {inviteStatus === "pending"
+                        ? "초대중"
+                        : inviteStatus === "accepted"
+                          ? "수락"
+                          : inviteStatus === "declined"
+                            ? "거절"
+                            : "취소됨"}
                     </span>
                   )}
                 </div>
