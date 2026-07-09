@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
-import { Loader2, RadioTower, ShieldCheck, Swords, Users } from "lucide-react";
+import { ChevronDown, Loader2, RadioTower, ShieldCheck, Swords, Users } from "lucide-react";
 import { AION2_CLASSES, type Dungeon } from "@/lib/aion2";
 import { useFriendsContext } from "@/components/friends/friends-provider";
 import type { Friend } from "@/hooks/use-friends";
@@ -105,6 +105,8 @@ function createInviteSlots(count: number) {
   return Array.from({ length: count }, () => null as Friend | null);
 }
 
+const CONTENT_CATEGORIES = ["원정", "초월", "성역"] as const;
+
 async function requestMatch(body: {
   role: "leader" | "member";
   dungeonId: string;
@@ -203,6 +205,10 @@ export function MatchingPanel({
   const [mode, setMode] = useState<"leader" | "member">("member");
   const [dungeonId, setDungeonId] = useState(dungeons[0]?.id ?? "");
   const selectedDungeon = dungeons.find((d) => d.id === dungeonId);
+  const [contentPickerOpen, setContentPickerOpen] = useState(false);
+  const [contentCategory, setContentCategory] = useState(
+    selectedDungeon?.category ?? CONTENT_CATEGORIES[0],
+  );
   const savedStage = progress.find((item) => item.dungeonId === dungeonId)?.stage ?? 0;
   const primaryCharacter = characters.find((character) => character.isPrimary) ?? characters[0];
   const [characterId, setCharacterId] = useState(primaryCharacter?.id ?? "");
@@ -245,6 +251,19 @@ export function MatchingPanel({
     );
   const hasLinkedCharacter = characters.length > 0 || (!!profile?.charClass && !!profile.combatPower);
   const stages = ["처음", ...(selectedDungeon?.gimmick_stages ?? []), "클리어"];
+  const contentCategories = [
+    ...CONTENT_CATEGORIES,
+    ...dungeons
+      .map((dungeon) => dungeon.category)
+      .filter(
+        (category, index, categories) =>
+          !CONTENT_CATEGORIES.some((item) => item === category) &&
+          categories.indexOf(category) === index,
+      ),
+  ];
+  const categoryDungeons = dungeons.filter(
+    (dungeon) => dungeon.category === contentCategory,
+  );
 
   useEffect(() => {
     if (isGuest) return;
@@ -434,9 +453,11 @@ export function MatchingPanel({
 
   function changeDungeon(nextDungeonId: string) {
     setDungeonId(nextDungeonId);
+    const nextDungeon = dungeons.find((dungeon) => dungeon.id === nextDungeonId);
+    if (nextDungeon?.category) setContentCategory(nextDungeon.category);
+    setContentPickerOpen(false);
     setInviteDraftId(crypto.randomUUID());
     setLocalInviteStatuses([]);
-    const nextDungeon = dungeons.find((dungeon) => dungeon.id === nextDungeonId);
     const nextStage = progress.find((item) => item.dungeonId === nextDungeonId)?.stage ?? 0;
     setStage(nextStage);
     setRequiredClasses((current) => {
@@ -718,7 +739,7 @@ export function MatchingPanel({
         </div>
 
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="match-character">매칭 캐릭터</Label>
               <select
@@ -740,21 +761,6 @@ export function MatchingPanel({
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="match-dungeon">콘텐츠</Label>
-              <select
-                id="match-dungeon"
-                value={dungeonId}
-                onChange={(e) => changeDungeon(e.target.value)}
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              >
-                {dungeons.map((dungeon) => (
-                  <option key={dungeon.id} value={dungeon.id} className="bg-popover">
-                    [{dungeon.category}] {dungeon.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
               <Label htmlFor="match-stage">
                 {mode === "leader" ? "요구 진도" : "내 기믹 진도"}
               </Label>
@@ -771,6 +777,103 @@ export function MatchingPanel({
                 ))}
               </select>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label>콘텐츠</Label>
+            <button
+              type="button"
+              onClick={() => setContentPickerOpen((open) => !open)}
+              className="flex min-h-12 items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50"
+              aria-expanded={contentPickerOpen}
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-sm font-medium">
+                  {selectedDungeon
+                    ? `[${selectedDungeon.category}] ${selectedDungeon.name}`
+                    : "콘텐츠를 선택해주세요"}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {selectedDungeon
+                    ? `${partySizeForDungeon(selectedDungeon)}명 고정 · 기믹 ${selectedDungeon.gimmick_stages.length}단계`
+                    : "원정, 초월, 성역을 카드로 골라요"}
+                </span>
+              </span>
+              <ChevronDown
+                className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                  contentPickerOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {contentPickerOpen && (
+              <div className="rounded-md border bg-muted/20 p-3">
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {contentCategories.map((category) => {
+                    const count = dungeons.filter(
+                      (dungeon) => dungeon.category === category,
+                    ).length;
+                    if (count === 0) return null;
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() => setContentCategory(category)}
+                        aria-pressed={contentCategory === category}
+                        className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                          contentCategory === category
+                            ? "border-violet-500 bg-violet-500/15 text-violet-100"
+                            : "bg-background/40 hover:bg-muted"
+                        }`}
+                      >
+                        {category}
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {categoryDungeons.map((dungeon) => {
+                    const selected = dungeon.id === dungeonId;
+                    const savedProgress =
+                      progress.find((item) => item.dungeonId === dungeon.id)?.stage ?? 0;
+                    return (
+                      <button
+                        key={dungeon.id}
+                        type="button"
+                        onClick={() => changeDungeon(dungeon.id)}
+                        aria-pressed={selected}
+                        className={`min-h-24 rounded-md border p-3 text-left transition-colors ${
+                          selected
+                            ? "border-violet-500 bg-violet-500/15"
+                            : "bg-background/50 hover:bg-muted/60"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-sm font-semibold">{dungeon.name}</span>
+                          <Badge variant={selected ? "default" : "outline"}>
+                            {partySizeForDungeon(dungeon)}명
+                          </Badge>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1 text-xs text-muted-foreground">
+                          <span>기믹 {dungeon.gimmick_stages.length}단계</span>
+                          <span>·</span>
+                          <span>내 진도 {stageLabel(dungeon, savedProgress)}</span>
+                        </div>
+                        {dungeon.gimmick_stages.length > 0 && (
+                          <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                            {dungeon.gimmick_stages.join(" / ")}
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {mode === "leader" && (
