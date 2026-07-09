@@ -177,6 +177,14 @@ async function api(jar, path, init = {}) {
   return { ok: res.ok, status: res.status, data };
 }
 
+async function acceptMatch(jar) {
+  return api(jar, "/api/matching", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "accept" }),
+  });
+}
+
 async function testStaleQueueExpires() {
   const dungeon = await createIsolatedDungeon();
   const user = await createTestUser("stale", { combatPower: 780_000 });
@@ -306,20 +314,40 @@ async function testFullHttpMatch() {
   });
   assert(leaderResponse.ok, `leader match failed: ${leaderResponse.status} ${JSON.stringify(leaderResponse.data)}`);
   assert(
-    leaderResponse.data?.matched === true && leaderResponse.data?.roomCode,
-    `leader should create a matched room, got ${JSON.stringify(leaderResponse.data)}`,
+    leaderResponse.data?.temporaryMatch?.id,
+    `leader should create a temporary match, got ${JSON.stringify(leaderResponse.data)}`,
+  );
+
+  for (const jar of memberJars) {
+    const pending = await api(jar, `/api/matching?since=${encodeURIComponent(startedAt)}`);
+    assert(pending.ok, `member pending status failed: ${pending.status} ${JSON.stringify(pending.data)}`);
+    assert(
+      pending.data?.temporaryMatch?.id === leaderResponse.data.temporaryMatch.id,
+      `member should see temporary match ${leaderResponse.data.temporaryMatch.id}, got ${JSON.stringify(pending.data)}`,
+    );
+  }
+
+  const acceptResponses = [];
+  acceptResponses.push(await acceptMatch(leaderJar));
+  for (const jar of memberJars) {
+    acceptResponses.push(await acceptMatch(jar));
+  }
+  const confirmed = acceptResponses.find((response) => response.data?.matched === true);
+  assert(
+    confirmed?.data?.roomCode,
+    `one accept response should confirm the room, got ${JSON.stringify(acceptResponses.map((item) => item.data))}`,
   );
 
   for (const jar of memberJars) {
     const status = await api(jar, `/api/matching?since=${encodeURIComponent(startedAt)}`);
     assert(status.ok, `member matched status failed: ${status.status} ${JSON.stringify(status.data)}`);
     assert(
-      status.data?.matched === true && status.data?.roomCode === leaderResponse.data.roomCode,
-      `member should see matched room ${leaderResponse.data.roomCode}, got ${JSON.stringify(status.data)}`,
+      status.data?.matched === true && status.data?.roomCode === confirmed.data.roomCode,
+      `member should see matched room ${confirmed.data.roomCode}, got ${JSON.stringify(status.data)}`,
     );
   }
 
-  console.log(`[matching-api-e2e] full 5-person HTTP match room ${leaderResponse.data.roomCode}`);
+  console.log(`[matching-api-e2e] full 5-person HTTP match room ${confirmed.data.roomCode}`);
 }
 
 async function cleanup() {

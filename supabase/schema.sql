@@ -7,6 +7,8 @@ drop table if exists public.kick_votes cascade;
 drop table if exists public.party_reviews cascade;
 drop trigger if exists on_party_review_created on public.party_reviews;
 drop function if exists public.apply_party_review_temperature cascade;
+drop table if exists public.match_responses cascade;
+drop table if exists public.temporary_matches cascade;
 drop table if exists public.match_queue cascade;
 drop table if exists public.match_requests cascade;
 drop table if exists public.dungeons cascade;
@@ -56,7 +58,10 @@ create table public.profiles (
   aion2_server_id integer,
   aion2_synced_at timestamptz,
   manner_temperature numeric(4,1) not null default 36.5,
-  trust_temperature numeric(4,1) not null default 36.5
+  trust_temperature numeric(4,1) not null default 36.5,
+  matchmaking_banned_until timestamptz,
+  consecutive_failed_response_count integer not null default 0
+    check (consecutive_failed_response_count >= 0)
 );
 
 alter table public.profiles enable row level security;
@@ -943,6 +948,64 @@ create index match_requests_active_heartbeat_idx
 create index match_queue_active_heartbeat_idx
   on public.match_queue (status, heartbeat_at)
   where status in ('waiting', 'processing');
+
+create table public.temporary_matches (
+  id uuid primary key default gen_random_uuid(),
+  match_request_id uuid not null references public.match_requests (id) on delete cascade,
+  leader_id uuid not null references public.profiles (id) on delete cascade,
+  candidate_user_ids uuid[] not null default '{}',
+  queue_ids uuid[] not null default '{}',
+  status text not null default 'pending_acceptance'
+    check (status in ('pending_acceptance', 'confirmed', 'cancelled', 'expired')),
+  score numeric(6,5) not null default 0,
+  expires_at timestamptz not null,
+  room_id uuid references public.rooms (id) on delete set null,
+  cancelled_reason text,
+  created_at timestamptz not null default now()
+);
+
+create index temporary_matches_pending_idx
+  on public.temporary_matches (status, expires_at);
+
+create index temporary_matches_leader_idx
+  on public.temporary_matches (leader_id, status, created_at desc);
+
+create table public.match_responses (
+  id uuid primary key default gen_random_uuid(),
+  temporary_match_id uuid not null references public.temporary_matches (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  status text not null default 'pending'
+    check (status in ('pending', 'accepted', 'rejected', 'expired')),
+  responded_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (temporary_match_id, user_id)
+);
+
+create index match_responses_user_pending_idx
+  on public.match_responses (user_id, status, created_at desc);
+
+alter table public.temporary_matches enable row level security;
+alter table public.match_responses enable row level security;
+
+create policy "temporary matches visible to participants"
+  on public.temporary_matches for select
+  to authenticated
+  using (
+    leader_id = auth.uid()
+    or auth.uid() = any(candidate_user_ids)
+  );
+
+create policy "match responses visible to participants"
+  on public.match_responses for select
+  to authenticated
+  using (
+    user_id = auth.uid()
+    or exists (
+      select 1 from public.temporary_matches tm
+      where tm.id = match_responses.temporary_match_id
+        and (tm.leader_id = auth.uid() or auth.uid() = any(tm.candidate_user_ids))
+    )
+  );
 
 alter table public.match_queue enable row level security;
 

@@ -53,6 +53,13 @@ type MatchStatus = {
   needed?: number;
   since?: string;
   status?: string;
+  temporaryMatch?: {
+    id: string;
+    expiresAt: string;
+    responseStatus: "pending" | "accepted" | "rejected" | "expired";
+    responses: { userId: string; status: "pending" | "accepted" | "rejected" | "expired" }[];
+    score: number;
+  } | null;
 };
 
 function stageLabel(dungeon: Dungeon | undefined, stage: number) {
@@ -124,6 +131,17 @@ async function cancelMatch() {
   }
 }
 
+async function respondTemporaryMatch(action: "accept" | "reject") {
+  const res = await fetch("/api/matching", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "매칭 응답 처리에 실패했습니다.");
+  return data as MatchStatus;
+}
+
 export function MatchingPanel({
   dungeons,
   profile,
@@ -159,6 +177,8 @@ export function MatchingPanel({
   const [pending, setPending] = useState(false);
   const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [responding, setResponding] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const matchSessionStartedAt = useRef(new Date().toISOString());
 
   const maxMembers = partySizeForDungeon(selectedDungeon);
@@ -193,6 +213,12 @@ export function MatchingPanel({
       window.clearInterval(id);
     };
   }, [isGuest, router]);
+
+  useEffect(() => {
+    if (!matchStatus?.temporaryMatch) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [matchStatus?.temporaryMatch]);
 
   function changeDungeon(nextDungeonId: string) {
     setDungeonId(nextDungeonId);
@@ -288,6 +314,12 @@ export function MatchingPanel({
         return;
       }
 
+      if (result.temporaryMatch) {
+        setMatchStatus(result);
+        toast.success("매칭 후보가 잡혔습니다. 30초 안에 수락해주세요.");
+        return;
+      }
+
       if (result.since) {
         matchSessionStartedAt.current = result.since;
       }
@@ -327,6 +359,29 @@ export function MatchingPanel({
       toast.error(error instanceof Error ? error.message : "매칭 취소에 실패했습니다.");
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function onRespondTemporaryMatch(action: "accept" | "reject") {
+    setResponding(true);
+    try {
+      const result = await respondTemporaryMatch(action);
+      if (result.matched && result.roomCode) {
+        toast.success("파티가 확정됐습니다. 방으로 이동합니다.");
+        router.push(`/room/${result.roomCode}`);
+        return;
+      }
+      if (action === "accept") {
+        toast.success("수락했습니다. 다른 파티원의 응답을 기다립니다.");
+        setMatchStatus(result.active ? result : null);
+      } else {
+        toast.success("매칭을 거절했습니다.");
+        setMatchStatus(null);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "매칭 응답 처리에 실패했습니다.");
+    } finally {
+      setResponding(false);
     }
   }
 
@@ -511,7 +566,10 @@ export function MatchingPanel({
         <MatchFloatingStatus
           status={matchStatus}
           cancelling={cancelling}
+          responding={responding}
+          nowMs={nowMs}
           onCancel={onCancelMatch}
+          onRespond={onRespondTemporaryMatch}
         />
       )}
     </>
@@ -521,15 +579,70 @@ export function MatchingPanel({
 function MatchFloatingStatus({
   status,
   cancelling,
+  responding,
+  nowMs,
   onCancel,
+  onRespond,
 }: {
   status: MatchStatus;
   cancelling: boolean;
+  responding: boolean;
+  nowMs: number;
   onCancel: () => void;
+  onRespond: (action: "accept" | "reject") => void;
 }) {
   const isLeader = status.role === "leader";
   const waitingCount = status.waitingCount ?? 0;
   const needed = status.needed ?? 0;
+  const temporaryMatch = status.temporaryMatch;
+  const acceptedCount =
+    temporaryMatch?.responses.filter((response) => response.status === "accepted").length ?? 0;
+  const totalResponses = temporaryMatch?.responses.length ?? 5;
+  const remainingSeconds = temporaryMatch
+    ? Math.max(
+        0,
+        Math.ceil((new Date(temporaryMatch.expiresAt).getTime() - nowMs) / 1000),
+      )
+    : 0;
+
+  if (temporaryMatch) {
+    return (
+      <div className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-md rounded-lg border bg-card/95 p-4 text-card-foreground shadow-xl backdrop-blur">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Loader2 className="size-4 animate-spin text-violet-400" />
+              매칭 수락 대기 중
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              전원 수락 시 파티가 확정됩니다. {acceptedCount}/{totalResponses}명
+              수락, {remainingSeconds}초 남음
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={responding || temporaryMatch.responseStatus === "accepted"}
+              onClick={() => onRespond("reject")}
+            >
+              거절
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={responding || temporaryMatch.responseStatus === "accepted"}
+              onClick={() => onRespond("accept")}
+            >
+              {responding && <Loader2 className="size-3.5 animate-spin" />}
+              {temporaryMatch.responseStatus === "accepted" ? "수락 완료" : "수락"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-md rounded-lg border bg-card/95 p-4 text-card-foreground shadow-xl backdrop-blur">
