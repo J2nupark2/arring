@@ -216,6 +216,52 @@ async function testStaleQueueExpires() {
   console.log("[matching-api-e2e] stale member queue expires");
 }
 
+async function testMemberQueueWinsOverCancelledLeaderRequest() {
+  const dungeon = await createIsolatedDungeon();
+  const user = await createTestUser("member-after-leader", { combatPower: 780_000 });
+  const jar = await signIn(user.email);
+
+  const leaderPost = await api(jar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "leader",
+      dungeonId: dungeon.id,
+      characterId: user.characterId,
+      stage: 2,
+      minCombatPower: 700_000,
+      requiredClasses: [],
+    }),
+  });
+  assert(leaderPost.ok, `leader setup failed: ${leaderPost.status} ${JSON.stringify(leaderPost.data)}`);
+  assert(leaderPost.data?.state === "waiting", `leader setup should wait, got ${JSON.stringify(leaderPost.data)}`);
+
+  const memberStartedAt = new Date().toISOString();
+  const memberPost = await api(jar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "member",
+      dungeonId: dungeon.id,
+      characterId: user.characterId,
+      stage: 3,
+    }),
+  });
+  assert(memberPost.ok, `member after leader failed: ${memberPost.status} ${JSON.stringify(memberPost.data)}`);
+  assert(memberPost.data?.state === "waiting", `member after leader should wait, got ${JSON.stringify(memberPost.data)}`);
+
+  const status = await api(jar, `/api/matching?since=${encodeURIComponent(memberStartedAt)}`);
+  assert(status.ok, `member after leader status failed: ${status.status} ${JSON.stringify(status.data)}`);
+  assert(
+    status.data?.state === "waiting" &&
+      status.data?.active === true &&
+      status.data?.role === "member",
+    `active member queue should not be hidden by cancelled leader request, got ${JSON.stringify(status.data)}`,
+  );
+
+  console.log("[matching-api-e2e] member queue survives cancelled leader request");
+}
+
 async function testFullHttpMatch() {
   const dungeon = await createIsolatedDungeon();
   const leader = await createTestUser("leader", { className: "검성", combatPower: 820_000 });
@@ -356,10 +402,11 @@ try {
   );
 
   await testStaleQueueExpires();
+  await testMemberQueueWinsOverCancelledLeaderRequest();
   await testFullHttpMatch();
 
   console.log(`[matching-api-e2e] dungeon ${dungeon.name}`);
-  console.log("[matching-api-e2e] member waiting -> stale expiry -> leader 0 candidates -> full 5-person match -> cancel lifecycle");
+  console.log("[matching-api-e2e] member waiting -> stale expiry -> cancelled leader ignored -> leader 0 candidates -> full 5-person match -> cancel lifecycle");
   console.log("[matching-api-e2e] PASS");
 } finally {
   await cleanup();

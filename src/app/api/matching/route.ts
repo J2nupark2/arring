@@ -555,19 +555,17 @@ async function getMatchStatus(
   const existing = await findExistingMatch(admin, userId, matchedAfter);
   if (existing.matched) return { ...existing, state: "matched" satisfies MatchState, active: false };
 
-  const requestQuery = admin
+  const { data: activeRequestRow } = await admin
     .from("match_requests")
     .select("id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at, status")
     .eq("leader_id", userId)
-    .in("status", ["waiting", "processing", "cancelled"])
+    .in("status", ["waiting", "processing"])
     .order("created_at", { ascending: false })
-    .limit(1);
-
-  const { data: request } = await requestQuery
+    .limit(1)
     .maybeSingle();
 
-  if (request) {
-    const activeRequest = request as {
+  if (activeRequestRow) {
+    const activeRequest = activeRequestRow as {
       id: string;
       leader_id: string;
       dungeon_id: string;
@@ -581,54 +579,31 @@ async function getMatchStatus(
       status: MatchState;
     };
 
-    if (activeRequest.status === "cancelled") {
-      return {
-        matched: false,
-        active: false,
-        state: "cancelled" satisfies MatchState,
-        role: "leader",
-        since: activeRequest.created_at,
-      };
-    }
+    const candidates = await findCandidates(admin, activeRequest);
 
-    if (activeRequest.status === "waiting" || activeRequest.status === "processing") {
-      const candidates = await findCandidates(admin, activeRequest);
-
-      return {
-        matched: false,
-        active: true,
-        state: activeRequest.status,
-        role: "leader",
-        waitingCount: candidates.length,
-        needed: Math.max(0, activeRequest.max_members - 1),
-        since: activeRequest.created_at,
-        status: activeRequest.status,
-      };
-    }
+    return {
+      matched: false,
+      active: true,
+      state: activeRequest.status,
+      role: "leader",
+      waitingCount: candidates.length,
+      needed: Math.max(0, activeRequest.max_members - 1),
+      since: activeRequest.created_at,
+      status: activeRequest.status,
+    };
   }
 
-  const queueQuery = admin
+  const { data: activeQueueRow } = await admin
     .from("match_queue")
     .select("created_at, status")
     .eq("user_id", userId)
-    .in("status", ["waiting", "processing", "cancelled"])
+    .in("status", ["waiting", "processing"])
     .order("created_at", { ascending: false })
-    .limit(1);
-
-  const { data: queue } = await queueQuery
+    .limit(1)
     .maybeSingle();
 
-  if (queue) {
-    const activeQueue = queue as { created_at: string; status: MatchState };
-    if (activeQueue.status === "cancelled") {
-      return {
-        matched: false,
-        active: false,
-        state: "cancelled" satisfies MatchState,
-        role: "member",
-        since: activeQueue.created_at,
-      };
-    }
+  if (activeQueueRow) {
+    const activeQueue = activeQueueRow as { created_at: string; status: MatchState };
     return {
       matched: false,
       active: true,
@@ -636,6 +611,48 @@ async function getMatchStatus(
       role: "member",
       since: activeQueue.created_at,
       status: activeQueue.status,
+    };
+  }
+
+  const [{ data: cancelledRequest }, { data: cancelledQueue }] = await Promise.all([
+    admin
+      .from("match_requests")
+      .select("created_at, status")
+      .eq("leader_id", userId)
+      .eq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from("match_queue")
+      .select("created_at, status")
+      .eq("user_id", userId)
+      .eq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const cancelledRows = [
+    cancelledRequest
+      ? { ...(cancelledRequest as { created_at: string; status: MatchState }), role: "leader" as const }
+      : null,
+    cancelledQueue
+      ? { ...(cancelledQueue as { created_at: string; status: MatchState }), role: "member" as const }
+      : null,
+  ].filter((row): row is { created_at: string; status: MatchState; role: "leader" | "member" } => !!row);
+
+  const latestCancelled = cancelledRows.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )[0];
+
+  if (latestCancelled) {
+    return {
+      matched: false,
+      active: false,
+      state: "cancelled" satisfies MatchState,
+      role: latestCancelled.role,
+      since: latestCancelled.created_at,
     };
   }
 
