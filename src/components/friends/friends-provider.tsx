@@ -58,6 +58,7 @@ export function FriendsProvider({
   const seenRequestIds = useRef<Set<string> | null>(null);
   const lastUnread = useRef<Map<string, number> | null>(null);
   const lastOnline = useRef<Map<string, boolean> | null>(null);
+  const onlineSnapshotReady = useRef(false);
   const seenInviteIds = useRef<Set<string> | null>(null);
   const seenMatchingInviteIds = useRef<Set<string> | null>(null);
 
@@ -93,10 +94,21 @@ export function FriendsProvider({
   useEffect(() => {
     if (isGuest) return;
 
+    if (!onlineSnapshotReady.current) {
+      if (!value.loading) {
+        lastOnline.current = new Map(
+          value.friends.map((f) => [f.user_id, f.is_online]),
+        );
+        onlineSnapshotReady.current = true;
+      }
+      return;
+    }
+
     if (lastOnline.current) {
       for (const friend of value.friends) {
+        const hadPreviousState = lastOnline.current.has(friend.user_id);
         const wasOnline = lastOnline.current.get(friend.user_id) ?? false;
-        if (!wasOnline && friend.is_online) {
+        if (hadPreviousState && !wasOnline && friend.is_online) {
           toast(`${friend.nickname}님이 로그인했습니다`);
         }
       }
@@ -104,7 +116,7 @@ export function FriendsProvider({
     lastOnline.current = new Map(
       value.friends.map((f) => [f.user_id, f.is_online]),
     );
-  }, [value.friends, isGuest]);
+  }, [value.friends, value.loading, isGuest]);
 
   useEffect(() => {
     if (isGuest) return;
