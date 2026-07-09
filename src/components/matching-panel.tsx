@@ -1207,7 +1207,7 @@ function ClassSlotBoard({
     (inviteStatuses ?? []).map((invite) => [invite.userId, invite.status]),
   );
   const availableFriends = friends.filter(
-    (friend) => !assignedIds.has(friend.user_id),
+    (friend) => friend.is_online && !assignedIds.has(friend.user_id),
   );
   const hasOpenSlot = invitedSlots.some((friend) => !friend);
 
