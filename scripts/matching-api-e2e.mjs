@@ -281,6 +281,14 @@ async function testFullHttpMatch() {
   ];
   const memberJars = [];
 
+  await must(
+    "set stale member room code",
+    admin
+      .from("profiles")
+      .update({ current_room_code: "STALE1" })
+      .eq("id", members[0].userId),
+  );
+
   for (const member of members) {
     const jar = await signIn(member.email);
     memberJars.push(jar);
@@ -348,6 +356,88 @@ async function testFullHttpMatch() {
   }
 
   console.log(`[matching-api-e2e] full 5-person HTTP match room ${confirmed.data.roomCode}`);
+}
+
+async function testDummyInviteRematchCountsInvites() {
+  const dungeon = await createIsolatedDungeon();
+  const leader = await createTestUser("dummy-rematch-leader", { className: "검성", combatPower: 850_000 });
+  const member = await createTestUser("dummy-rematch-member", { className: "치유성", combatPower: 810_000 });
+  const dummies = [
+    await createTestUser("dummy-rematch-invite1", { className: "수호성", combatPower: 760_000 }),
+    await createTestUser("dummy-rematch-invite2", { className: "궁성", combatPower: 770_000 }),
+    await createTestUser("dummy-rematch-invite3", { className: "마도성", combatPower: 780_000 }),
+  ];
+
+  for (let index = 0; index < dummies.length; index++) {
+    await must(
+      "mark rematch dummy profile",
+      admin
+        .from("profiles")
+        .update({ nickname: `더미친구재매칭${index + 1}` })
+        .eq("id", dummies[index].userId),
+    );
+    await must(
+      "create rematch dummy friendship",
+      admin.from("friend_requests").insert({
+        sender_id: leader.userId,
+        receiver_id: dummies[index].userId,
+        status: "accepted",
+        responded_at: new Date().toISOString(),
+      }),
+    );
+  }
+
+  const memberJar = await signIn(member.email);
+  const memberPost = await api(memberJar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "member",
+      dungeonId: dungeon.id,
+      characterId: member.characterId,
+      stage: 3,
+    }),
+  });
+  assert(memberPost.ok, `rematch member queue failed: ${memberPost.status} ${JSON.stringify(memberPost.data)}`);
+
+  const leaderJar = await signIn(leader.email);
+  const startedAt = new Date().toISOString();
+  const leaderPost = await api(leaderJar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "leader",
+      dungeonId: dungeon.id,
+      characterId: leader.characterId,
+      stage: 2,
+      minCombatPower: 700_000,
+      requiredClasses: [],
+      invitedFriendIds: dummies.map((dummy) => dummy.userId),
+    }),
+  });
+  assert(leaderPost.ok, `rematch leader failed: ${leaderPost.status} ${JSON.stringify(leaderPost.data)}`);
+  assert(leaderPost.data?.temporaryMatch?.id, `rematch should start temporary, got ${JSON.stringify(leaderPost.data)}`);
+
+  const reject = await api(memberJar, "/api/matching", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "reject" }),
+  });
+  assert(reject.ok, `member reject failed: ${reject.status} ${JSON.stringify(reject.data)}`);
+
+  const rematch = await api(leaderJar, `/api/matching?since=${encodeURIComponent(startedAt)}`);
+  assert(rematch.ok, `leader rematch status failed: ${rematch.status} ${JSON.stringify(rematch.data)}`);
+  assert(
+    rematch.data?.temporaryMatch?.id &&
+      rematch.data.temporaryMatch.id !== leaderPost.data.temporaryMatch.id,
+    `leader polling should create a new temporary rematch, got ${JSON.stringify(rematch.data)}`,
+  );
+  assert(
+    rematch.data.temporaryMatch.responses.filter((row) => row.status === "accepted").length === 3,
+    `rematch should count invited dummies as accepted, got ${JSON.stringify(rematch.data)}`,
+  );
+
+  console.log("[matching-api-e2e] dummy invites count on automatic rematch");
 }
 
 async function testDummyInvitesAutoAccept() {
@@ -507,9 +597,10 @@ try {
   await testMemberQueueWinsOverCancelledLeaderRequest();
   await testFullHttpMatch();
   await testDummyInvitesAutoAccept();
+  await testDummyInviteRematchCountsInvites();
 
   console.log(`[matching-api-e2e] dungeon ${dungeon.name}`);
-  console.log("[matching-api-e2e] member waiting -> stale expiry -> cancelled leader ignored -> full match -> dummy auto accept -> cancel lifecycle");
+  console.log("[matching-api-e2e] member waiting -> stale expiry -> cancelled leader ignored -> full match -> dummy auto accept/rematch -> cancel lifecycle");
   console.log("[matching-api-e2e] PASS");
 } finally {
   await cleanup();

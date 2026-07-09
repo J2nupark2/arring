@@ -375,7 +375,6 @@ async function findCandidates(
       if (!profile || !character) return false;
       if (row.user_id === request.leader_id) return false;
       if (invitedFriendIds.has(row.user_id)) return false;
-      if (profile.current_room_code) return false;
       if (
         profile.matchmaking_banned_until &&
         new Date(profile.matchmaking_banned_until).getTime() > Date.now()
@@ -963,7 +962,7 @@ async function tryCompleteMatch(
   const { data: leaderProfile, error: leaderError } = await admin
     .from("profiles")
     .select(
-      "id, nickname, server, manner_temperature, trust_temperature, matchmaking_banned_until, current_room_code",
+      "id, nickname, server, manner_temperature, trust_temperature, matchmaking_banned_until",
     )
     .eq("id", activeRequest.leader_id)
     .single();
@@ -974,9 +973,8 @@ async function tryCompleteMatch(
 
   const leader = leaderProfile as Profile;
   if (
-    leader.current_room_code ||
-    (leader.matchmaking_banned_until &&
-      new Date(leader.matchmaking_banned_until).getTime() > Date.now())
+    leader.matchmaking_banned_until &&
+    new Date(leader.matchmaking_banned_until).getTime() > Date.now()
   ) {
     await admin
       .from("match_requests")
@@ -1111,7 +1109,22 @@ async function getMatchStatus(
       status: MatchState;
     };
 
+    if (activeRequest.status === "waiting") {
+      const result = await tryCompleteMatch(admin, activeRequest);
+      if (
+        result.matched ||
+        result.state === "processing" ||
+        result.state === "cancelled"
+      ) {
+        return result;
+      }
+    }
+
     const candidates = await findCandidates(admin, activeRequest);
+    const needed = Math.max(
+      0,
+      activeRequest.max_members - 1 - (activeRequest.invited_friend_ids?.length ?? 0),
+    );
 
     return {
       matched: false,
@@ -1119,7 +1132,7 @@ async function getMatchStatus(
       state: activeRequest.status,
       role: "leader",
       waitingCount: candidates.length,
-      needed: Math.max(0, activeRequest.max_members - 1),
+      needed,
       since: activeRequest.created_at,
       status: activeRequest.status,
     };
