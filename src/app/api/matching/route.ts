@@ -278,7 +278,9 @@ async function createRoom(
     const createdRoom = room as { id: string; code: string } | null;
     if (error || !createdRoom) throw new Error(error?.message ?? "방 생성 실패");
 
-    const participants = [leader.id, ...memberIds].map((user_id) => ({
+    const invitedFriendIds = request.invited_friend_ids ?? [];
+    const participantIds = [...new Set([leader.id, ...memberIds, ...invitedFriendIds])];
+    const participants = participantIds.map((user_id) => ({
       room_id: createdRoom.id,
       user_id,
     }));
@@ -288,7 +290,6 @@ async function createRoom(
 
     if (participantError) throw new Error(participantError.message);
 
-    const invitedFriendIds = request.invited_friend_ids ?? [];
     if (invitedFriendIds.length > 0) {
       const { error: inviteError } = await admin.from("room_invites").insert(
         invitedFriendIds.map((receiver_id) => ({
@@ -683,7 +684,21 @@ async function createTemporaryMatch(
     chosen.reduce((sum, candidate) => sum + (candidate.candidateScore ?? 0), 0) /
     Math.max(chosen.length, 1);
   const candidateUserIds = chosen.map(({ row }) => row.user_id);
+  const invitedUserIds = request.invited_friend_ids ?? [];
   const queueIds = chosen.map(({ row }) => row.id);
+  const responseUserIds = [...new Set([request.leader_id, ...candidateUserIds, ...invitedUserIds])];
+  const { data: invitedProfiles } =
+    invitedUserIds.length > 0
+      ? await admin
+          .from("profiles")
+          .select("id, nickname")
+          .in("id", invitedUserIds)
+      : { data: [] };
+  const dummyUserIds = new Set(
+    ((invitedProfiles ?? []) as { id: string; nickname: string }[])
+      .filter((profile) => profile.nickname.startsWith("더미친구"))
+      .map((profile) => profile.id),
+  );
 
   const { data: temp, error } = await admin
     .from("temporary_matches")
@@ -702,10 +717,11 @@ async function createTemporaryMatch(
   if (error || !temp) throw new Error(error?.message ?? "temporary match failed");
   const temporaryMatch = temp as { id: string; expires_at: string };
   await admin.from("match_responses").insert(
-    [request.leader_id, ...candidateUserIds].map((user_id) => ({
+    responseUserIds.map((user_id) => ({
       temporary_match_id: temporaryMatch.id,
       user_id,
-      status: "pending",
+      status: dummyUserIds.has(user_id) ? "accepted" : "pending",
+      responded_at: dummyUserIds.has(user_id) ? new Date().toISOString() : null,
     })) as unknown as never,
   );
 
@@ -717,9 +733,11 @@ async function createTemporaryMatch(
       id: temporaryMatch.id,
       expiresAt: temporaryMatch.expires_at,
       responseStatus: "pending" satisfies MatchResponseStatus,
-      responses: [request.leader_id, ...candidateUserIds].map((userId) => ({
+      responses: responseUserIds.map((userId) => ({
         userId,
-        status: "pending" satisfies MatchResponseStatus,
+        status: dummyUserIds.has(userId)
+          ? ("accepted" satisfies MatchResponseStatus)
+          : ("pending" satisfies MatchResponseStatus),
       })),
       score: partyScore,
     },
@@ -742,15 +760,6 @@ async function confirmTemporaryMatch(admin: AdminClient, temporaryMatchId: strin
   } | null;
   if (!temp || temp.status !== "pending_acceptance") return null;
 
-  const { data: responses } = await admin
-    .from("match_responses")
-    .select("status")
-    .eq("temporary_match_id", temporaryMatchId);
-  const responseRows = (responses ?? []) as { status: MatchResponseStatus }[];
-  if (responseRows.length !== 5 || responseRows.some((row) => row.status !== "accepted")) {
-    return null;
-  }
-
   const { data: requestRow } = await admin
     .from("match_requests")
     .select(
@@ -760,6 +769,18 @@ async function confirmTemporaryMatch(admin: AdminClient, temporaryMatchId: strin
     .maybeSingle();
   const matchRequest = requestRow as MatchRequest | null;
   if (!matchRequest) return null;
+
+  const { data: responses } = await admin
+    .from("match_responses")
+    .select("status")
+    .eq("temporary_match_id", temporaryMatchId);
+  const responseRows = (responses ?? []) as { status: MatchResponseStatus }[];
+  if (
+    responseRows.length !== matchRequest.max_members ||
+    responseRows.some((row) => row.status !== "accepted")
+  ) {
+    return null;
+  }
 
   const { data: leaderProfile } = await admin
     .from("profiles")
@@ -806,7 +827,13 @@ async function confirmTemporaryMatch(admin: AdminClient, temporaryMatchId: strin
         consecutive_failed_response_count: 0,
         matchmaking_banned_until: null,
       } as unknown as never)
-      .in("id", [temp.leader_id, ...temp.candidate_user_ids]),
+      .in("id", [
+        ...new Set([
+          temp.leader_id,
+          ...temp.candidate_user_ids,
+          ...(matchRequest.invited_friend_ids ?? []),
+        ]),
+      ]),
   ]);
 
   return room.code;

@@ -350,6 +350,80 @@ async function testFullHttpMatch() {
   console.log(`[matching-api-e2e] full 5-person HTTP match room ${confirmed.data.roomCode}`);
 }
 
+async function testDummyInvitesAutoAccept() {
+  const dungeon = await createIsolatedDungeon();
+  const leader = await createTestUser("dummy-leader", { className: "검성", combatPower: 850_000 });
+  const member = await createTestUser("dummy-member", { className: "치유성", combatPower: 810_000 });
+  const dummies = [
+    await createTestUser("dummy-invite1", { className: "수호성", combatPower: 760_000 }),
+    await createTestUser("dummy-invite2", { className: "궁성", combatPower: 770_000 }),
+    await createTestUser("dummy-invite3", { className: "마도성", combatPower: 780_000 }),
+  ];
+
+  for (let index = 0; index < dummies.length; index++) {
+    await must(
+      "mark dummy profile",
+      admin
+        .from("profiles")
+        .update({ nickname: `더미친구테스트${index + 1}` })
+        .eq("id", dummies[index].userId),
+    );
+    await must(
+      "create dummy friendship",
+      admin.from("friend_requests").insert({
+        sender_id: leader.userId,
+        receiver_id: dummies[index].userId,
+        status: "accepted",
+        responded_at: new Date().toISOString(),
+      }),
+    );
+  }
+
+  const memberJar = await signIn(member.email);
+  const memberPost = await api(memberJar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "member",
+      dungeonId: dungeon.id,
+      characterId: member.characterId,
+      stage: 3,
+    }),
+  });
+  assert(memberPost.ok, `dummy member queue failed: ${memberPost.status} ${JSON.stringify(memberPost.data)}`);
+
+  const leaderJar = await signIn(leader.email);
+  const leaderPost = await api(leaderJar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "leader",
+      dungeonId: dungeon.id,
+      characterId: leader.characterId,
+      stage: 2,
+      minCombatPower: 700_000,
+      requiredClasses: [],
+      invitedFriendIds: dummies.map((dummy) => dummy.userId),
+    }),
+  });
+  assert(leaderPost.ok, `dummy invite leader failed: ${leaderPost.status} ${JSON.stringify(leaderPost.data)}`);
+  assert(
+    leaderPost.data?.temporaryMatch?.responses?.filter((row) => row.status === "accepted").length === 3,
+    `dummy invites should start accepted, got ${JSON.stringify(leaderPost.data)}`,
+  );
+
+  const leaderAccept = await acceptMatch(leaderJar);
+  assert(leaderAccept.ok, `dummy leader accept failed: ${leaderAccept.status} ${JSON.stringify(leaderAccept.data)}`);
+  const memberAccept = await acceptMatch(memberJar);
+  assert(memberAccept.ok, `dummy member accept failed: ${memberAccept.status} ${JSON.stringify(memberAccept.data)}`);
+  assert(
+    memberAccept.data?.matched === true && memberAccept.data?.roomCode,
+    `leader+member acceptance should confirm dummy invite room, got ${JSON.stringify(memberAccept.data)}`,
+  );
+
+  console.log(`[matching-api-e2e] dummy invites auto-accepted room ${memberAccept.data.roomCode}`);
+}
+
 async function cleanup() {
   for (const id of createdUsers.reverse()) {
     const { error } = await admin.auth.admin.deleteUser(id);
@@ -432,9 +506,10 @@ try {
   await testStaleQueueExpires();
   await testMemberQueueWinsOverCancelledLeaderRequest();
   await testFullHttpMatch();
+  await testDummyInvitesAutoAccept();
 
   console.log(`[matching-api-e2e] dungeon ${dungeon.name}`);
-  console.log("[matching-api-e2e] member waiting -> stale expiry -> cancelled leader ignored -> leader 0 candidates -> full 5-person match -> cancel lifecycle");
+  console.log("[matching-api-e2e] member waiting -> stale expiry -> cancelled leader ignored -> full match -> dummy auto accept -> cancel lifecycle");
   console.log("[matching-api-e2e] PASS");
 } finally {
   await cleanup();
