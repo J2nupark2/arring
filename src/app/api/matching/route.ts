@@ -8,6 +8,7 @@ const MATCH_HEARTBEAT_TTL_MS = 2 * 60 * 1000;
 const TEMPORARY_MATCH_RESPONSE_SECONDS = 30;
 const MATCH_RESPONSE_BAN_MS = 5 * 60 * 1000;
 const MATCH_TOP_K = 50;
+const MATCH_QUEUE_SCAN_LIMIT = 1000;
 const DEFAULT_AUTO_LEAD_AFTER_SECONDS = 90;
 
 type Profile = {
@@ -125,34 +126,6 @@ function similarity(a: number | null | undefined, b: number | null | undefined) 
 
 function pickTrustScore(profile: Profile | undefined, stageTrustScore?: number) {
   return Number(stageTrustScore ?? profile?.trust_temperature ?? 50);
-}
-
-function stddev(values: number[]) {
-  if (values.length === 0) return 0;
-  const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const variance =
-    values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length;
-  return Math.sqrt(variance);
-}
-
-function combinations<T>(items: T[], count: number) {
-  const result: T[][] = [];
-  const current: T[] = [];
-
-  function walk(start: number) {
-    if (current.length === count) {
-      result.push([...current]);
-      return;
-    }
-    for (let index = start; index <= items.length - (count - current.length); index++) {
-      current.push(items[index]);
-      walk(index + 1);
-      current.pop();
-    }
-  }
-
-  walk(0);
-  return result;
 }
 
 function partySizeForCategory(category: string | null | undefined) {
@@ -347,7 +320,7 @@ async function findCandidates(
     .eq("requested_stage", request.required_stage)
     .gte("heartbeat_at", activeHeartbeatCutoff())
     .order("created_at", { ascending: true })
-    .limit(50);
+    .limit(MATCH_QUEUE_SCAN_LIMIT);
 
   if (queueError) throw new Error(queueError.message);
   const rows = (queueRows ?? []) as {
@@ -481,8 +454,16 @@ async function findCandidates(
           trustSimilarity * 0.075,
       };
     })
-    .sort((a, b) => (b.candidateScore ?? 0) - (a.candidateScore ?? 0))
-    .slice(0, MATCH_TOP_K);
+    .sort((a, b) => (b.candidateScore ?? 0) - (a.candidateScore ?? 0));
+}
+
+function classCounts(candidates: Candidate[]) {
+  const counts = new Map<string, number>();
+  for (const candidate of candidates) {
+    const className = candidate.character?.class_name ?? "";
+    counts.set(className, (counts.get(className) ?? 0) + 1);
+  }
+  return counts;
 }
 
 function selectCandidatesForSlots(
@@ -494,54 +475,35 @@ function selectCandidatesForSlots(
   if (candidates.length < needed) return null;
 
   const fixedSlots = requiredClasses.filter((className) => className.trim()).slice(0, needed);
-  let best: { candidates: Candidate[]; score: number } | null = null;
+  const selected: Candidate[] = [];
+  const usedQueueIds = new Set<string>();
 
-  for (const group of combinations(candidates, needed)) {
-    const remainingClasses = [...fixedSlots];
-    const classCompositionScore =
-      remainingClasses.length === 0
-        ? 1
-        : group.every((candidate) => {
-            const index = remainingClasses.indexOf(candidate.character?.class_name ?? "");
-            if (index < 0) return false;
-            remainingClasses.splice(index, 1);
-            return true;
-          })
-          ? 1
-          : 0;
-
-    if (classCompositionScore <= 0) continue;
-
-    const avgCandidateScore =
-      group.reduce((sum, candidate) => sum + (candidate.candidateScore ?? 0), 0) /
-      group.length;
-    const combatPowers = group.map((candidate) => candidate.character?.combat_power ?? 0);
-    const avgPower =
-      combatPowers.reduce((sum, value) => sum + value, 0) / Math.max(combatPowers.length, 1);
-    const powerBalanceScore = clamp01(1 - stddev(combatPowers) / Math.max(avgPower, 1));
-    const gimmickCoverageScore = 1;
-    const mannerScores = group.map((candidate) =>
-      normalizeScore(candidate.profile?.manner_temperature),
+  if (fixedSlots.length > 0) {
+    const counts = classCounts(candidates);
+    const orderedSlots = [...fixedSlots].sort(
+      (a, b) => (counts.get(a) ?? 0) - (counts.get(b) ?? 0),
     );
-    const trustScores = group.map((candidate) =>
-      normalizeScore(pickTrustScore(candidate.profile, candidate.stageTrustScore)),
-    );
-    const mannerHomogeneityScore = clamp01(1 - stddev(mannerScores) / 50);
-    const trustHomogeneityScore = clamp01(1 - stddev(trustScores) / 50);
-    const partyScore =
-      avgCandidateScore * 0.25 +
-      powerBalanceScore * 0.2 +
-      gimmickCoverageScore * 0.2 +
-      classCompositionScore * 0.2 +
-      mannerHomogeneityScore * 0.075 +
-      trustHomogeneityScore * 0.075;
 
-    if (!best || partyScore > best.score) {
-      best = { candidates: group, score: partyScore };
+    for (const className of orderedSlots) {
+      const next = candidates.find(
+        (candidate) =>
+          !usedQueueIds.has(candidate.row.id) &&
+          candidate.character?.class_name === className,
+      );
+      if (!next) return null;
+      selected.push(next);
+      usedQueueIds.add(next.row.id);
     }
   }
 
-  return best?.candidates ?? null;
+  while (selected.length < needed) {
+    const next = candidates.find((candidate) => !usedQueueIds.has(candidate.row.id));
+    if (!next) return null;
+    selected.push(next);
+    usedQueueIds.add(next.row.id);
+  }
+
+  return selected.slice(0, MATCH_TOP_K);
 }
 
 async function findPendingTemporaryMatch(
