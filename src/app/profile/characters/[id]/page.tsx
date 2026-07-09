@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Gauge, ShieldCheck, Sparkles, Star, Swords } from "lucide-react";
+import { ShieldCheck, Sparkles, Star, Swords } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { LinkButton } from "@/components/link-button";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +50,7 @@ export default async function CharacterDetailPage({
   const { data: character } = await supabase
     .from("aion2_characters")
     .select(
-      "id, user_id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, proficiency_score, equipment, skills, stigmas, is_primary, synced_at, created_at",
+      "id, user_id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, equipment, skills, stigmas, is_primary, synced_at, created_at",
     )
     .eq("id", id)
     .single();
@@ -126,24 +126,18 @@ export default async function CharacterDetailPage({
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="grid gap-3 pt-6 sm:grid-cols-3">
+            <CardContent className="grid gap-3 pt-6 sm:grid-cols-2">
               <ScoreTile
                 icon={<ShieldCheck className="size-4" />}
-                label="매너 온도"
-                value={`${formatTemperature(profile?.manner_temperature)}°`}
+                label="매너 점수"
+                value={`${formatScore(profile?.manner_temperature)}점`}
                 caption="파티원 평가 반영"
               />
               <ScoreTile
                 icon={<Star className="size-4" />}
-                label="신뢰 온도"
-                value={`${formatTemperature(profile?.trust_temperature)}°`}
-                caption="진도/숙련 신뢰도"
-              />
-              <ScoreTile
-                icon={<Gauge className="size-4" />}
-                label="숙련 점수"
-                value={`${formatTemperature(character.proficiency_score)}점`}
-                caption="캐릭터 기준 점수"
+                label="신뢰 점수"
+                value={`${formatScore(profile?.trust_temperature)}점`}
+                caption="진도/매칭 신뢰도"
               />
             </CardContent>
           </Card>
@@ -574,7 +568,7 @@ function isSlotMatch(item: DetailItem, aliases: readonly string[]) {
   return aliases.some((alias) => text.includes(alias.toLowerCase()));
 }
 
-function formatTemperature(value: number | string | null | undefined) {
+function formatScore(value: number | string | null | undefined) {
   return Number(value ?? 36.5).toFixed(1);
 }
 
