@@ -68,9 +68,9 @@ export default async function PlayHistoryPage() {
     .select("room_id, user_id, joined_at, left_at")
     .eq("user_id", user.id)
     .order("joined_at", { ascending: false })
-    .limit(30);
+    .limit(100);
 
-  const ownHistoryRows = (ownRows ?? []) as ParticipantRow[];
+  const ownHistoryRows = dedupeOwnHistory((ownRows ?? []) as ParticipantRow[]).slice(0, 30);
   const roomIds = [...new Set(ownHistoryRows.map((row) => row.room_id))];
 
   const empty = (
@@ -166,7 +166,27 @@ export default async function PlayHistoryPage() {
   const participantsByRoomId = new Map<string, ParticipantRow[]>();
   for (const participant of participantRows) {
     const current = participantsByRoomId.get(participant.room_id) ?? [];
-    current.push(participant);
+    const existingIndex = current.findIndex((row) => row.user_id === participant.user_id);
+    if (existingIndex >= 0) {
+      const existing = current[existingIndex];
+      current[existingIndex] = {
+        ...existing,
+        joined_at:
+          new Date(participant.joined_at).getTime() >
+          new Date(existing.joined_at).getTime()
+            ? participant.joined_at
+            : existing.joined_at,
+        left_at:
+          existing.left_at === null || participant.left_at === null
+            ? null
+            : new Date(participant.left_at).getTime() >
+                new Date(existing.left_at).getTime()
+              ? participant.left_at
+              : existing.left_at,
+      };
+    } else {
+      current.push(participant);
+    }
     participantsByRoomId.set(participant.room_id, current);
   }
 
@@ -193,7 +213,7 @@ export default async function PlayHistoryPage() {
         roomId: room.id,
         roomCode: room.code,
         title: room.title,
-        status: room.status,
+        status: ownRow.left_at ? "ended" : room.status,
         joinedAt: ownRow.joined_at,
         leftAt: ownRow.left_at,
         dungeonName: match ? dungeonById.get(match.dungeon_id)?.name ?? null : null,
@@ -210,5 +230,35 @@ export default async function PlayHistoryPage() {
         <PlayHistoryClient items={items} />
       </main>
     </>
+  );
+}
+
+function dedupeOwnHistory(rows: ParticipantRow[]) {
+  const byRoomId = new Map<string, ParticipantRow>();
+
+  for (const row of rows) {
+    const existing = byRoomId.get(row.room_id);
+    if (!existing) {
+      byRoomId.set(row.room_id, row);
+      continue;
+    }
+
+    byRoomId.set(row.room_id, {
+      ...existing,
+      joined_at:
+        new Date(row.joined_at).getTime() > new Date(existing.joined_at).getTime()
+          ? row.joined_at
+          : existing.joined_at,
+      left_at:
+        existing.left_at === null || row.left_at === null
+          ? null
+          : new Date(row.left_at).getTime() > new Date(existing.left_at).getTime()
+            ? row.left_at
+            : existing.left_at,
+    });
+  }
+
+  return [...byRoomId.values()].sort(
+    (a, b) => new Date(b.joined_at).getTime() - new Date(a.joined_at).getTime(),
   );
 }

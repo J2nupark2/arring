@@ -450,11 +450,22 @@ export function useVoiceRoom({
         if (subscribeStatus === "SUBSCRIBED") {
           joinedRef.current = true;
           await channel.track({ userId, nickname } satisfies PresenceState);
-          const { error: participantError } = await supabase
+          const { data: activeParticipant } = await supabase
             .from("room_participants")
-            .insert({ room_id: roomId, user_id: userId });
-          if (participantError) {
-            console.error("room_participants insert failed:", participantError);
+            .select("id")
+            .eq("room_id", roomId)
+            .eq("user_id", userId)
+            .is("left_at", null)
+            .limit(1)
+            .maybeSingle();
+
+          if (!activeParticipant) {
+            const { error: participantError } = await supabase
+              .from("room_participants")
+              .insert({ room_id: roomId, user_id: userId });
+            if (participantError) {
+              console.error("room_participants insert failed:", participantError);
+            }
           }
           supabase.rpc("set_current_room", { p_room_code: roomCode }).then(() => {});
           setStatus("connected");
