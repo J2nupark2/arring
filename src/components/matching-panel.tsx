@@ -972,6 +972,12 @@ function ClassSlotBoard({
   const availableFriends = friends.filter(
     (friend) => !assignedIds.has(friend.user_id),
   );
+  const hasOpenSlot = invitedSlots.some((friend) => !friend);
+
+  function assignToFirstOpenSlot(friend: Friend) {
+    const index = invitedSlots.findIndex((slot) => !slot);
+    if (index >= 0) onAssignFriend(index, friend);
+  }
 
   return (
     <div className="grid gap-3">
@@ -986,12 +992,18 @@ function ClassSlotBoard({
                 key={friend.user_id}
                 type="button"
                 draggable
+                disabled={!hasOpenSlot}
+                onClick={() => assignToFirstOpenSlot(friend)}
                 onDragStart={(event) => {
                   event.dataTransfer.setData("friend-id", friend.user_id);
                   event.dataTransfer.effectAllowed = "move";
                 }}
-                className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs transition-colors hover:bg-muted/50"
-                title="슬롯으로 드래그해서 초대"
+                className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs transition-colors ${
+                  hasOpenSlot
+                    ? "hover:bg-muted/50"
+                    : "cursor-not-allowed opacity-50"
+                }`}
+                title="클릭하거나 슬롯으로 드래그해서 초대"
               >
                 <span
                   className={`size-2 rounded-full ${
