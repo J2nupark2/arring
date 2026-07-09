@@ -58,6 +58,7 @@ type Candidate = {
   };
   profile: Profile | undefined;
   character: CharacterRow | undefined;
+  stageTrustScore?: number;
   candidateScore?: number;
 };
 
@@ -98,6 +99,10 @@ function normalizeScore(value: number | null | undefined) {
 
 function similarity(a: number | null | undefined, b: number | null | undefined) {
   return 1 - Math.min(Math.abs(normalizeScore(a) - normalizeScore(b)) / 100, 1);
+}
+
+function pickTrustScore(profile: Profile | undefined, stageTrustScore?: number) {
+  return Number(stageTrustScore ?? profile?.trust_temperature ?? 50);
 }
 
 function stddev(values: number[]) {
@@ -361,7 +366,26 @@ async function findCandidates(
   const characterById = new Map(
     ((characters ?? []) as CharacterRow[]).map((character) => [character.id, character]),
   );
+  const { data: stageTrustRows, error: stageTrustError } = await admin
+    .from("user_gimmick_trust_scores")
+    .select("user_id, score")
+    .eq("content_id", request.dungeon_id)
+    .eq("gimmick_stage", request.required_stage)
+    .in("user_id", ids);
+
+  if (stageTrustError) throw new Error(stageTrustError.message);
+
+  const stageTrustByUser = new Map(
+    ((stageTrustRows ?? []) as { user_id: string; score: number }[]).map((row) => [
+      row.user_id,
+      Number(row.score),
+    ]),
+  );
   const leaderProfile = profileById.get(request.leader_id);
+  const leaderTrustScore = pickTrustScore(
+    leaderProfile,
+    stageTrustByUser.get(request.leader_id),
+  );
   const leaderCharacter = request.character_row_id
     ? characterById.get(request.character_row_id)
     : undefined;
@@ -378,6 +402,7 @@ async function findCandidates(
       row,
       profile: profileById.get(row.user_id),
       character: row.character_row_id ? characterById.get(row.character_row_id) : undefined,
+      stageTrustScore: stageTrustByUser.get(row.user_id),
     }))
     .filter(({ row, profile, character }) => {
       if (!profile || !character) return false;
@@ -418,9 +443,11 @@ async function findCandidates(
       const mannerSimilarity = leaderProfile
         ? similarity(leaderProfile.manner_temperature, candidate.profile!.manner_temperature)
         : 1;
-      const trustSimilarity = leaderProfile
-        ? similarity(leaderProfile.trust_temperature, candidate.profile!.trust_temperature)
-        : 1;
+      const candidateTrustScore = pickTrustScore(
+        candidate.profile,
+        candidate.stageTrustScore,
+      );
+      const trustSimilarity = similarity(leaderTrustScore, candidateTrustScore);
 
       return {
         ...candidate,
@@ -475,7 +502,7 @@ function selectCandidatesForSlots(
       normalizeScore(candidate.profile?.manner_temperature),
     );
     const trustScores = group.map((candidate) =>
-      normalizeScore(candidate.profile?.trust_temperature),
+      normalizeScore(pickTrustScore(candidate.profile, candidate.stageTrustScore)),
     );
     const mannerHomogeneityScore = clamp01(1 - stddev(mannerScores) / 50);
     const trustHomogeneityScore = clamp01(1 - stddev(trustScores) / 50);

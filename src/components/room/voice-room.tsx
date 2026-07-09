@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useVoiceRoom } from "@/hooks/use-voice-room";
 import { sendFriendRequest } from "@/hooks/use-friends";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -29,6 +30,7 @@ import {
   UserX,
   Volume2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export function VoiceRoom({
@@ -82,7 +84,15 @@ export function VoiceRoom({
   const [chatText, setChatText] = useState("");
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reviewTargetId, setReviewTargetId] = useState<string | null>(null);
+  const [gimmickReview, setGimmickReview] =
+    useState<"mastered" | "uncertain" | "not_mastered">("uncertain");
+  const [mannerReview, setMannerReview] =
+    useState<"good" | "normal" | "bad">("normal");
+  const [reportReason, setReportReason] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
   const selected = participants.find((p) => p.id === selectedId) ?? null;
+  const reviewTarget = participants.find((p) => p.id === reviewTargetId) ?? null;
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ block: "end" });
@@ -93,6 +103,31 @@ export function VoiceRoom({
     if (!chatText.trim()) return;
     sendChatMessage(chatText);
     setChatText("");
+  }
+
+  async function submitReview() {
+    if (!reviewTarget) return;
+    setSubmittingReview(true);
+    const supabase = createClient();
+    const { error } = await supabase.rpc("submit_party_evaluation", {
+      target_room_id: roomId,
+      target_user_id: reviewTarget.id,
+      p_gimmick_review: gimmickReview,
+      p_manner_review: mannerReview,
+      p_report_reason: reportReason || null,
+    });
+    setSubmittingReview(false);
+
+    if (error) {
+      toast.error(`평가 저장 실패: ${error.message}`);
+      return;
+    }
+
+    toast.success("평가가 반영됐습니다.");
+    setReviewTargetId(null);
+    setReportReason("");
+    setGimmickReview("uncertain");
+    setMannerReview("normal");
   }
 
   return (
@@ -231,6 +266,17 @@ export function VoiceRoom({
                     </Button>
                   )
                 )}
+                {!selected.isSelf && !isGuest && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setReviewTargetId(selected.id);
+                      setSelectedId(null);
+                    }}
+                  >
+                    평가하기
+                  </Button>
+                )}
                 {isHost && !selected.isSelf && (
                   <>
                     <Button
@@ -255,6 +301,92 @@ export function VoiceRoom({
                     </Button>
                   </>
                 )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!reviewTarget}
+        onOpenChange={(open) => {
+          if (!open) setReviewTargetId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          {reviewTarget && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{reviewTarget.nickname} 평가</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4">
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">기믹 단계 숙련도</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      ["mastered", "숙련"],
+                      ["uncertain", "애매"],
+                      ["not_mastered", "미숙지"],
+                    ].map(([value, label]) => (
+                      <Button
+                        key={value}
+                        type="button"
+                        variant={gimmickReview === value ? "default" : "outline"}
+                        onClick={() =>
+                          setGimmickReview(
+                            value as "mastered" | "uncertain" | "not_mastered",
+                          )
+                        }
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">다시 함께 플레이하고 싶은가요?</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      ["good", "좋음"],
+                      ["normal", "보통"],
+                      ["bad", "싫음"],
+                    ].map(([value, label]) => (
+                      <Button
+                        key={value}
+                        type="button"
+                        variant={mannerReview === value ? "default" : "outline"}
+                        onClick={() =>
+                          setMannerReview(value as "good" | "normal" | "bad")
+                        }
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">신고 사유</div>
+                  <select
+                    value={reportReason}
+                    onChange={(event) => setReportReason(event.target.value)}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    aria-label="신고 사유"
+                  >
+                    <option value="">없음</option>
+                    <option value="abusive_chat">욕설/비매너 채팅</option>
+                    <option value="intentional_disruption">고의 방해</option>
+                    <option value="early_leave">중도 이탈</option>
+                    <option value="false_progress">허위 숙련도</option>
+                    <option value="other">기타</option>
+                  </select>
+                </div>
+
+                <Button onClick={submitReview} disabled={submittingReview}>
+                  {submittingReview && <Loader2 className="size-4 animate-spin" />}
+                  평가 제출
+                </Button>
               </div>
             </>
           )}
