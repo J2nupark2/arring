@@ -177,6 +177,45 @@ async function api(jar, path, init = {}) {
   return { ok: res.ok, status: res.status, data };
 }
 
+async function testStaleQueueExpires() {
+  const dungeon = await createIsolatedDungeon();
+  const user = await createTestUser("stale", { combatPower: 780_000 });
+  const jar = await signIn(user.email);
+  const startedAt = new Date().toISOString();
+
+  const post = await api(jar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "member",
+      dungeonId: dungeon.id,
+      characterId: user.characterId,
+      stage: 3,
+    }),
+  });
+  assert(post.ok, `stale setup POST failed: ${post.status} ${JSON.stringify(post.data)}`);
+  assert(post.data?.state === "waiting", `stale setup should wait, got ${JSON.stringify(post.data)}`);
+
+  const staleHeartbeat = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  await must(
+    "age stale queue heartbeat",
+    admin
+      .from("match_queue")
+      .update({ heartbeat_at: staleHeartbeat })
+      .eq("user_id", user.userId)
+      .eq("status", "waiting"),
+  );
+
+  const get = await api(jar, `/api/matching?since=${encodeURIComponent(startedAt)}`);
+  assert(get.ok, `stale GET failed: ${get.status} ${JSON.stringify(get.data)}`);
+  assert(
+    get.data?.state === "cancelled" && get.data?.active === false,
+    `stale queue should expire as cancelled, got ${JSON.stringify(get.data)}`,
+  );
+
+  console.log("[matching-api-e2e] stale member queue expires");
+}
+
 async function testFullHttpMatch() {
   const dungeon = await createIsolatedDungeon();
   const leader = await createTestUser("leader", { className: "검성", combatPower: 820_000 });
@@ -316,10 +355,11 @@ try {
     `GET after cancel should stay cancelled, got ${JSON.stringify(afterCancel.data)}`,
   );
 
+  await testStaleQueueExpires();
   await testFullHttpMatch();
 
   console.log(`[matching-api-e2e] dungeon ${dungeon.name}`);
-  console.log("[matching-api-e2e] member waiting -> leader 0 candidates -> full 5-person match -> cancel lifecycle");
+  console.log("[matching-api-e2e] member waiting -> stale expiry -> leader 0 candidates -> full 5-person match -> cancel lifecycle");
   console.log("[matching-api-e2e] PASS");
 } finally {
   await cleanup();

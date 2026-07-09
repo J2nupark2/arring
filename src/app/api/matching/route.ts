@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { generateRoomCode } from "@/lib/room-code";
 
 const ROOM_TTL_HOURS = 6;
+const MATCH_HEARTBEAT_TTL_MS = 2 * 60 * 1000;
 
 type Profile = {
   id: string;
@@ -51,6 +52,10 @@ type Candidate = {
   profile: Profile | undefined;
   character: CharacterRow | undefined;
 };
+
+function activeHeartbeatCutoff() {
+  return new Date(Date.now() - MATCH_HEARTBEAT_TTL_MS).toISOString();
+}
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -126,6 +131,38 @@ async function findExistingMatch(
   if (requestRoomCode) return { matched: true, roomCode: requestRoomCode };
 
   return { matched: false };
+}
+
+async function expireStaleActiveMatches(admin: AdminClient) {
+  const cutoff = activeHeartbeatCutoff();
+  await Promise.all([
+    admin
+      .from("match_queue")
+      .update({ status: "cancelled" } as unknown as never)
+      .in("status", ["waiting", "processing"])
+      .lt("heartbeat_at", cutoff),
+    admin
+      .from("match_requests")
+      .update({ status: "cancelled" } as unknown as never)
+      .in("status", ["waiting", "processing"])
+      .lt("heartbeat_at", cutoff),
+  ]);
+}
+
+async function touchActiveMatchHeartbeat(admin: AdminClient, userId: string) {
+  const heartbeatAt = new Date().toISOString();
+  await Promise.all([
+    admin
+      .from("match_queue")
+      .update({ heartbeat_at: heartbeatAt } as unknown as never)
+      .eq("user_id", userId)
+      .in("status", ["waiting", "processing"]),
+    admin
+      .from("match_requests")
+      .update({ heartbeat_at: heartbeatAt } as unknown as never)
+      .eq("leader_id", userId)
+      .in("status", ["waiting", "processing"]),
+  ]);
 }
 
 async function getUserCharacter(
@@ -227,6 +264,7 @@ async function findCandidates(
     .eq("status", "waiting")
     .eq("dungeon_id", request.dungeon_id)
     .gte("requested_stage", request.required_stage)
+    .gte("heartbeat_at", activeHeartbeatCutoff())
     .order("created_at", { ascending: true })
     .limit(50);
 
@@ -333,9 +371,10 @@ async function tryCompleteMatch(
   admin: AdminClient,
   request: MatchRequest,
 ) {
+  const heartbeatAt = new Date().toISOString();
   const { data: claimedRequest, error: claimError } = await admin
     .from("match_requests")
-    .update({ status: "processing" } as unknown as never)
+    .update({ status: "processing", heartbeat_at: heartbeatAt } as unknown as never)
     .eq("id", request.id)
     .eq("status", "waiting")
     .select(
@@ -393,7 +432,10 @@ async function tryCompleteMatch(
   if (!chosen) {
     await admin
       .from("match_requests")
-      .update({ status: "waiting" } as unknown as never)
+      .update({
+        status: "waiting",
+        heartbeat_at: new Date().toISOString(),
+      } as unknown as never)
       .eq("id", activeRequest.id)
       .eq("status", "processing");
     return {
@@ -414,6 +456,7 @@ async function tryCompleteMatch(
       .update({
         status: "processing",
         match_request_id: activeRequest.id,
+        heartbeat_at: new Date().toISOString(),
       } as unknown as never)
       .select("id")
       .in("id", chosenQueueIds)
@@ -424,7 +467,10 @@ async function tryCompleteMatch(
     if ((claimedQueues ?? []).length !== chosenQueueIds.length) {
       await admin
         .from("match_requests")
-        .update({ status: "waiting" } as unknown as never)
+        .update({
+          status: "waiting",
+          heartbeat_at: new Date().toISOString(),
+        } as unknown as never)
         .eq("id", activeRequest.id)
         .eq("status", "processing");
       return {
@@ -451,7 +497,10 @@ async function tryCompleteMatch(
     await Promise.all([
       admin
         .from("match_requests")
-        .update({ status: "waiting" } as unknown as never)
+        .update({
+          status: "waiting",
+          heartbeat_at: new Date().toISOString(),
+        } as unknown as never)
         .eq("id", activeRequest.id)
         .eq("status", "processing"),
       chosenQueueIds.length > 0
@@ -460,6 +509,7 @@ async function tryCompleteMatch(
             .update({
               status: "waiting",
               match_request_id: null,
+              heartbeat_at: new Date().toISOString(),
             } as unknown as never)
             .in("id", chosenQueueIds)
             .eq("status", "processing")
@@ -612,6 +662,9 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  await expireStaleActiveMatches(admin);
+  await touchActiveMatchHeartbeat(admin, user.id);
+
   const matchedAfter = request.nextUrl.searchParams.get("since");
   return NextResponse.json(await getMatchStatus(admin, user.id, matchedAfter));
 }
@@ -628,6 +681,8 @@ export async function DELETE() {
   } = await supabase.auth.getUser();
 
   if (!user) return jsonError("로그인이 필요합니다.", 401);
+
+  await expireStaleActiveMatches(admin);
 
   const [queueCancel, requestCancel] = await Promise.all([
     admin
@@ -673,6 +728,8 @@ export async function POST(request: NextRequest) {
   if (user.is_anonymous) {
     return jsonError("자동매칭은 회원가입 후 이용할 수 있습니다.", 403);
   }
+
+  await expireStaleActiveMatches(admin);
 
   let body: {
     role?: "leader" | "member";
@@ -819,6 +876,7 @@ export async function POST(request: NextRequest) {
         required_classes: requiredClasses,
         max_members: maxMembers,
         invited_friend_ids: invitedFriendIds,
+        heartbeat_at: new Date().toISOString(),
       } as unknown as never)
       .select(
         "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
@@ -860,6 +918,7 @@ export async function POST(request: NextRequest) {
       character_row_id: selectedCharacter.id,
       requested_stage: stage,
       status: "waiting",
+      heartbeat_at: new Date().toISOString(),
     } as unknown as never,
   )
     .select("created_at")
@@ -876,6 +935,7 @@ export async function POST(request: NextRequest) {
     )
     .eq("status", "waiting")
     .eq("dungeon_id", dungeonId)
+    .gte("heartbeat_at", activeHeartbeatCutoff())
     .lte("required_stage", stage)
     .lte("min_combat_power", selectedCharacter.combat_power)
     .order("created_at", { ascending: true })

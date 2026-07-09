@@ -886,6 +886,7 @@ create table public.match_requests (
   max_members integer not null default 6 check (max_members between 2 and 12),
   status text not null default 'waiting' check (status in ('waiting', 'processing', 'matched', 'cancelled')),
   created_at timestamptz not null default now(),
+  heartbeat_at timestamptz not null default now(),
   matched_at timestamptz
 );
 
@@ -920,6 +921,7 @@ create table public.match_queue (
   match_request_id uuid references public.match_requests (id) on delete set null,
   room_id uuid references public.rooms (id) on delete set null,
   created_at timestamptz not null default now(),
+  heartbeat_at timestamptz not null default now(),
   matched_at timestamptz
 );
 
@@ -932,6 +934,14 @@ create unique index match_queue_active_unique_idx
 
 create unique index match_requests_active_leader_unique_idx
   on public.match_requests (leader_id)
+  where status in ('waiting', 'processing');
+
+create index match_requests_active_heartbeat_idx
+  on public.match_requests (status, heartbeat_at)
+  where status in ('waiting', 'processing');
+
+create index match_queue_active_heartbeat_idx
+  on public.match_queue (status, heartbeat_at)
   where status in ('waiting', 'processing');
 
 alter table public.match_queue enable row level security;
