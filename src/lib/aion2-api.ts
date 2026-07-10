@@ -166,6 +166,10 @@ export async function fetchCharacterInfo(
     equipmentList,
     equipmentDetails,
   );
+  const wing = asRecord(equipmentData?.petwing?.wing);
+  if (wing?.id && wing?.name) {
+    equipmentWithDetails.push({ ...wing, slotPosName: "Wing" });
+  }
 
   const rawSkillList = asArray(equipmentData?.skill?.skillList);
   const skillList = await enrichAion2SkillsWithDescriptions(
@@ -672,4 +676,3 @@ export async function enrichAion2SkillsWithDescriptions(
   // Official AION2 data is returned as-is; rendering uses our own normalization.
   return Array.isArray(skills) ? skills : [];
 }
-

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
 import { DungeonManager } from "@/components/admin/dungeon-manager";
+import { StatPriorityManager } from "@/components/admin/stat-priority-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -32,10 +33,11 @@ export default async function AdminPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">관리자</h1>
           <p className="text-sm text-muted-foreground">
-            매칭에 사용할 던전 목록과 기믹 진도 단계를 관리합니다.
+            매칭에 사용할 던전 목록과 기믹 진도 단계, 캐릭터 옵션 우선순위를 관리합니다.
           </p>
         </div>
         <DungeonManager />
+        <StatPriorityManager />
       </main>
     </>
   );
