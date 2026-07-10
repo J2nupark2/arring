@@ -243,9 +243,23 @@ function EquipmentBoard({
   const slotMap = new Map<string, (typeof slotted)[number]>(
     slotted.map((slot) => [slot.key, slot]),
   );
-  const leftSlots = ["weapon", "helmet", "gloves", "ring"] as const;
-  const rightSlots = ["subWeapon", "armor", "shoes", "earring"] as const;
-  const bottomSlots = ["necklace", "belt", "pants", "wing"] as const;
+  const equipmentGroups = [
+    {
+      title: "무기",
+      description: "주무기와 보조 장비",
+      keys: ["weapon", "subWeapon"],
+    },
+    {
+      title: "방어구",
+      description: "투구, 상의, 하의, 장갑, 신발",
+      keys: ["helmet", "armor", "pants", "gloves", "shoes"],
+    },
+    {
+      title: "장신구",
+      description: "목걸이, 귀걸이, 반지, 허리띠, 날개",
+      keys: ["necklace", "earring", "ring", "belt", "wing"],
+    },
+  ] as const;
 
   return (
     <Card className="overflow-visible">
@@ -257,85 +271,52 @@ function EquipmentBoard({
               장비 정보
             </CardTitle>
             <CardDescription>
-              아툴처럼 캐릭터를 중심에 두고 장착 슬롯을 배치했어요.
+              무기, 방어구, 장신구를 종류별로 묶어서 정리했어요.
             </CardDescription>
           </div>
           <Badge variant="outline">{items.length}개 확인</Badge>
         </div>
       </CardHeader>
-      <CardContent className="p-3 sm:p-5">
-        <div className="grid gap-3 lg:grid-cols-[minmax(148px,0.72fr)_minmax(220px,1fr)_minmax(148px,0.72fr)]">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            {leftSlots.map((key) => (
-              <EquipmentSlotCard key={key} slot={slotMap.get(key)} />
-            ))}
-          </div>
-
-          <div className="relative flex min-h-[360px] flex-col justify-between overflow-hidden rounded-md border bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.18),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-lg font-bold">{characterName}</span>
-                  {isPrimary && <Badge variant="secondary">대표</Badge>}
-                </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  {serverName || "서버 미확인"} · {className || "직업 미확인"} · Lv.{level ?? "-"}
-                </div>
-              </div>
-              <div className="rounded-md border bg-background/80 px-3 py-2 text-right backdrop-blur">
-                <div className="text-[11px] font-medium text-muted-foreground">전투력</div>
-                <div className="font-mono text-2xl font-bold text-primary">
-                  {formatCombatPower(combatPower)}
-                </div>
-              </div>
+      <CardContent className="space-y-4 p-3 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 px-4 py-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-lg font-bold">{characterName}</span>
+              {isPrimary && <Badge variant="secondary">대표</Badge>}
             </div>
-
-            <div className="mx-auto flex size-44 items-center justify-center rounded-full border border-primary/25 bg-background/55 shadow-[0_0_70px_rgba(139,92,246,0.18)]">
-              <div className="flex size-28 items-center justify-center rounded-full border bg-muted/40 text-5xl font-black text-primary/80">
-                {characterName.slice(0, 1)}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-              <SpecPill label="장착" value={items.length + "개"} />
-              <SpecPill label="레벨" value={"Lv." + (level ?? "-")} />
-              <SpecPill label="서버" value={serverName || "-"} />
-              <SpecPill label="클래스" value={className || "-"} />
+            <div className="mt-1 text-sm text-muted-foreground">
+              {serverName || "서버 미확인"} · {className || "직업 미확인"} · Lv.{level ?? "-"}
             </div>
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            {rightSlots.map((key) => (
-              <EquipmentSlotCard key={key} slot={slotMap.get(key)} />
-            ))}
+          <div className="rounded-md border bg-background px-3 py-2 text-right">
+            <div className="text-[11px] font-medium text-muted-foreground">전투력</div>
+            <div className="font-mono text-2xl font-bold text-primary">
+              {formatCombatPower(combatPower)}
+            </div>
           </div>
         </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {bottomSlots.map((key) => (
-            <EquipmentSlotCard key={key} slot={slotMap.get(key)} compact />
+        <div className="grid gap-3 xl:grid-cols-[0.82fr_1.18fr_1fr]">
+          {equipmentGroups.map((group) => (
+            <EquipmentGroup
+              key={group.title}
+              title={group.title}
+              description={group.description}
+              slots={group.keys.map((key) => slotMap.get(key)).filter((slot): slot is NonNullable<typeof slot> => Boolean(slot))}
+            />
           ))}
         </div>
 
         {extras.length > 0 && (
-          <div className="mt-4 space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">
-              기타 장비
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {extras.map((item, index) => (
-                <EquipmentSlotCard
-                  key={item.name + "-" + index}
-                  slot={{ slot: "기타", item }}
-                  compact
-                />
-              ))}
-            </div>
-          </div>
+          <EquipmentGroup
+            title="기타 장비"
+            description="슬롯 정보가 명확하지 않은 장비"
+            slots={extras.map((item, index) => ({ key: `extra-${index}`, slot: "기타", item }))}
+          />
         )}
 
         {items.length === 0 && (
-          <p className="mt-4 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
             공식 정보실 응답에 장비 목록이 없어서 슬롯 자리만 먼저 표시하고 있어요. 다음 동기화에서 장비 데이터가 들어오면 자동으로 채워져요.
           </p>
         )}
@@ -344,6 +325,36 @@ function EquipmentBoard({
   );
 }
 
+function EquipmentGroup({
+  title,
+  description,
+  slots,
+}: {
+  title: string;
+  description: string;
+  slots: Array<{ key: string; slot: string; item?: DetailItem }>;
+}) {
+  const equippedCount = slots.filter((slot) => slot.item).length;
+
+  return (
+    <section className="rounded-md border bg-background/55 p-3">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        </div>
+        <Badge variant="secondary" className="shrink-0">
+          {equippedCount}/{slots.length}
+        </Badge>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        {slots.map((slot) => (
+          <EquipmentSlotCard key={slot.key} slot={slot} compact />
+        ))}
+      </div>
+    </section>
+  );
+}
 function EquipmentSlotCard({
   slot,
   compact = false,
