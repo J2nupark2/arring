@@ -248,7 +248,7 @@ function EquipmentBoard({
   const bottomSlots = ["necklace", "belt", "pants", "wing"] as const;
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-visible">
       <CardHeader className="border-b bg-muted/30 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -597,9 +597,10 @@ function ItemSummary({
   compact?: boolean;
 }) {
   const hasTooltip = hasSkillTooltip(item);
+  const hasEquipmentTooltip = hasEquipmentDetailTooltip(item);
 
   return (
-    <div className="group relative flex min-w-0 gap-2">
+    <div className="group relative z-0 flex min-w-0 gap-2 hover:z-50">
       {item.icon && (
         // Official AION2 item and skill icons are small CDN assets.
         // eslint-disable-next-line @next/next/no-img-element
@@ -624,8 +625,10 @@ function ItemSummary({
           {item.value !== undefined && <span>초월 {item.value}</span>}
         </div>
         <ItemStatPreview item={item} />
+        <ItemOptionPreview item={item} />
       </div>
       {hasTooltip && <SkillTooltip item={item} />}
+      {hasEquipmentTooltip && <EquipmentTooltip item={item} />}
     </div>
   );
 }
@@ -764,6 +767,120 @@ function normalizeList(value: unknown): DetailItem[] {
   return items;
 }
 
+function ItemOptionPreview({ item }: { item: DetailItem }) {
+  const detail = asRecord(item.detail);
+  if (!detail) return null;
+
+  const magicStones = asArray(detail.magicStoneStat);
+  const godStones = asArray(detail.godStoneStat);
+  const subSkills = asArray(detail.subSkills);
+  const lines = [
+    detail.soulBindRate !== undefined ? `영혼각인 ${formatPlainValue(detail.soulBindRate)}%` : "",
+    magicStones.length > 0
+      ? `?? ${magicStones.length}/${formatPlainValue(detail.magicStoneSlotCount ?? magicStones.length)}`
+      : "",
+    godStones.length > 0 ? `?? ${formatPlainValue(asRecord(godStones[0])?.name ?? godStones.length)}` : "",
+    subSkills.length > 0 ? `?? ?? ${subSkills.length}` : "",
+  ].filter(Boolean).slice(0, 3);
+
+  if (lines.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {lines.map((line) => (
+        <span key={line} className="rounded border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] leading-4 text-primary">
+          {line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function EquipmentTooltip({ item }: { item: DetailItem }) {
+  const detail = asRecord(item.detail);
+  if (!detail) return null;
+
+  const mainStats = asArray(detail.mainStats);
+  const subStats = asArray(detail.subStats);
+  const magicStones = asArray(detail.magicStoneStat);
+  const godStones = asArray(detail.godStoneStat);
+  const subSkills = asArray(detail.subSkills);
+
+  return (
+    <div className="pointer-events-none absolute left-0 top-12 z-50 hidden w-[26rem] max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-3 text-popover-foreground shadow-xl group-hover:block">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="break-words text-sm font-semibold">{item.name}</div>
+          <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+            {item.slot && <span>{item.slot}</span>}
+            {detail.gradeName !== undefined && <span>{formatPlainValue(detail.gradeName)}</span>}
+            {detail.categoryName !== undefined && <span>{formatPlainValue(detail.categoryName)}</span>}
+            {detail.soulBindRate !== undefined && <span>영혼각인 {formatPlainValue(detail.soulBindRate)}%</span>}
+          </div>
+        </div>
+        {detail.enchantLevel !== undefined && (
+          <Badge variant="secondary">+{formatPlainValue(detail.enchantLevel)}</Badge>
+        )}
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <OptionSection title="? ???" items={mainStats} />
+        <OptionSection title="영혼각인 옵션" items={subStats} />
+        <OptionSection title="??" items={magicStones} icon />
+        <OptionSection title="??" items={godStones} icon description />
+        <OptionSection title="?? ??" items={subSkills} icon level />
+      </div>
+    </div>
+  );
+}
+
+function OptionSection({
+  title,
+  items,
+  icon = false,
+  description = false,
+  level = false,
+}: {
+  title: string;
+  items: unknown[];
+  icon?: boolean;
+  description?: boolean;
+  level?: boolean;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-1 rounded border bg-background/60 p-2">
+      <div className="text-[11px] font-semibold text-muted-foreground">{title}</div>
+      <div className="space-y-1">
+        {items.slice(0, 8).map((item, index) => {
+          const record = asRecord(item) ?? {};
+          const name = formatPlainValue(record.name ?? record.id ?? "-");
+          const value = record.value !== undefined ? formatPlainValue(record.value) : "";
+          return (
+            <div key={`${title}-${index}`} className="flex min-w-0 items-start gap-2 text-xs">
+              {icon && typeof record.icon === "string" && record.icon ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={record.icon} alt="" className="mt-0.5 size-5 shrink-0 rounded border bg-muted object-cover" />
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="min-w-0 truncate">{name}</span>
+                  {value && <span className="shrink-0 font-medium text-primary">{value}</span>}
+                  {level && record.level !== undefined && <span className="shrink-0 text-muted-foreground">Lv.{formatPlainValue(record.level)}</span>}
+                </div>
+                {description && record.desc !== undefined && (
+                  <div className="mt-1 whitespace-pre-line text-[11px] leading-4 text-muted-foreground">
+                    {formatPlainValue(record.desc)}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ItemStatPreview({ item }: { item: DetailItem }) {
   const lines = getItemStatLines(item).slice(0, 2);
   if (lines.length === 0) return null;
@@ -890,6 +1007,18 @@ function isSlotMatch(item: DetailItem, aliases: readonly string[]) {
 
 function formatScore(value: number | string | null | undefined) {
   return Number(value ?? 50).toFixed(1);
+}
+
+function hasEquipmentDetailTooltip(item: DetailItem) {
+  const detail = asRecord(item.detail);
+  return !!detail && (
+    asArray(detail.mainStats).length > 0 ||
+    asArray(detail.subStats).length > 0 ||
+    asArray(detail.magicStoneStat).length > 0 ||
+    asArray(detail.godStoneStat).length > 0 ||
+    asArray(detail.subSkills).length > 0 ||
+    detail.soulBindRate !== undefined
+  );
 }
 
 function hasSkillTooltip(item: DetailItem) {
