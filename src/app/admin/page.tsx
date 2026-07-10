@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
 import { DungeonManager } from "@/components/admin/dungeon-manager";
+import { StatPriorityManager } from "@/components/admin/stat-priority-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function AdminPage() {
           </p>
         </div>
         <DungeonManager />
+        <StatPriorityManager />
       </main>
     </>
   );

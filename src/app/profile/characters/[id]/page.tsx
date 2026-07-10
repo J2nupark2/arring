@@ -90,6 +90,91 @@ function itemsInSlots(items: DetailItem[], slotKeys: readonly string[]) {
   return items.filter((item) => keys.has(String(item.slot ?? "").toLowerCase()));
 }
 
+// Per-breakthrough (돌파) stat bonus, by slot category. Not exposed by any
+// API — reverse-engineered from real in-game tooltips: weapon 돌파5 gave
+// +150/+5% (30/1% per level), armor 돌파2 gave +160/+160/+2%/+2% (80/1%
+// per level per stat), accessories (목걸이/귀걸이/반지/팔찌/허리띠) gave
+// +100/+200/+5% (20 atk / 40 def / 1% atk per level), and a brooch gave
+// +100/+200 with no percent line at all. Rune/amulet/pendant are assumed
+// to follow the brooch (no-percent) pattern since they're the same
+// "secondary accessory" tier, but that specific case isn't confirmed.
+const EXCEED_WEAPON_SLOTS = new Set(["mainhand", "subhand"]);
+const EXCEED_ARMOR_SLOTS = new Set([
+  "helmet",
+  "torso",
+  "pants",
+  "gloves",
+  "boots",
+  "shoulder",
+  "cape",
+]);
+const EXCEED_ACCESSORY_PERCENT_SLOTS = new Set([
+  "necklace",
+  "earring1",
+  "earring2",
+  "ring1",
+  "ring2",
+  "belt",
+]);
+const EXCEED_ACCESSORY_FLAT_SLOTS = new Set([
+  "brooch1",
+  "brooch2",
+  "rune1",
+  "rune2",
+  "amulet",
+  "pendant",
+]);
+
+function exceedBonusStats(item: DetailItem): NamedStat[] {
+  const level = Number(item.value) || 0;
+  const slot = String(item.slot ?? "").toLowerCase();
+  if (level <= 0) return [];
+
+  if (EXCEED_WEAPON_SLOTS.has(slot)) {
+    return [
+      { name: "공격력", value: level * 30 },
+      { name: "공격력 증가", value: `${level}%` },
+    ];
+  }
+  if (EXCEED_ARMOR_SLOTS.has(slot)) {
+    return [
+      { name: "방어력", value: level * 80 },
+      { name: "생명력", value: level * 80 },
+      { name: "방어력 증가", value: `${level}%` },
+      { name: "생명력 증가", value: `${level}%` },
+    ];
+  }
+  if (EXCEED_ACCESSORY_PERCENT_SLOTS.has(slot)) {
+    return [
+      { name: "공격력", value: level * 20 },
+      { name: "방어력", value: level * 40 },
+      { name: "공격력 증가", value: `${level}%` },
+    ];
+  }
+  if (EXCEED_ACCESSORY_FLAT_SLOTS.has(slot)) {
+    return [
+      { name: "공격력", value: level * 20 },
+      { name: "방어력", value: level * 40 },
+    ];
+  }
+  return [];
+}
+
+// Class-specific rows win over the '공통' fallback for the same stat_key.
+function buildPriorityMap(
+  rows: { stat_key: string; tier: number; class_name: string }[] | null,
+  className: string | null,
+): StatPriorityMap {
+  const map: StatPriorityMap = new Map();
+  for (const row of rows ?? []) {
+    if (row.class_name === "공통") map.set(row.stat_key, row.tier);
+  }
+  for (const row of rows ?? []) {
+    if (row.class_name === className) map.set(row.stat_key, row.tier);
+  }
+  return map;
+}
+
 export default async function CharacterDetailPage({
   params,
 }: {
@@ -144,6 +229,12 @@ export default async function CharacterDetailPage({
   const statList = normalizeStatList(character.stat_list);
   const titles = normalizeTitleList(character.titles);
   const daevanion = normalizeDaevanionList(character.daevanion);
+
+  const { data: priorityRows } = await supabase
+    .from("class_stat_priority")
+    .select("stat_key, tier, class_name")
+    .in("class_name", [character.class_name, "공통"].filter(Boolean));
+  const priorityMap = buildPriorityMap(priorityRows, character.class_name);
 
   return (
     <>
@@ -216,12 +307,12 @@ export default async function CharacterDetailPage({
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
-          <WeaponArmorCard items={weaponArmorItems} />
-          <AccessoryCard items={accessoryItems} />
+          <WeaponArmorCard items={weaponArmorItems} priorityMap={priorityMap} />
+          <AccessoryCard items={accessoryItems} priorityMap={priorityMap} />
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.68fr)] 2xl:grid-cols-[minmax(0,1.18fr)_minmax(420px,0.72fr)]">
-          <ArcanaCard items={arcanaItems} set={arcanaSet} />
+          <ArcanaCard items={arcanaItems} set={arcanaSet} priorityMap={priorityMap} />
           <SkillBoard skills={skills} stigmas={stigmas} />
         </section>
 
@@ -267,7 +358,16 @@ function ScoreTile({
   );
 }
 
-type NamedStat = { name: string; value?: string | number; extra?: string | number };
+type NamedStat = {
+  name: string;
+  value?: string | number;
+  extra?: string | number;
+  id?: string;
+};
+
+// class_name -> stat_key -> tier (1 = highest priority). Built server-side
+// from the admin-curated class_stat_priority table; see StatLine.
+type StatPriorityMap = Map<string, number>;
 type SubSkillProc = { name: string; level?: string | number; icon?: string };
 type GodStoneEffect = { name: string; desc?: string; grade?: string };
 type ArcanaSetBonus = {
@@ -299,9 +399,11 @@ type DetailItem = {
 function SlotGrid({
   items,
   slotKeys,
+  priorityMap,
 }: {
   items: DetailItem[];
   slotKeys: readonly string[];
+  priorityMap: StatPriorityMap;
 }) {
   const usedIndexes = new Set<number>();
   const slotted = slotKeys.map((slotKey) => {
@@ -330,7 +432,7 @@ function SlotGrid({
               {SLOT_NAME_KO[key] ?? key}
             </div>
             {item ? (
-              <ItemSummary item={item} />
+              <ItemSummary item={item} priorityMap={priorityMap} />
             ) : ARCANA_UPCOMING_ICON[key] ? (
               <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
                 {(() => {
@@ -355,7 +457,7 @@ function SlotGrid({
               key={`${item.name}-${index}`}
               className="rounded-md border px-3 py-2"
             >
-              <ItemSummary item={item} />
+              <ItemSummary item={item} priorityMap={priorityMap} />
             </div>
           ))}
         </div>
@@ -364,7 +466,13 @@ function SlotGrid({
   );
 }
 
-function WeaponArmorCard({ items }: { items: DetailItem[] }) {
+function WeaponArmorCard({
+  items,
+  priorityMap,
+}: {
+  items: DetailItem[];
+  priorityMap: StatPriorityMap;
+}) {
   return (
     <Card className="overflow-visible">
       <CardHeader>
@@ -382,13 +490,19 @@ function WeaponArmorCard({ items }: { items: DetailItem[] }) {
         </div>
       </CardHeader>
       <CardContent className="overflow-visible">
-        <SlotGrid items={items} slotKeys={WEAPON_ARMOR_SLOTS} />
+        <SlotGrid items={items} slotKeys={WEAPON_ARMOR_SLOTS} priorityMap={priorityMap} />
       </CardContent>
     </Card>
   );
 }
 
-function AccessoryCard({ items }: { items: DetailItem[] }) {
+function AccessoryCard({
+  items,
+  priorityMap,
+}: {
+  items: DetailItem[];
+  priorityMap: StatPriorityMap;
+}) {
   return (
     <Card className="overflow-visible">
       <CardHeader>
@@ -401,7 +515,7 @@ function AccessoryCard({ items }: { items: DetailItem[] }) {
         </div>
       </CardHeader>
       <CardContent className="overflow-visible">
-        <SlotGrid items={items} slotKeys={ACCESSORY_SLOTS} />
+        <SlotGrid items={items} slotKeys={ACCESSORY_SLOTS} priorityMap={priorityMap} />
       </CardContent>
     </Card>
   );
@@ -485,9 +599,11 @@ function SkillGroup({
 function ArcanaCard({
   items,
   set,
+  priorityMap,
 }: {
   items: DetailItem[];
   set: ArcanaSetBonus | undefined;
+  priorityMap: StatPriorityMap;
 }) {
   return (
     <Card className="overflow-visible">
@@ -508,7 +624,7 @@ function ArcanaCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4 overflow-visible">
-        <SlotGrid items={items} slotKeys={ARCANA_SLOTS} />
+        <SlotGrid items={items} slotKeys={ARCANA_SLOTS} priorityMap={priorityMap} />
         {set && set.bonuses.length > 0 && (
           <div className="grid gap-2 sm:grid-cols-2">
             {set.bonuses.map((bonus) => (
@@ -714,7 +830,13 @@ function isStigmaSkill(item: DetailItem) {
   );
 }
 
-function ItemSummary({ item }: { item: DetailItem }) {
+function ItemSummary({
+  item,
+  priorityMap,
+}: {
+  item: DetailItem;
+  priorityMap?: StatPriorityMap;
+}) {
   const hasTooltip = hasSkillTooltip(item);
 
   return (
@@ -749,7 +871,7 @@ function ItemSummary({ item }: { item: DetailItem }) {
           )}
         </div>
       </div>
-      {hasTooltip && <SkillTooltip item={item} />}
+      {hasTooltip && <SkillTooltip item={item} priorityMap={priorityMap} />}
     </div>
   );
 }
@@ -785,9 +907,11 @@ function SkillIconSummary({ item }: { item: DetailItem }) {
 function SkillTooltip({
   item,
   compact = false,
+  priorityMap,
 }: {
   item: DetailItem;
   compact?: boolean;
+  priorityMap?: StatPriorityMap;
 }) {
   return (
     <div
@@ -825,8 +949,9 @@ function SkillTooltip({
       )}
       {hasEquipmentDetail(item) && (
         <div className="mt-3 space-y-2.5 border-t pt-3">
-          <StatLine title="기본 옵션" stats={item.mainStats} />
-          <StatLine title="영혼 각인" stats={item.subStats} />
+          <StatLine title="기본 옵션" stats={item.mainStats} priorityMap={priorityMap} />
+          <ExceedBonusLine stats={exceedBonusStats(item)} />
+          <StatLine title="영혼 각인" stats={item.subStats} priorityMap={priorityMap} />
           {item.subSkills && item.subSkills.length > 0 && (
             <div>
               <div className="text-[11px] font-semibold text-muted-foreground">
@@ -845,7 +970,7 @@ function SkillTooltip({
               </div>
             </div>
           )}
-          <StatLine title="마석 각인" stats={item.magicStoneStat} />
+          <StatLine title="마석 각인" stats={item.magicStoneStat} priorityMap={priorityMap} />
           {item.godStoneStat && item.godStoneStat.length > 0 && (
             <div>
               {item.godStoneStat.map((stone, index) => (
@@ -866,19 +991,50 @@ function SkillTooltip({
   );
 }
 
-function StatLine({ title, stats }: { title: string; stats?: NamedStat[] }) {
+const TIER_DOT_COLOR: Record<number, string> = {
+  1: "bg-violet-400",
+  2: "bg-sky-400",
+  3: "bg-muted-foreground",
+  4: "bg-muted-foreground/40",
+};
+
+const TIER_LABELS: Record<number, string> = {
+  1: "1순위 (최우선)",
+  2: "2순위",
+  3: "3순위",
+  4: "4순위 (낮음)",
+};
+
+function StatLine({
+  title,
+  stats,
+  priorityMap,
+}: {
+  title: string;
+  stats?: NamedStat[];
+  priorityMap?: StatPriorityMap;
+}) {
   if (!stats || stats.length === 0) return null;
   return (
     <div>
       <div className="text-[11px] font-semibold text-muted-foreground">{title}</div>
-      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
-        {stats.map((stat, index) => (
-          <span key={`${stat.name}-${index}`}>
-            {stat.name}
-            {stat.value !== undefined ? ` ${signed(stat.value)}` : ""}
-            {stat.extra ? ` (${signed(stat.extra)})` : ""}
-          </span>
-        ))}
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        {stats.map((stat, index) => {
+          const tier = stat.id ? priorityMap?.get(stat.id) : undefined;
+          return (
+            <span key={`${stat.name}-${index}`} className="inline-flex items-center gap-1">
+              {tier !== undefined && (
+                <span
+                  className={`size-1.5 shrink-0 rounded-full ${TIER_DOT_COLOR[tier] ?? ""}`}
+                  title={TIER_LABELS[tier]}
+                />
+              )}
+              {stat.name}
+              {stat.value !== undefined ? ` ${signed(stat.value)}` : ""}
+              {stat.extra ? ` (${signed(stat.extra)})` : ""}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
@@ -887,6 +1043,22 @@ function StatLine({ title, stats }: { title: string; stats?: NamedStat[] }) {
 function signed(value: string | number) {
   const text = String(value);
   return /^[+-]/.test(text) ? text : `+${text}`;
+}
+
+// Continuation of the "기본 옵션" line, not a separate section — matches
+// how the game client shows breakthrough bonuses right under the base
+// options, just visually distinct (bold + colored).
+function ExceedBonusLine({ stats }: { stats: NamedStat[] }) {
+  if (stats.length === 0) return null;
+  return (
+    <div className="-mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-violet-400">
+      {stats.map((stat, index) => (
+        <span key={`${stat.name}-${index}`}>
+          {stat.name} {signed(stat.value!)}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function hasEquipmentDetail(item: DetailItem) {
@@ -974,6 +1146,7 @@ function asStatArray(value: unknown): NamedStat[] | undefined {
       name: String(entry.name ?? ""),
       value: entry.value as string | number | undefined,
       extra: entry.extra as string | number | undefined,
+      id: typeof entry.id === "string" ? entry.id : undefined,
     }))
     .filter((entry) => entry.name);
 }
