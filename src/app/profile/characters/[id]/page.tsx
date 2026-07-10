@@ -82,11 +82,11 @@ export default async function CharacterDetailPage({
   return (
     <>
       <AppHeader />
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-medium text-muted-foreground">
-              캐릭터 상세 분석
+              아이온2 캐릭터 상세
             </p>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
               {character.character_name}
@@ -97,55 +97,59 @@ export default async function CharacterDetailPage({
           </LinkButton>
         </div>
 
-        <section>
-          <Card className="overflow-hidden">
-            <CardHeader className="border-b bg-muted/35">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle className="truncate text-2xl">
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]">
+          <EquipmentBoard
+            items={equipment}
+            characterName={character.character_name}
+            serverName={character.server_name}
+            className={character.class_name}
+            level={character.character_level}
+            combatPower={character.combat_power}
+            isPrimary={character.is_primary}
+          />
+          <div className="space-y-5">
+            <Card className="overflow-hidden">
+              <CardHeader className="border-b bg-muted/35 pb-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <CardTitle className="flex items-center gap-2 text-xl">
                       {character.character_name}
+                      {character.is_primary && (
+                        <Badge variant="secondary">대표</Badge>
+                      )}
                     </CardTitle>
-                    {character.is_primary && (
-                      <Badge variant="secondary">대표 캐릭터</Badge>
-                    )}
+                    <CardDescription className="mt-1">
+                      {character.server_name} · {character.class_name || "직업 미확인"} · Lv.{character.character_level ?? "-"}
+                    </CardDescription>
                   </div>
-                  <CardDescription className="mt-1">
-                    {character.server_name} 서버 ·{" "}
-                    {character.class_name || "직업 미확인"} · Lv.
-                    {character.character_level ?? "-"}
-                  </CardDescription>
-                </div>
-                <div className="rounded-md border bg-background px-4 py-3 text-right">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    전투력
-                  </div>
-                  <div className="font-mono text-3xl font-bold">
-                    {formatCombatPower(character.combat_power)}
+                  <div className="rounded-md border bg-background px-4 py-3 text-right">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      전투력
+                    </div>
+                    <div className="font-mono text-3xl font-bold text-primary">
+                      {formatCombatPower(character.combat_power)}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-3 pt-6 sm:grid-cols-2">
-              <ScoreTile
-                icon={<ShieldCheck className="size-4" />}
-                label="매너 점수"
-                value={`${formatScore(profile?.manner_temperature)}점`}
-                caption="파티원 평가 반영"
-              />
-              <ScoreTile
-                icon={<Star className="size-4" />}
-                label="신뢰 점수"
-                value={`${formatScore(profile?.trust_temperature)}점`}
-                caption="진도/매칭 신뢰도"
-              />
-            </CardContent>
-          </Card>
-        </section>
+              </CardHeader>
+              <CardContent className="grid gap-3 pt-5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                <ScoreTile
+                  icon={<ShieldCheck className="size-4" />}
+                  label="매너 점수"
+                  value={`${formatScore(profile?.manner_temperature)}점`}
+                  caption="파티원 평가 반영"
+                />
+                <ScoreTile
+                  icon={<Star className="size-4" />}
+                  label="신뢰 점수"
+                  value={`${formatScore(profile?.trust_temperature)}점`}
+                  caption="진도/매칭 신뢰도"
+                />
+              </CardContent>
+            </Card>
 
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.68fr)] 2xl:grid-cols-[minmax(0,1.18fr)_minmax(420px,0.72fr)]">
-          <EquipmentBoard items={equipment} />
-          <SkillBoard skills={skills} stigmas={stigmas} />
+            <SkillBoard skills={skills} stigmas={stigmas} />
+          </div>
         </section>
 
         <p className="text-sm text-muted-foreground">
@@ -197,7 +201,23 @@ type DetailItem = {
   requiredLevel?: string | number;
 };
 
-function EquipmentBoard({ items }: { items: DetailItem[] }) {
+function EquipmentBoard({
+  items,
+  characterName,
+  serverName,
+  className,
+  level,
+  combatPower,
+  isPrimary,
+}: {
+  items: DetailItem[];
+  characterName: string;
+  serverName?: string | null;
+  className?: string | null;
+  level?: string | number | null;
+  combatPower?: number | null;
+  isPrimary?: boolean | null;
+}) {
   const usedIndexes = new Set<number>();
   const slotted = EQUIPMENT_SLOTS.map((slot) => {
     const index = items.findIndex(
@@ -206,71 +226,156 @@ function EquipmentBoard({ items }: { items: DetailItem[] }) {
     );
     if (index >= 0) {
       usedIndexes.add(index);
-      return { slot: slot.label, item: items[index] };
+      return { key: slot.key, slot: slot.label, item: items[index] };
     }
-    return { slot: slot.label, item: undefined };
+    return { key: slot.key, slot: slot.label, item: undefined };
   });
   const extras = items.filter((_, index) => !usedIndexes.has(index));
+  const slotMap = new Map<string, (typeof slotted)[number]>(
+    slotted.map((slot) => [slot.key, slot]),
+  );
+  const leftSlots = ["weapon", "helmet", "gloves", "ring"] as const;
+  const rightSlots = ["subWeapon", "armor", "shoes", "earring"] as const;
+  const bottomSlots = ["necklace", "belt", "pants", "wing"] as const;
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b bg-muted/30 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Swords className="size-4" />
-              장착 아이템
+              장비 정보
             </CardTitle>
             <CardDescription>
-              아툴처럼 장비 슬롯을 기준으로 현재 장착 상태를 보여줘요.
+              아툴처럼 캐릭터를 중심에 두고 장착 슬롯을 배치했어요.
             </CardDescription>
           </div>
           <Badge variant="outline">{items.length}개 확인</Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {slotted.map(({ slot, item }) => (
-            <div
-              key={slot}
-              className="min-h-24 rounded-md border bg-muted/20 px-3 py-2"
-            >
-              <div className="text-xs font-medium text-muted-foreground">
-                {slot}
-              </div>
-              {item ? (
-                <ItemSummary item={item} />
-              ) : (
-                <div className="mt-3 text-sm text-muted-foreground">
-                  정보 없음
+      <CardContent className="p-3 sm:p-5">
+        <div className="grid gap-3 lg:grid-cols-[minmax(148px,0.72fr)_minmax(220px,1fr)_minmax(148px,0.72fr)]">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            {leftSlots.map((key) => (
+              <EquipmentSlotCard key={key} slot={slotMap.get(key)} />
+            ))}
+          </div>
+
+          <div className="relative flex min-h-[360px] flex-col justify-between overflow-hidden rounded-md border bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.18),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-lg font-bold">{characterName}</span>
+                  {isPrimary && <Badge variant="secondary">대표</Badge>}
                 </div>
-              )}
+                <div className="mt-1 text-sm text-muted-foreground">
+                  {serverName || "서버 미확인"} · {className || "직업 미확인"} · Lv.{level ?? "-"}
+                </div>
+              </div>
+              <div className="rounded-md border bg-background/80 px-3 py-2 text-right backdrop-blur">
+                <div className="text-[11px] font-medium text-muted-foreground">전투력</div>
+                <div className="font-mono text-2xl font-bold text-primary">
+                  {formatCombatPower(combatPower)}
+                </div>
+              </div>
             </div>
+
+            <div className="mx-auto flex size-44 items-center justify-center rounded-full border border-primary/25 bg-background/55 shadow-[0_0_70px_rgba(139,92,246,0.18)]">
+              <div className="flex size-28 items-center justify-center rounded-full border bg-muted/40 text-5xl font-black text-primary/80">
+                {characterName.slice(0, 1)}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+              <SpecPill label="장착" value={items.length + "개"} />
+              <SpecPill label="레벨" value={"Lv." + (level ?? "-")} />
+              <SpecPill label="서버" value={serverName || "-"} />
+              <SpecPill label="클래스" value={className || "-"} />
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            {rightSlots.map((key) => (
+              <EquipmentSlotCard key={key} slot={slotMap.get(key)} />
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {bottomSlots.map((key) => (
+            <EquipmentSlotCard key={key} slot={slotMap.get(key)} compact />
           ))}
         </div>
+
         {extras.length > 0 && (
-          <div className="space-y-2">
+          <div className="mt-4 space-y-2">
             <div className="text-xs font-medium text-muted-foreground">
               기타 장비
             </div>
-            {extras.map((item, index) => (
-              <div
-                key={`${item.name}-${index}`}
-                className="rounded-md border px-3 py-2"
-              >
-                <ItemSummary item={item} />
-              </div>
-            ))}
+            <div className="grid gap-2 sm:grid-cols-2">
+              {extras.map((item, index) => (
+                <EquipmentSlotCard
+                  key={item.name + "-" + index}
+                  slot={{ slot: "기타", item }}
+                  compact
+                />
+              ))}
+            </div>
           </div>
         )}
+
         {items.length === 0 && (
-          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
-            공식 정보실 응답에 장비 목록이 없어서 슬롯 자리만 먼저 표시하고
-            있어요. 다음 동기화에서 장비 데이터가 들어오면 자동으로 채워져요.
+          <p className="mt-4 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+            공식 정보실 응답에 장비 목록이 없어서 슬롯 자리만 먼저 표시하고 있어요. 다음 동기화에서 장비 데이터가 들어오면 자동으로 채워져요.
           </p>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function EquipmentSlotCard({
+  slot,
+  compact = false,
+}: {
+  slot?: { slot: string; item?: DetailItem };
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={
+        "min-h-20 rounded-md border bg-muted/20 p-2.5 " +
+        (compact ? "" : "lg:min-h-[92px]")
+      }
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          {slot?.slot ?? "슬롯"}
+        </span>
+        {slot?.item?.grade && (
+          <span className="truncate text-[11px] text-primary">
+            {slot.item.grade}
+          </span>
+        )}
+      </div>
+      {slot?.item ? (
+        <ItemSummary item={slot.item} compact={compact} />
+      ) : (
+        <div className="flex min-h-10 items-center justify-center rounded border border-dashed text-xs text-muted-foreground">
+          정보 없음
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SpecPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md border bg-background/70 px-3 py-2">
+      <div className="text-[11px] font-medium">{label}</div>
+      <div className="mt-0.5 truncate font-medium text-foreground">{value}</div>
+    </div>
   );
 }
 
@@ -374,7 +479,13 @@ function isStigmaSkill(item: DetailItem) {
   );
 }
 
-function ItemSummary({ item }: { item: DetailItem }) {
+function ItemSummary({
+  item,
+  compact = false,
+}: {
+  item: DetailItem;
+  compact?: boolean;
+}) {
   const hasTooltip = hasSkillTooltip(item);
 
   return (
@@ -385,12 +496,12 @@ function ItemSummary({ item }: { item: DetailItem }) {
         <img
           src={item.icon}
           alt=""
-          className="size-9 shrink-0 rounded-md border bg-muted object-cover"
+          className={(compact ? "size-8" : "size-9") + " shrink-0 rounded-md border bg-muted object-cover"}
         />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <span className="min-w-0 break-words font-medium">{item.name}</span>
+          <span className={(compact ? "text-sm " : "") + "min-w-0 break-words font-medium"}>{item.name}</span>
           {item.level !== undefined && (
             <Badge variant="secondary" className="shrink-0">
               Lv.{item.level}
