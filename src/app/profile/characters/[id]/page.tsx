@@ -4,6 +4,7 @@ import {
   Award,
   BarChart3,
   Gauge,
+  Gem,
   Layers,
   Network,
   ShieldCheck,
@@ -27,20 +28,55 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const EQUIPMENT_SLOTS = [
-  { key: "weapon", label: "무기", aliases: ["무기", "weapon", "mainhand"] },
-  { key: "subWeapon", label: "보조", aliases: ["보조", "방패", "sub", "shield", "subhand"] },
-  { key: "helmet", label: "투구", aliases: ["투구", "머리", "helmet", "head", "helm"] },
-  { key: "armor", label: "상의", aliases: ["상의", "갑옷", "armor", "body", "chest", "torso"] },
-  { key: "pants", label: "하의", aliases: ["하의", "pants", "legs"] },
-  { key: "gloves", label: "장갑", aliases: ["장갑", "gloves", "hand"] },
-  { key: "shoes", label: "신발", aliases: ["신발", "shoes", "boots", "foot"] },
-  { key: "necklace", label: "목걸이", aliases: ["목걸이", "necklace"] },
-  { key: "earring", label: "귀걸이", aliases: ["귀걸이", "earring"] },
-  { key: "ring", label: "반지", aliases: ["반지", "ring"] },
-  { key: "belt", label: "허리띠", aliases: ["허리", "벨트", "belt", "waist"] },
-  { key: "wing", label: "날개", aliases: ["날개", "wing"] },
+// Equipment is split into three visually separate groups (matching how
+// 아툴 lays it out): weapon/armor, accessories, and arcana cards. Each key
+// here is the lowercased official slotPosName, matched exactly against
+// the normalized item's `slot` field — see SLOT_NAME_KO below for labels.
+const WEAPON_ARMOR_SLOTS = [
+  "mainhand",
+  "subhand",
+  "helmet",
+  "torso",
+  "pants",
+  "gloves",
+  "boots",
+  "shoulder",
+  "cape",
+  "wing",
 ] as const;
+
+const ACCESSORY_SLOTS = [
+  "necklace",
+  "earring1",
+  "earring2",
+  "ring1",
+  "ring2",
+  "belt",
+  "bracelet1",
+  "bracelet2",
+  "brooch1",
+  "brooch2",
+  "rune1",
+  "rune2",
+  "amulet",
+  "pendant",
+] as const;
+
+const ARCANA_SLOTS = [
+  "arcana1",
+  "arcana2",
+  "arcana3",
+  "arcana4",
+  "arcana5",
+  "arcana6",
+  "arcana7",
+  "arcana8",
+] as const;
+
+function itemsInSlots(items: DetailItem[], slotKeys: readonly string[]) {
+  const keys = new Set<string>(slotKeys);
+  return items.filter((item) => keys.has(String(item.slot ?? "").toLowerCase()));
+}
 
 export default async function CharacterDetailPage({
   params,
@@ -89,9 +125,10 @@ export default async function CharacterDetailPage({
   const equipment = normalizeList(character.equipment);
   const skills = normalizeList(describedSkills);
   const stigmas = normalizeList(describedStigmas);
-  const arcanaSet = equipment.find(
-    (item) => String(item.slot ?? "").startsWith("Arcana") && item.set,
-  )?.set;
+  const weaponArmorItems = itemsInSlots(equipment, WEAPON_ARMOR_SLOTS);
+  const accessoryItems = itemsInSlots(equipment, ACCESSORY_SLOTS);
+  const arcanaItems = itemsInSlots(equipment, ARCANA_SLOTS);
+  const arcanaSet = arcanaItems.find((item) => item.set)?.set;
   const statList = normalizeStatList(character.stat_list);
   const titles = normalizeTitleList(character.titles);
   const daevanion = normalizeDaevanionList(character.daevanion);
@@ -166,20 +203,22 @@ export default async function CharacterDetailPage({
           </Card>
         </section>
 
+        <section className="grid gap-6 lg:grid-cols-2">
+          <WeaponArmorCard items={weaponArmorItems} />
+          <AccessoryCard items={accessoryItems} />
+        </section>
+
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.68fr)] 2xl:grid-cols-[minmax(0,1.18fr)_minmax(420px,0.72fr)]">
-          <EquipmentBoard items={equipment} />
+          <ArcanaCard items={arcanaItems} set={arcanaSet} />
           <SkillBoard skills={skills} stigmas={stigmas} />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
-          <ArcanaCard set={arcanaSet} />
           <DaevanionCard boards={daevanion} />
+          <TitleCard titles={titles} />
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-          <TitleCard titles={titles} />
-          <StatBoard statList={statList} />
-        </section>
+        <StatBoard statList={statList} />
 
         <p className="text-sm text-muted-foreground">
           캐릭터 정보가 바뀌었다면{" "}
@@ -245,21 +284,67 @@ type DetailItem = {
   set?: ArcanaSetBonus;
 };
 
-function EquipmentBoard({ items }: { items: DetailItem[] }) {
+function SlotGrid({
+  items,
+  slotKeys,
+}: {
+  items: DetailItem[];
+  slotKeys: readonly string[];
+}) {
   const usedIndexes = new Set<number>();
-  const slotted = EQUIPMENT_SLOTS.map((slot) => {
+  const slotted = slotKeys.map((slotKey) => {
     const index = items.findIndex(
       (item, itemIndex) =>
-        !usedIndexes.has(itemIndex) && isSlotMatch(item, slot.aliases),
+        !usedIndexes.has(itemIndex) &&
+        String(item.slot ?? "").toLowerCase() === slotKey,
     );
     if (index >= 0) {
       usedIndexes.add(index);
-      return { slot: slot.label, item: items[index] };
+      return { key: slotKey, item: items[index] };
     }
-    return { slot: slot.label, item: undefined };
+    return { key: slotKey, item: undefined };
   });
   const extras = items.filter((_, index) => !usedIndexes.has(index));
 
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {slotted.map(({ key, item }) => (
+          <div
+            key={key}
+            className="min-h-24 rounded-md border bg-muted/20 px-3 py-2"
+          >
+            <div className="text-xs font-medium text-muted-foreground">
+              {SLOT_NAME_KO[key] ?? key}
+            </div>
+            {item ? (
+              <ItemSummary item={item} />
+            ) : (
+              <div className="mt-3 text-sm text-muted-foreground">
+                정보 없음
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {extras.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">기타</div>
+          {extras.map((item, index) => (
+            <div
+              key={`${item.name}-${index}`}
+              className="rounded-md border px-3 py-2"
+            >
+              <ItemSummary item={item} />
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function WeaponArmorCard({ items }: { items: DetailItem[] }) {
   return (
     <Card>
       <CardHeader>
@@ -267,7 +352,7 @@ function EquipmentBoard({ items }: { items: DetailItem[] }) {
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Swords className="size-4" />
-              장착 아이템
+              무기 · 방어구
             </CardTitle>
             <CardDescription>
               아툴처럼 장비 슬롯을 기준으로 현재 장착 상태를 보여줘요.
@@ -276,47 +361,27 @@ function EquipmentBoard({ items }: { items: DetailItem[] }) {
           <Badge variant="outline">{items.length}개 확인</Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {slotted.map(({ slot, item }) => (
-            <div
-              key={slot}
-              className="min-h-24 rounded-md border bg-muted/20 px-3 py-2"
-            >
-              <div className="text-xs font-medium text-muted-foreground">
-                {slot}
-              </div>
-              {item ? (
-                <ItemSummary item={item} />
-              ) : (
-                <div className="mt-3 text-sm text-muted-foreground">
-                  정보 없음
-                </div>
-              )}
-            </div>
-          ))}
+      <CardContent>
+        <SlotGrid items={items} slotKeys={WEAPON_ARMOR_SLOTS} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function AccessoryCard({ items }: { items: DetailItem[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Gem className="size-4" />
+            악세사리
+          </CardTitle>
+          <Badge variant="outline">{items.length}개 확인</Badge>
         </div>
-        {extras.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">
-              기타 장비
-            </div>
-            {extras.map((item, index) => (
-              <div
-                key={`${item.name}-${index}`}
-                className="rounded-md border px-3 py-2"
-              >
-                <ItemSummary item={item} />
-              </div>
-            ))}
-          </div>
-        )}
-        {items.length === 0 && (
-          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
-            공식 정보실 응답에 장비 목록이 없어서 슬롯 자리만 먼저 표시하고
-            있어요. 다음 동기화에서 장비 데이터가 들어오면 자동으로 채워져요.
-          </p>
-        )}
+      </CardHeader>
+      <CardContent>
+        <SlotGrid items={items} slotKeys={ACCESSORY_SLOTS} />
       </CardContent>
     </Card>
   );
@@ -397,26 +462,34 @@ function SkillGroup({
   );
 }
 
-function ArcanaCard({ set }: { set: ArcanaSetBonus | undefined }) {
+function ArcanaCard({
+  items,
+  set,
+}: {
+  items: DetailItem[];
+  set: ArcanaSetBonus | undefined;
+}) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Layers className="size-4" />
-          아르카나 세트 효과
-        </CardTitle>
-        {set?.name && (
-          <CardDescription>
-            {set.name} · {set.equippedCount ?? 0}세트 장착
-          </CardDescription>
-        )}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Layers className="size-4" />
+              아르카나
+            </CardTitle>
+            {set?.name && (
+              <CardDescription>
+                {set.name} · {set.equippedCount ?? 0}세트 장착
+              </CardDescription>
+            )}
+          </div>
+          <Badge variant="outline">{items.length}개 확인</Badge>
+        </div>
       </CardHeader>
-      <CardContent>
-        {!set || set.bonuses.length === 0 ? (
-          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
-            아르카나 세트 정보가 없어요.
-          </p>
-        ) : (
+      <CardContent className="space-y-4">
+        <SlotGrid items={items} slotKeys={ARCANA_SLOTS} />
+        {set && set.bonuses.length > 0 && (
           <div className="grid gap-2 sm:grid-cols-2">
             {set.bonuses.map((bonus) => (
               <div key={bonus.degree} className="rounded-md border px-3 py-2">
@@ -1024,11 +1097,6 @@ function pickString(record: Record<string, unknown>, keys: string[]) {
 function asRecord(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   return value as Record<string, unknown>;
-}
-
-function isSlotMatch(item: DetailItem, aliases: readonly string[]) {
-  const text = `${item.slot ?? ""} ${item.name}`.toLowerCase();
-  return aliases.some((alias) => text.includes(alias.toLowerCase()));
 }
 
 function formatTemperature(value: number | string | null | undefined) {
