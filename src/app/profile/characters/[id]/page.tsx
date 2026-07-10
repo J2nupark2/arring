@@ -702,7 +702,11 @@ function ItemSummary({ item }: { item: DetailItem }) {
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <span className="min-w-0 break-words font-medium">{item.name}</span>
+          <span
+            className={`min-w-0 break-words font-medium ${item.grade ? gradeColorClass(item.grade) : ""}`}
+          >
+            {item.name}
+          </span>
           {item.level !== undefined && (
             <Badge variant="secondary" className="shrink-0">
               +{item.level}
@@ -711,7 +715,7 @@ function ItemSummary({ item }: { item: DetailItem }) {
         </div>
         <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
           {item.slot && <span>{formatCategory(item.slot)}</span>}
-          {item.grade && <span>{formatGrade(item.grade)}</span>}
+          {item.grade && <span className={gradeColorClass(item.grade)}>{formatGrade(item.grade)}</span>}
           {item.value !== undefined && <span>돌파 {item.value}</span>}
         </div>
       </div>
@@ -1156,11 +1160,22 @@ const SLOT_NAME_KO: Record<string, string> = {
 const GRADE_NAME_KO: Record<string, string> = {
   epic: "영웅",
   unique: "유일",
+  legend: "전승",
 };
 
 function formatGrade(value: string | number) {
   const grade = String(value);
   return GRADE_NAME_KO[grade.toLowerCase()] ?? grade;
+}
+
+const GRADE_COLOR_KO: Record<string, string> = {
+  영웅: "text-orange-400",
+  유일: "text-yellow-400",
+  전승: "text-sky-400",
+};
+
+function gradeColorClass(value: string | number) {
+  return GRADE_COLOR_KO[formatGrade(value)] ?? "";
 }
 
 function formatCategory(value: string | number) {
