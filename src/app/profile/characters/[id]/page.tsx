@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ShieldCheck, Sparkles, Star, Swords } from "lucide-react";
+import { Dices, Gem, Lamp, Layers, ShieldCheck, Sparkles, Star, Swords } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { LinkButton } from "@/components/link-button";
 import { Badge } from "@/components/ui/badge";
@@ -17,20 +17,102 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const EQUIPMENT_SLOTS = [
-  { key: "weapon", label: "무기", aliases: ["무기", "weapon", "mainhand"] },
-  { key: "subWeapon", label: "보조", aliases: ["보조", "방패", "sub", "shield", "subhand"] },
-  { key: "helmet", label: "투구", aliases: ["투구", "머리", "helmet", "head", "helm"] },
-  { key: "armor", label: "상의", aliases: ["상의", "갑옷", "armor", "body", "chest", "torso"] },
-  { key: "pants", label: "하의", aliases: ["하의", "pants", "legs"] },
-  { key: "gloves", label: "장갑", aliases: ["장갑", "gloves", "hand"] },
-  { key: "shoes", label: "신발", aliases: ["신발", "shoes", "boots", "foot"] },
-  { key: "necklace", label: "목걸이", aliases: ["목걸이", "necklace"] },
-  { key: "earring", label: "귀걸이", aliases: ["귀걸이", "earring"] },
-  { key: "ring", label: "반지", aliases: ["반지", "ring"] },
-  { key: "belt", label: "허리띠", aliases: ["허리", "벨트", "belt", "waist"] },
-  { key: "wing", label: "날개", aliases: ["날개", "wing"] },
+// Equipment is split into three visually separate cards (무기·방어구 /
+// 악세사리 / 아르카나). Each key here is the lowercased official
+// slotPosName, matched exactly against the normalized item's `slot`
+// field — see SLOT_NAME_KO below for display labels.
+const WEAPON_ARMOR_SLOTS = [
+  "mainhand",
+  "subhand",
+  "helmet",
+  "torso",
+  "pants",
+  "gloves",
+  "boots",
+  "shoulder",
+  "cape",
+  "wing",
 ] as const;
+
+const ACCESSORY_SLOTS = [
+  "necklace",
+  "earring1",
+  "earring2",
+  "ring1",
+  "ring2",
+  "belt",
+  "bracelet1",
+  "bracelet2",
+  "brooch1",
+  "brooch2",
+  "rune1",
+  "rune2",
+  "amulet",
+  "pendant",
+] as const;
+
+// arcana9/10 (주사위, 등불) have no acquisition path in-game yet, so no
+// character will ever have an item there — kept as upcoming placeholders
+// so the card shows all 10 card-shaped slots.
+const ARCANA_SLOTS = [
+  "arcana1",
+  "arcana2",
+  "arcana3",
+  "arcana4",
+  "arcana5",
+  "arcana6",
+  "arcana7",
+  "arcana8",
+  "arcana9",
+  "arcana10",
+] as const;
+
+const SLOT_NAME_KO: Record<string, string> = {
+  mainhand: "무기",
+  subhand: "보조",
+  helmet: "투구",
+  torso: "상의",
+  pants: "하의",
+  gloves: "장갑",
+  boots: "신발",
+  shoulder: "견갑",
+  cape: "망토",
+  wing: "날개",
+  necklace: "목걸이",
+  earring1: "귀걸이1",
+  earring2: "귀걸이2",
+  ring1: "반지1",
+  ring2: "반지2",
+  belt: "허리띠",
+  bracelet1: "팔찌1",
+  bracelet2: "팔찌2",
+  brooch1: "브로치1",
+  brooch2: "브로치2",
+  rune1: "룬1",
+  rune2: "룬2",
+  amulet: "아뮬렛",
+  pendant: "펜던트",
+  arcana1: "성배",
+  arcana2: "양피지",
+  arcana3: "나침반",
+  arcana4: "종",
+  arcana5: "거울",
+  arcana6: "천칭",
+  arcana7: "열쇠",
+  arcana8: "모래시계",
+  arcana9: "주사위",
+  arcana10: "등불",
+};
+
+const ARCANA_UPCOMING_ICON: Partial<Record<string, typeof Dices>> = {
+  arcana9: Dices,
+  arcana10: Lamp,
+};
+
+function itemsInSlots(items: DetailItem[], slotKeys: readonly string[]) {
+  const keys = new Set<string>(slotKeys);
+  return items.filter((item) => keys.has(String(item.slot ?? "").toLowerCase()));
+}
 
 export default async function CharacterDetailPage({
   params,
@@ -79,6 +161,18 @@ export default async function CharacterDetailPage({
   const equipment = normalizeList(character.equipment);
   const skills = normalizeList(describedSkills);
   const stigmas = normalizeList(describedStigmas);
+  const weaponArmorItems = itemsInSlots(equipment, WEAPON_ARMOR_SLOTS);
+  const accessoryItems = itemsInSlots(equipment, ACCESSORY_SLOTS);
+  const arcanaItems = itemsInSlots(equipment, ARCANA_SLOTS);
+  const arcanaSet = arcanaItems
+    .map((item) => asRecord(asRecord(item.detail)?.set))
+    .find((set): set is Record<string, unknown> => !!set);
+
+  const { data: priorityRows } = await supabase
+    .from("class_stat_priority")
+    .select("stat_key, tier, class_name")
+    .in("class_name", [character.class_name, "공통"].filter(Boolean));
+  const priorityMap = buildPriorityMap(priorityRows, character.class_name);
 
   return (
     <>
@@ -99,15 +193,11 @@ export default async function CharacterDetailPage({
         </div>
 
         <section className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]">
-          <EquipmentBoard
-            items={equipment}
-            characterName={character.character_name}
-            serverName={character.server_name}
-            className={character.class_name}
-            level={character.character_level}
-            combatPower={character.combat_power}
-            isPrimary={character.is_primary}
-          />
+          <div className="space-y-5">
+            <WeaponArmorCard items={weaponArmorItems} priorityMap={priorityMap} />
+            <AccessoryCard items={accessoryItems} priorityMap={priorityMap} />
+            <ArcanaCard items={arcanaItems} set={arcanaSet} priorityMap={priorityMap} />
+          </div>
           <div className="space-y-5">
             <Card className="overflow-hidden">
               <CardHeader className="border-b bg-muted/35 pb-4">
@@ -210,57 +300,99 @@ type DetailItem = {
   detail?: unknown;
 };
 
-function EquipmentBoard({
+// class_name -> stat_key -> tier (1 = highest priority). Built server-side
+// from the admin-curated class_stat_priority table (see /admin); class-
+// specific rows win over the shared '공통' fallback for the same stat_key.
+type StatPriorityMap = Map<string, number>;
+
+const TIER_DOT_COLOR: Record<number, string> = {
+  1: "bg-violet-400",
+  2: "bg-sky-400",
+  3: "bg-muted-foreground",
+  4: "bg-muted-foreground/40",
+};
+
+const TIER_LABELS: Record<number, string> = {
+  1: "1순위 (최우선)",
+  2: "2순위",
+  3: "3순위",
+  4: "4순위 (낮음)",
+};
+
+function buildPriorityMap(
+  rows: { stat_key: string; tier: number; class_name: string }[] | null,
+  className: string | null,
+): StatPriorityMap {
+  const map: StatPriorityMap = new Map();
+  for (const row of rows ?? []) {
+    if (row.class_name === "공통") map.set(row.stat_key, row.tier);
+  }
+  for (const row of rows ?? []) {
+    if (row.class_name === className) map.set(row.stat_key, row.tier);
+  }
+  return map;
+}
+
+function SlotGrid({
   items,
-  characterName,
-  serverName,
-  className,
-  level,
-  combatPower,
-  isPrimary,
+  slotKeys,
+  priorityMap,
 }: {
   items: DetailItem[];
-  characterName: string;
-  serverName?: string | null;
-  className?: string | null;
-  level?: string | number | null;
-  combatPower?: number | null;
-  isPrimary?: boolean | null;
+  slotKeys: readonly string[];
+  priorityMap: StatPriorityMap;
 }) {
   const usedIndexes = new Set<number>();
-  const slotted = EQUIPMENT_SLOTS.map((slot) => {
+  const slotted = slotKeys.map((slotKey) => {
     const index = items.findIndex(
       (item, itemIndex) =>
-        !usedIndexes.has(itemIndex) && isSlotMatch(item, slot.aliases),
+        !usedIndexes.has(itemIndex) &&
+        String(item.slot ?? "").toLowerCase() === slotKey,
     );
     if (index >= 0) {
       usedIndexes.add(index);
-      return { key: slot.key, slot: slot.label, item: items[index] };
+      return { key: slotKey, slot: SLOT_NAME_KO[slotKey] ?? slotKey, item: items[index] };
     }
-    return { key: slot.key, slot: slot.label, item: undefined };
+    return { key: slotKey, slot: SLOT_NAME_KO[slotKey] ?? slotKey, item: undefined };
   });
   const extras = items.filter((_, index) => !usedIndexes.has(index));
-  const slotMap = new Map<string, (typeof slotted)[number]>(
-    slotted.map((slot) => [slot.key, slot]),
-  );
-  const equipmentGroups = [
-    {
-      title: "무기",
-      description: "주무기와 보조 장비",
-      keys: ["weapon", "subWeapon"],
-    },
-    {
-      title: "방어구",
-      description: "투구, 상의, 하의, 장갑, 신발",
-      keys: ["helmet", "armor", "pants", "gloves", "shoes"],
-    },
-    {
-      title: "장신구",
-      description: "목걸이, 귀걸이, 반지, 허리띠, 날개",
-      keys: ["necklace", "earring", "ring", "belt", "wing"],
-    },
-  ] as const;
 
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        {slotted.map((slot) => (
+          <EquipmentSlotCard
+            key={slot.key}
+            slot={slot}
+            priorityMap={priorityMap}
+            upcomingIcon={ARCANA_UPCOMING_ICON[slot.key]}
+            compact
+          />
+        ))}
+      </div>
+      {extras.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          {extras.map((item, index) => (
+            <EquipmentSlotCard
+              key={`extra-${index}`}
+              slot={{ slot: "기타", item }}
+              priorityMap={priorityMap}
+              compact
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WeaponArmorCard({
+  items,
+  priorityMap,
+}: {
+  items: DetailItem[];
+  priorityMap: StatPriorityMap;
+}) {
   return (
     <Card className="overflow-visible">
       <CardHeader className="border-b bg-muted/30 pb-4">
@@ -268,98 +400,109 @@ function EquipmentBoard({
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Swords className="size-4" />
-              장비 정보
+              무기 · 방어구
             </CardTitle>
-            <CardDescription>
-              무기, 방어구, 장신구를 종류별로 묶어서 정리했어요.
-            </CardDescription>
+            <CardDescription>주무기, 보조, 방어구 슬롯이에요.</CardDescription>
+          </div>
+          <Badge variant="outline">{items.length}개 확인</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="p-3 sm:p-5">
+        <SlotGrid items={items} slotKeys={WEAPON_ARMOR_SLOTS} priorityMap={priorityMap} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function AccessoryCard({
+  items,
+  priorityMap,
+}: {
+  items: DetailItem[];
+  priorityMap: StatPriorityMap;
+}) {
+  return (
+    <Card className="overflow-visible">
+      <CardHeader className="border-b bg-muted/30 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Gem className="size-4" />
+            악세사리
+          </CardTitle>
+          <Badge variant="outline">{items.length}개 확인</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="p-3 sm:p-5">
+        <SlotGrid items={items} slotKeys={ACCESSORY_SLOTS} priorityMap={priorityMap} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ArcanaCard({
+  items,
+  set,
+  priorityMap,
+}: {
+  items: DetailItem[];
+  set: Record<string, unknown> | undefined;
+  priorityMap: StatPriorityMap;
+}) {
+  const bonuses = asArray(set?.bonuses);
+  return (
+    <Card className="overflow-visible">
+      <CardHeader className="border-b bg-muted/30 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Layers className="size-4" />
+              아르카나
+            </CardTitle>
+            {set?.name !== undefined && (
+              <CardDescription>
+                {formatPlainValue(set.name)} · {formatPlainValue(set.equippedCount ?? 0)}세트 장착
+              </CardDescription>
+            )}
           </div>
           <Badge variant="outline">{items.length}개 확인</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4 p-3 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 px-4 py-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-lg font-bold">{characterName}</span>
-              {isPrimary && <Badge variant="secondary">대표</Badge>}
-            </div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              {serverName || "서버 미확인"} · {className || "직업 미확인"} · Lv.{level ?? "-"}
-            </div>
+        <SlotGrid items={items} slotKeys={ARCANA_SLOTS} priorityMap={priorityMap} />
+        {bonuses.length > 0 && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {bonuses.map((bonus, index) => {
+              const record = asRecord(bonus) ?? {};
+              const descriptions = asArray(record.descriptions);
+              return (
+                <div key={index} className="rounded-md border bg-background/55 px-3 py-2">
+                  <Badge variant="outline" className="mb-1.5">
+                    {formatPlainValue(record.degree)}세트 효과
+                  </Badge>
+                  {descriptions.map((desc, descIndex) => (
+                    <p key={descIndex} className="text-sm text-muted-foreground">
+                      {formatPlainValue(desc)}
+                    </p>
+                  ))}
+                </div>
+              );
+            })}
           </div>
-          <div className="rounded-md border bg-background px-3 py-2 text-right">
-            <div className="text-[11px] font-medium text-muted-foreground">전투력</div>
-            <div className="font-mono text-2xl font-bold text-primary">
-              {formatCombatPower(combatPower)}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-3 xl:grid-cols-[0.82fr_1.18fr_1fr]">
-          {equipmentGroups.map((group) => (
-            <EquipmentGroup
-              key={group.title}
-              title={group.title}
-              description={group.description}
-              slots={group.keys.map((key) => slotMap.get(key)).filter((slot): slot is NonNullable<typeof slot> => Boolean(slot))}
-            />
-          ))}
-        </div>
-
-        {extras.length > 0 && (
-          <EquipmentGroup
-            title="기타 장비"
-            description="슬롯 정보가 명확하지 않은 장비"
-            slots={extras.map((item, index) => ({ key: `extra-${index}`, slot: "기타", item }))}
-          />
-        )}
-
-        {items.length === 0 && (
-          <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
-            공식 정보실 응답에 장비 목록이 없어서 슬롯 자리만 먼저 표시하고 있어요. 다음 동기화에서 장비 데이터가 들어오면 자동으로 채워져요.
-          </p>
         )}
       </CardContent>
     </Card>
   );
 }
 
-function EquipmentGroup({
-  title,
-  description,
-  slots,
-}: {
-  title: string;
-  description: string;
-  slots: Array<{ key: string; slot: string; item?: DetailItem }>;
-}) {
-  const equippedCount = slots.filter((slot) => slot.item).length;
-
-  return (
-    <section className="rounded-md border bg-background/55 p-3">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-        </div>
-        <Badge variant="secondary" className="shrink-0">
-          {equippedCount}/{slots.length}
-        </Badge>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-        {slots.map((slot) => (
-          <EquipmentSlotCard key={slot.key} slot={slot} compact />
-        ))}
-      </div>
-    </section>
-  );
-}
 function EquipmentSlotCard({
   slot,
+  priorityMap,
+  upcomingIcon: UpcomingIcon,
   compact = false,
 }: {
   slot?: { slot: string; item?: DetailItem };
+  priorityMap?: StatPriorityMap;
+  upcomingIcon?: typeof Dices;
   compact?: boolean;
 }) {
   const gradeColor = slot?.item ? getEquipmentGradeColor(slot.item) : undefined;
@@ -383,7 +526,12 @@ function EquipmentSlotCard({
         )}
       </div>
       {slot?.item ? (
-        <ItemSummary item={slot.item} compact={compact} />
+        <ItemSummary item={slot.item} compact={compact} priorityMap={priorityMap} />
+      ) : UpcomingIcon ? (
+        <div className="flex min-h-10 items-center justify-center gap-1.5 rounded border border-dashed text-xs text-muted-foreground">
+          <UpcomingIcon className="size-3.5" />
+          출시 예정
+        </div>
       ) : (
         <div className="flex min-h-10 items-center justify-center rounded border border-dashed text-xs text-muted-foreground">
           정보 없음
@@ -614,9 +762,11 @@ function isStigmaSkill(item: DetailItem) {
 function ItemSummary({
   item,
   compact = false,
+  priorityMap,
 }: {
   item: DetailItem;
   compact?: boolean;
+  priorityMap?: StatPriorityMap;
 }) {
   const hasTooltip = hasSkillTooltip(item);
   const hasEquipmentTooltip = hasEquipmentDetailTooltip(item);
@@ -625,34 +775,47 @@ function ItemSummary({
   return (
     <div className="group relative z-0 flex min-w-0 gap-2 hover:z-50">
       {item.icon && (
-        // Official AION2 item and skill icons are small CDN assets.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={item.icon}
-          alt=""
-          className={(compact ? "size-8" : "size-9") + " shrink-0 rounded-md border bg-muted object-cover"}
-          style={{ borderColor: `${gradeColor}88` }}
-        />
+        <div className="relative shrink-0">
+          {/* Official AION2 item and skill icons are small CDN assets. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={item.icon}
+            alt=""
+            className={(compact ? "size-8" : "size-9") + " rounded-md border bg-muted object-cover"}
+            style={{ borderColor: `${gradeColor}88` }}
+          />
+          {Number(item.value) > 0 && (
+            <span
+              className="absolute -top-1 -left-1 flex size-4 items-center justify-center rounded-full bg-violet-500 font-mono text-[9px] font-bold leading-none text-white ring-1 ring-background"
+              title={`돌파 ${item.value}`}
+            >
+              {item.value}
+            </span>
+          )}
+        </div>
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <span className={(compact ? "text-sm " : "") + "min-w-0 break-words font-medium"}>{item.name}</span>
           {item.level !== undefined && (
             <Badge variant="secondary" className="shrink-0">
-              Lv.{item.level}
+              +{item.level}
             </Badge>
           )}
         </div>
         <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
           {item.slot && <span>{item.slot}</span>}
           {item.grade && <span>{formatGradeName(item.grade)}</span>}
-          {item.value !== undefined && <span>초월 {item.value}</span>}
+          {Number(item.value) > 0 && (
+            <span className="font-medium text-violet-400">돌파 {item.value}</span>
+          )}
         </div>
         <ItemStatPreview item={item} />
         <ItemOptionPreview item={item} />
+        <ExceedBonusPreview item={item} />
       </div>
       {hasTooltip && <SkillTooltip item={item} />}
-      {hasEquipmentTooltip && <EquipmentTooltip item={item} />}
+      {hasEquipmentTooltip && <EquipmentTooltip item={item} priorityMap={priorityMap} />}
     </div>
   );
 }
@@ -798,6 +961,9 @@ function getOptionAccentColor(title: string, record: Record<string, unknown>) {
   if (title === "마석" || title === "신석") {
     return getOptionGradeColor(record.grade);
   }
+  if (title === "돌파 보너스") {
+    return "#a78bfa";
+  }
   return undefined;
 }
 
@@ -806,6 +972,7 @@ function getGradeKey(grade: unknown) {
   if (value.includes("epic") || value.includes("영웅")) return "epic";
   if (value.includes("unique") || value.includes("유일")) return "unique";
   if (value.includes("legend") || value.includes("전승")) return "legend";
+  if (value.includes("special") || value.includes("스페셜")) return "special";
   if (value.includes("rare") || value.includes("희귀")) return "rare";
   if (value.includes("common") || value.includes("normal") || value.includes("일반")) return "common";
   return "";
@@ -816,6 +983,7 @@ function formatGradeName(grade: unknown) {
   if (key === "epic") return "영웅";
   if (key === "unique") return "유일";
   if (key === "legend") return "전승";
+  if (key === "special") return "스페셜";
   if (key === "rare") return "희귀";
   if (key === "common") return "일반";
   return formatPlainValue(grade);
@@ -826,6 +994,7 @@ function getOptionGradeColor(grade: unknown) {
   if (key === "epic") return "#FF6B35";
   if (key === "unique") return "#FFD700";
   if (key === "legend") return "#4a90e2";
+  if (key === "special") return "#34d399";
   if (key === "rare") return "#4caf50";
   if (key === "common") return "#a0a0a0";
   return undefined;
@@ -940,7 +1109,13 @@ function ItemOptionPreview({ item }: { item: DetailItem }) {
     </div>
   );
 }
-function EquipmentTooltip({ item }: { item: DetailItem }) {
+function EquipmentTooltip({
+  item,
+  priorityMap,
+}: {
+  item: DetailItem;
+  priorityMap?: StatPriorityMap;
+}) {
   const detail = asRecord(item.detail);
   if (!detail) return null;
 
@@ -973,7 +1148,8 @@ function EquipmentTooltip({ item }: { item: DetailItem }) {
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <OptionSection title="주 능력치" items={mainStats} />
-        <OptionSection title="영혼각인 옵션" items={subStats} />
+        <OptionSection title="돌파 보너스" items={exceedBonusStats(item)} />
+        <OptionSection title="영혼각인 옵션" items={subStats} priorityMap={priorityMap} />
         <OptionSection title="마석" items={magicStones} icon />
         <OptionSection title="신석" items={godStones} icon description />
         <OptionSection title="장비 스킬" items={subSkills} icon level />
@@ -988,12 +1164,14 @@ function OptionSection({
   icon = false,
   description = false,
   level = false,
+  priorityMap,
 }: {
   title: string;
   items: unknown[];
   icon?: boolean;
   description?: boolean;
   level?: boolean;
+  priorityMap?: StatPriorityMap;
 }) {
   if (items.length === 0) return null;
   return (
@@ -1005,6 +1183,10 @@ function OptionSection({
           const name = formatPlainValue(record.name ?? record.id ?? "-");
           const value = record.value !== undefined ? formatPlainValue(record.value) : "";
           const accentColor = getOptionAccentColor(title, record);
+          const tier =
+            title === "영혼각인 옵션" && typeof record.id === "string"
+              ? priorityMap?.get(record.id)
+              : undefined;
           return (
             <div
               key={`${title}-${index}`}
@@ -1028,7 +1210,15 @@ function OptionSection({
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="min-w-0 truncate" style={accentColor && title === "영혼각인 옵션" ? { color: accentColor } : undefined}>{name}</span>
+                  <span className="flex min-w-0 items-center gap-1 truncate" style={accentColor && title === "영혼각인 옵션" ? { color: accentColor } : undefined}>
+                    {tier !== undefined && (
+                      <span
+                        className={`size-1.5 shrink-0 rounded-full ${TIER_DOT_COLOR[tier] ?? ""}`}
+                        title={TIER_LABELS[tier]}
+                      />
+                    )}
+                    {name}
+                  </span>
                   {record.grade !== undefined && title !== "영혼각인 옵션" && (
                     <span className="shrink-0 text-[10px] font-medium" style={{ color: accentColor }}>
                       {formatGradeName(record.grade)}
@@ -1058,6 +1248,87 @@ function ItemStatPreview({ item }: { item: DetailItem }) {
     <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
       {lines.map((line) => (
         <div key={line} className="truncate">{line}</div>
+      ))}
+    </div>
+  );
+}
+
+// Per-breakthrough (돌파) stat bonus, by slot category. Not exposed by any
+// API — reverse-engineered from real in-game tooltips: weapon 돌파5 gave
+// +150/+5% (30/1% per level), armor 돌파2 gave +160/+160/+2%/+2% (80/1%
+// per level per stat), accessories (목걸이/귀걸이/반지/팔찌/허리띠) gave
+// +100/+200/+5% (20 atk / 40 def / 1% atk per level), and a brooch 돌파5
+// gave +100/+200/피해증폭+5% (same 20/40 flat rate, but the percent line
+// is 피해 증폭 instead of 공격력 증가). Rune/amulet/pendant aren't
+// confirmed against a real tooltip yet, so they show no bonus rather
+// than a guessed number.
+const EXCEED_WEAPON_SLOTS = new Set(["mainhand", "subhand"]);
+const EXCEED_ARMOR_SLOTS = new Set([
+  "helmet",
+  "torso",
+  "pants",
+  "gloves",
+  "boots",
+  "shoulder",
+  "cape",
+]);
+const EXCEED_ACCESSORY_PERCENT_SLOTS = new Set([
+  "necklace",
+  "earring1",
+  "earring2",
+  "ring1",
+  "ring2",
+  "belt",
+]);
+const EXCEED_BROOCH_SLOTS = new Set(["brooch1", "brooch2"]);
+
+type ExceedStat = { name: string; value: string | number };
+
+function exceedBonusStats(item: DetailItem): ExceedStat[] {
+  const level = Number(item.value) || 0;
+  const slot = String(item.slot ?? "").toLowerCase();
+  if (level <= 0) return [];
+
+  if (EXCEED_WEAPON_SLOTS.has(slot)) {
+    return [
+      { name: "공격력", value: `+${level * 30}` },
+      { name: "공격력 증가", value: `+${level}%` },
+    ];
+  }
+  if (EXCEED_ARMOR_SLOTS.has(slot)) {
+    return [
+      { name: "방어력", value: `+${level * 80}` },
+      { name: "생명력", value: `+${level * 80}` },
+      { name: "방어력 증가", value: `+${level}%` },
+      { name: "생명력 증가", value: `+${level}%` },
+    ];
+  }
+  if (EXCEED_ACCESSORY_PERCENT_SLOTS.has(slot)) {
+    return [
+      { name: "공격력", value: `+${level * 20}` },
+      { name: "방어력", value: `+${level * 40}` },
+      { name: "공격력 증가", value: `+${level}%` },
+    ];
+  }
+  if (EXCEED_BROOCH_SLOTS.has(slot)) {
+    return [
+      { name: "공격력", value: `+${level * 20}` },
+      { name: "방어력", value: `+${level * 40}` },
+      { name: "피해 증폭", value: `+${level}%` },
+    ];
+  }
+  return [];
+}
+
+function ExceedBonusPreview({ item }: { item: DetailItem }) {
+  const stats = exceedBonusStats(item);
+  if (stats.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] font-semibold text-violet-400">
+      {stats.map((stat, index) => (
+        <span key={`${stat.name}-${index}`}>
+          {stat.name} {stat.value}
+        </span>
       ))}
     </div>
   );
@@ -1168,11 +1439,6 @@ function pickString(record: Record<string, unknown>, keys: string[]) {
 function asRecord(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   return value as Record<string, unknown>;
-}
-
-function isSlotMatch(item: DetailItem, aliases: readonly string[]) {
-  const text = `${item.slot ?? ""} ${item.name}`.toLowerCase();
-  return aliases.some((alias) => text.includes(alias.toLowerCase()));
 }
 
 function formatScore(value: number | string | null | undefined) {

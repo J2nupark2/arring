@@ -513,6 +513,7 @@ function getGradeKey(grade: unknown) {
   if (value.includes("epic") || value.includes("영웅")) return "epic";
   if (value.includes("unique") || value.includes("유일")) return "unique";
   if (value.includes("legend") || value.includes("전승")) return "legend";
+  if (value.includes("special") || value.includes("스페셜")) return "special";
   if (value.includes("rare") || value.includes("희귀")) return "rare";
   if (value.includes("common") || value.includes("normal") || value.includes("일반")) return "common";
   return "";
@@ -523,6 +524,7 @@ function formatGradeName(grade: unknown) {
   if (key === "epic") return "영웅";
   if (key === "unique") return "유일";
   if (key === "legend") return "전승";
+  if (key === "special") return "스페셜";
   if (key === "rare") return "희귀";
   if (key === "common") return "일반";
   return grade;
@@ -533,6 +535,7 @@ function getEquipmentGradeColor(grade: string) {
   if (key === "epic") return "#FF6B35";
   if (key === "unique") return "#FFD700";
   if (key === "legend") return "#4a90e2";
+  if (key === "special") return "#34d399";
   if (key === "rare") return "#4caf50";
   return "#a0a0a0";
 }
