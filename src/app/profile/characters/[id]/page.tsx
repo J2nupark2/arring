@@ -580,7 +580,7 @@ function TitleCard({ titles }: { titles: TitleEntry[] }) {
             <div key={`${title.name}-${index}`} className="rounded-md border px-3 py-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-medium">{title.name}</span>
-                {title.grade && <Badge variant="secondary">{title.grade}</Badge>}
+                {title.grade && <Badge variant="secondary">{formatGrade(title.grade)}</Badge>}
               </div>
               {title.totalCount !== undefined && (
                 <div className="mt-1 text-xs text-muted-foreground">
@@ -711,8 +711,8 @@ function ItemSummary({ item }: { item: DetailItem }) {
         </div>
         <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
           {item.slot && <span>{formatCategory(item.slot)}</span>}
-          {item.grade && <span>{item.grade}</span>}
-          {item.value !== undefined && <span>초월 {item.value}</span>}
+          {item.grade && <span>{formatGrade(item.grade)}</span>}
+          {item.value !== undefined && <span>돌파 {item.value}</span>}
         </div>
       </div>
       {hasTooltip && <SkillTooltip item={item} />}
@@ -892,7 +892,7 @@ function normalizeList(value: unknown): DetailItem[] {
     items.push({
       name: String(name),
       level: pickText(source, ["enchantLevel", "level", "skillLevel", "gradeLevel"]),
-      grade: pickText(source, ["grade", "rarity", "tier", "rank"]),
+      grade: pickText(source, ["gradeName", "grade", "rarity", "tier", "rank"]),
       icon: pickString(source, ["icon", "iconUrl", "image", "imageUrl"]),
       description: pickString(source, [
         "desc",
@@ -1152,6 +1152,16 @@ const SLOT_NAME_KO: Record<string, string> = {
   arcana7: "아르카나7",
   arcana8: "아르카나8",
 };
+
+const GRADE_NAME_KO: Record<string, string> = {
+  epic: "영웅",
+  unique: "유일",
+};
+
+function formatGrade(value: string | number) {
+  const grade = String(value);
+  return GRADE_NAME_KO[grade.toLowerCase()] ?? grade;
+}
 
 function formatCategory(value: string | number) {
   const category = String(value);
