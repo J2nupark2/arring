@@ -159,6 +159,15 @@ export async function fetchCharacterInfo(
     serverId,
   );
 
+  // Wings live under `petwing.wing` in this response, not in
+  // equipment.equipmentList, so they're appended separately. There's no
+  // known slotPos for the per-item detail endpoint here, so we show it
+  // with its base fields only (no soul/stone engraving breakdown).
+  const wing = equipmentData?.petwing?.wing;
+  if (wing?.id && wing?.name) {
+    enrichedEquipment.push({ ...wing, slotPosName: "Wing" });
+  }
+
   return {
     ...infoData.profile,
     equipment: enrichedEquipment,
@@ -176,6 +185,15 @@ type Aion2EquipmentResponse = {
   };
   skill?: {
     skillList?: unknown[];
+  };
+  petwing?: {
+    wing?: {
+      id?: number;
+      name?: string;
+      enchantLevel?: number;
+      grade?: string;
+      icon?: string;
+    };
   };
 };
 

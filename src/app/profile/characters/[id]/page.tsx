@@ -716,7 +716,9 @@ function ItemSummary({ item }: { item: DetailItem }) {
         <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
           {item.slot && <span>{formatCategory(item.slot)}</span>}
           {item.grade && <span className={gradeColorClass(item.grade)}>{formatGrade(item.grade)}</span>}
-          {item.value !== undefined && <span>돌파 {item.value}</span>}
+          {Number(item.value) > 0 && (
+            <span className="font-medium text-violet-400">돌파 {item.value}</span>
+          )}
         </div>
       </div>
       {hasTooltip && <SkillTooltip item={item} />}
@@ -1161,6 +1163,7 @@ const GRADE_NAME_KO: Record<string, string> = {
   epic: "영웅",
   unique: "유일",
   legend: "전승",
+  special: "스페셜",
 };
 
 function formatGrade(value: string | number) {
@@ -1172,6 +1175,7 @@ const GRADE_COLOR_KO: Record<string, string> = {
   영웅: "text-orange-400",
   유일: "text-yellow-400",
   전승: "text-sky-400",
+  스페셜: "text-emerald-400",
 };
 
 function gradeColorClass(value: string | number) {
