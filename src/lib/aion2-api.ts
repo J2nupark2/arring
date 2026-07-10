@@ -28,6 +28,48 @@ export type Aion2SearchResult = {
   serverName: string;
 };
 
+export type Aion2CharacterDetailData = {
+  profile: Record<string, unknown>;
+  stats: unknown[];
+  titles: Record<string, unknown>;
+  rankings: unknown[];
+  equipment: {
+    all: unknown[];
+    weapons: unknown[];
+    armors: unknown[];
+    accessories: unknown[];
+    runes: unknown[];
+    arcana: unknown[];
+    details: unknown[];
+  };
+  skins: unknown[];
+  petwing: {
+    pet: unknown | null;
+    wing: unknown | null;
+    wingSkin: unknown | null;
+  };
+  skills: {
+    active: unknown[];
+    passive: unknown[];
+    dp: unknown[];
+    equipped: unknown[];
+  };
+  daevanion: {
+    boards: unknown[];
+    details: unknown[];
+  };
+  summary: {
+    combatPower: number;
+    itemLevel: number;
+    className: string;
+    characterLevel: number;
+    equipmentCount: number;
+    skillCount: number;
+    equippedSkillCount: number;
+    daevanionOpenAverage: number;
+  };
+};
+
 export type Aion2CharacterProfile = {
   characterId: string;
   characterName: string;
@@ -39,6 +81,7 @@ export type Aion2CharacterProfile = {
   equipment: unknown[];
   skills: unknown[];
   stigmas: unknown[];
+  detailData: Aion2CharacterDetailData;
 };
 
 type SkillDescription = {
@@ -105,7 +148,7 @@ export async function fetchCharacterInfo(
   serverId: number,
 ): Promise<Aion2CharacterProfile> {
   const infoParams = new URLSearchParams({
-    lang: "ko-kr",
+    lang: "ko",
     characterId,
     serverId: String(serverId),
   });
@@ -117,38 +160,318 @@ export async function fetchCharacterInfo(
   });
 
   const [infoData, equipmentData] = await Promise.all([
-    plaync<{
-      profile: Omit<Aion2CharacterProfile, "equipment" | "skills" | "stigmas">;
-    }>(`/api/character/info?${infoParams}`, 60),
+    plaync<Aion2InfoResponse>(`/api/character/info?${infoParams}`, 300),
     plaync<Aion2EquipmentResponse>(
       `/api/character/equipment?${equipmentParams}`,
-      60,
+      300,
     ).catch(() => null),
   ]);
 
+  const equipmentList = asArray(equipmentData?.equipment?.equipmentList);
+  const equipmentDetails = await fetchEquipmentDetails(
+    equipmentList,
+    characterId,
+    serverId,
+  );
+  const equipmentWithDetails = mergeEquipmentDetails(
+    equipmentList,
+    equipmentDetails,
+  );
+
+  const rawSkillList = asArray(equipmentData?.skill?.skillList);
   const skillList = await enrichAion2SkillsWithDescriptions(
-    equipmentData?.skill?.skillList ?? [],
+    rawSkillList,
     infoData.profile.className,
     infoData.profile.serverId,
     infoData.profile.characterName,
-  ).catch(() => equipmentData?.skill?.skillList ?? []);
+  ).catch(() => rawSkillList);
+
+  const daevanionBoards = asArray(infoData.daevanion?.boardList);
+  const daevanionDetails = await fetchDaevanionDetails(
+    daevanionBoards,
+    characterId,
+    serverId,
+  );
+
+  const detailData = buildCharacterDetailData({
+    infoData,
+    equipmentData,
+    equipment: equipmentWithDetails,
+    equipmentDetails,
+    skills: skillList,
+    daevanionDetails,
+  });
 
   return {
     ...infoData.profile,
-    equipment: equipmentData?.equipment?.equipmentList ?? [],
+    equipment: equipmentWithDetails,
     skills: skillList.filter((skill) => !isStigmaSkill(skill)),
     stigmas: skillList.filter(isStigmaSkill),
+    detailData,
   };
 }
+
+type Aion2InfoResponse = {
+  profile: Omit<Aion2CharacterProfile, "equipment" | "skills" | "stigmas" | "detailData">;
+  stat?: {
+    statList?: unknown[];
+  };
+  title?: Record<string, unknown>;
+  ranking?: {
+    rankingList?: unknown[];
+  };
+  daevanion?: {
+    boardList?: unknown[];
+  };
+};
 
 type Aion2EquipmentResponse = {
   equipment?: {
     equipmentList?: unknown[];
+    skinList?: unknown[];
+  };
+  petwing?: {
+    pet?: unknown;
+    wing?: unknown;
+    wingSkin?: unknown;
   };
   skill?: {
     skillList?: unknown[];
   };
 };
+
+type EquipmentDetailResult = {
+  slotPos?: unknown;
+  slotPosName?: unknown;
+  id?: unknown;
+  data?: unknown;
+  error?: string;
+};
+
+async function fetchEquipmentDetails(
+  equipment: unknown[],
+  characterId: string,
+  serverId: number,
+) {
+  return mapLimit(equipment, 4, async (item): Promise<EquipmentDetailResult> => {
+    const record = asRecord(item);
+    const id = record?.id;
+    const slotPos = record?.slotPos;
+    const enchantLevel = record?.enchantLevel ?? 0;
+    if (id === undefined || slotPos === undefined) {
+      return {
+        id,
+        slotPos,
+        slotPosName: record?.slotPosName,
+        error: "missing equipment id or slotPos",
+      };
+    }
+
+    const params = new URLSearchParams({
+      lang: "ko",
+      id: String(id),
+      enchantLevel: String(enchantLevel),
+      characterId,
+      serverId: String(serverId),
+      slotPos: String(slotPos),
+    });
+
+    try {
+      const data = await plaync<unknown>(
+        `/api/character/equipment/item?${params}`,
+        300,
+      );
+      return { id, slotPos, slotPosName: record?.slotPosName, data };
+    } catch (error) {
+      return {
+        id,
+        slotPos,
+        slotPosName: record?.slotPosName,
+        error: error instanceof Error ? error.message : "equipment detail failed",
+      };
+    }
+  });
+}
+
+async function fetchDaevanionDetails(
+  boards: unknown[],
+  characterId: string,
+  serverId: number,
+) {
+  return mapLimit(boards, 4, async (board) => {
+    const record = asRecord(board);
+    const boardId = record?.id;
+    if (boardId === undefined) return { boardId, error: "missing board id" };
+
+    const params = new URLSearchParams({
+      lang: "ko",
+      characterId,
+      serverId: String(serverId),
+      boardId: String(boardId),
+    });
+
+    try {
+      const data = await plaync<unknown>(
+        `/api/character/daevanion/detail?${params}`,
+        300,
+      );
+      return { boardId, data };
+    } catch (error) {
+      return {
+        boardId,
+        error: error instanceof Error ? error.message : "daevanion detail failed",
+      };
+    }
+  });
+}
+
+function mergeEquipmentDetails(
+  equipment: unknown[],
+  details: EquipmentDetailResult[],
+) {
+  const bySlot = new Map(details.map((detail) => [String(detail.slotPos), detail]));
+  return equipment.map((item) => {
+    const record = asRecord(item);
+    if (!record) return item;
+    const detail = bySlot.get(String(record.slotPos));
+    return detail?.data ? { ...record, detail: detail.data } : record;
+  });
+}
+
+function buildCharacterDetailData({
+  infoData,
+  equipmentData,
+  equipment,
+  equipmentDetails,
+  skills,
+  daevanionDetails,
+}: {
+  infoData: Aion2InfoResponse;
+  equipmentData: Aion2EquipmentResponse | null;
+  equipment: unknown[];
+  equipmentDetails: EquipmentDetailResult[];
+  skills: unknown[];
+  daevanionDetails: unknown[];
+}): Aion2CharacterDetailData {
+  const statList = asArray(infoData.stat?.statList);
+  const boardList = asArray(infoData.daevanion?.boardList);
+  const classifiedEquipment = classifyEquipment(equipment);
+  const classifiedSkills = classifySkills(skills);
+
+  return {
+    profile: infoData.profile,
+    stats: statList,
+    titles: infoData.title ?? {},
+    rankings: asArray(infoData.ranking?.rankingList),
+    equipment: {
+      all: equipment,
+      ...classifiedEquipment,
+      details: equipmentDetails,
+    },
+    skins: asArray(equipmentData?.equipment?.skinList),
+    petwing: {
+      pet: equipmentData?.petwing?.pet ?? null,
+      wing: equipmentData?.petwing?.wing ?? null,
+      wingSkin: equipmentData?.petwing?.wingSkin ?? null,
+    },
+    skills: classifiedSkills,
+    daevanion: {
+      boards: boardList,
+      details: daevanionDetails,
+    },
+    summary: {
+      combatPower: Number(infoData.profile.combatPower ?? 0),
+      itemLevel: Number(findStatValue(statList, "ItemLevel") ?? 0),
+      className: String(infoData.profile.className ?? ""),
+      characterLevel: Number(infoData.profile.characterLevel ?? 0),
+      equipmentCount: equipment.length,
+      skillCount: skills.length,
+      equippedSkillCount: classifiedSkills.equipped.length,
+      daevanionOpenAverage: averageOpenPercent(boardList),
+    },
+  };
+}
+
+function classifyEquipment(equipment: unknown[]) {
+  const weapons: unknown[] = [];
+  const armors: unknown[] = [];
+  const accessories: unknown[] = [];
+  const runes: unknown[] = [];
+  const arcana: unknown[] = [];
+
+  for (const item of equipment) {
+    const slot = String(asRecord(item)?.slotPosName ?? "");
+    if (["MainHand", "SubHand"].includes(slot)) weapons.push(item);
+    else if (["Helmet", "Shoulder", "Torso", "Pants", "Gloves", "Boots", "Cape"].includes(slot)) armors.push(item);
+    else if (slot.startsWith("Rune")) runes.push(item);
+    else if (slot.startsWith("Arcana")) arcana.push(item);
+    else accessories.push(item);
+  }
+
+  return { weapons, armors, accessories, runes, arcana };
+}
+
+function classifySkills(skills: unknown[]) {
+  const active: unknown[] = [];
+  const passive: unknown[] = [];
+  const dp: unknown[] = [];
+  const equipped: unknown[] = [];
+
+  for (const skill of skills) {
+    const record = asRecord(skill);
+    const category = String(record?.category ?? record?.type ?? "").toLowerCase();
+    if (category === "passive") passive.push(skill);
+    else if (category === "dp" || category.includes("stigma")) dp.push(skill);
+    else active.push(skill);
+    if (Number(record?.equip ?? record?.equipped ?? 0) === 1) equipped.push(skill);
+  }
+
+  return { active, passive, dp, equipped };
+}
+
+function findStatValue(stats: unknown[], type: string) {
+  const found = stats.find((stat) => String(asRecord(stat)?.type ?? "") === type);
+  return asRecord(found)?.value;
+}
+
+function averageOpenPercent(boards: unknown[]) {
+  const values = boards
+    .map((board) => Number(asRecord(board)?.openPercent))
+    .filter((value) => Number.isFinite(value));
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
+  return results;
+}
 
 function isStigmaSkill(skill: unknown) {
   if (!skill || typeof skill !== "object") return false;

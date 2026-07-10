@@ -115,6 +115,7 @@ export async function POST(request: NextRequest) {
         equipment: pickList(rawProfile, ["equipment", "equipments", "items", "itemList"]),
         skills: pickList(rawProfile, ["skills", "skillList"]),
         stigmas: pickList(rawProfile, ["stigmas", "stigmaList"]),
+        detail_data: profile.detailData,
         is_primary: isPrimary,
         synced_at: new Date().toISOString(),
       } as unknown as never,

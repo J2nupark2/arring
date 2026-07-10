@@ -50,7 +50,7 @@ export default async function CharacterDetailPage({
   const { data: character } = await supabase
     .from("aion2_characters")
     .select(
-      "id, user_id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, equipment, skills, stigmas, is_primary, synced_at, created_at",
+      "id, user_id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, equipment, skills, stigmas, detail_data, is_primary, synced_at, created_at",
     )
     .eq("id", id)
     .single();
@@ -75,6 +75,7 @@ export default async function CharacterDetailPage({
   const describedSkills = describedSkillList.slice(0, rawSkillCount);
   const describedStigmas = describedSkillList.slice(rawSkillCount);
 
+  const detailData = asRecord(character.detail_data);
   const equipment = normalizeList(character.equipment);
   const skills = normalizeList(describedSkills);
   const stigmas = normalizeList(describedStigmas);
@@ -149,7 +150,14 @@ export default async function CharacterDetailPage({
             </Card>
 
             <SkillBoard skills={skills} stigmas={stigmas} />
+            <CharacterStatsCard detailData={detailData} />
+            <CompanionCard detailData={detailData} />
           </div>
+        </section>
+
+        <section className="grid gap-5 lg:grid-cols-2">
+          <RankingCard detailData={detailData} />
+          <DaevanionCard detailData={detailData} />
         </section>
 
         <p className="text-sm text-muted-foreground">
@@ -199,6 +207,7 @@ type DetailItem = {
   acquired?: string | number;
   equipped?: string | number;
   requiredLevel?: string | number;
+  detail?: unknown;
 };
 
 function EquipmentBoard({
@@ -379,6 +388,107 @@ function SpecPill({ label, value }: { label: string; value: string }) {
   );
 }
 
+function CharacterStatsCard({ detailData }: { detailData?: Record<string, unknown> }) {
+  const stats = asArray(detailData?.stats).slice(0, 10);
+  const summary = asRecord(detailData?.summary);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{"\uc2a4\ud0ef \uc694\uc57d"}</CardTitle>
+        <CardDescription>{"\uacf5\uc2dd \uc815\ubcf4\uc2e4\uc758 \uc8fc\uc694 \ub2a5\ub825\uce58\ub97c \uc815\ub9ac\ud588\uc5b4\uc694."}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <SpecPill label="Item Lv" value={formatPlainValue(summary?.itemLevel ?? "-")} />
+          <SpecPill label="Skills" value={formatPlainValue(summary?.skillCount ?? "-")} />
+          <SpecPill label="Equipped" value={formatPlainValue(summary?.equippedSkillCount ?? "-")} />
+          <SpecPill label="Daeva" value={formatPercent(summary?.daevanionOpenAverage)} />
+        </div>
+        {stats.length > 0 ? (
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            {stats.map((stat, index) => (
+              <InfoRow key={index} item={stat} />
+            ))}
+          </div>
+        ) : (
+          <EmptyText>{"\uc2a4\ud0ef \uc815\ubcf4\uac00 \uc544\uc9c1 \uc5c6\uc5b4\uc694."}</EmptyText>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CompanionCard({ detailData }: { detailData?: Record<string, unknown> }) {
+  const petwing = asRecord(detailData?.petwing);
+  const entries = [
+    { label: "Pet", item: asRecord(petwing?.pet) },
+    { label: "Wing", item: asRecord(petwing?.wing) },
+    { label: "Skin", item: asRecord(petwing?.wingSkin) },
+  ].filter((entry) => entry.item);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{"\ud3ab / \ub0a0\uac1c"}</CardTitle>
+        <CardDescription>{"\uc7a5\ucc29 \uc911\uc778 \ub3d9\ub8cc\uc640 \ub0a0\uac1c \uc815\ubcf4\uc785\ub2c8\ub2e4."}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {entries.length > 0 ? entries.map((entry) => (
+          <IconInfoRow key={entry.label} label={entry.label} item={entry.item!} />
+        )) : <EmptyText>{"\ud3ab/\ub0a0\uac1c \uc815\ubcf4\uac00 \uc544\uc9c1 \uc5c6\uc5b4\uc694."}</EmptyText>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RankingCard({ detailData }: { detailData?: Record<string, unknown> }) {
+  const rankings = asArray(detailData?.rankings).slice(0, 6);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{"\ub7ad\ud0b9"}</CardTitle>
+        <CardDescription>{"\uacf5\uc2dd \uc815\ubcf4\uc2e4\uc5d0\uc11c \ud655\uc778\ub41c \ucf58\ud150\uce20\ubcc4 \ub7ad\ud0b9\uc785\ub2c8\ub2e4."}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {rankings.length > 0 ? rankings.map((ranking, index) => (
+          <InfoRow key={index} item={ranking} primaryKeys={["rankingContentsName", "rankingContentsType"]} valueKeys={["rank", "point", "gradeName"]} />
+        )) : <EmptyText>{"\ub7ad\ud0b9 \uc815\ubcf4\uac00 \uc544\uc9c1 \uc5c6\uc5b4\uc694."}</EmptyText>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DaevanionCard({ detailData }: { detailData?: Record<string, unknown> }) {
+  const boards = asArray(asRecord(detailData?.daevanion)?.boards);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{"\ub370\ubc14\ub2c8\uc628"}</CardTitle>
+        <CardDescription>{"\ubcf4\ub4dc\ubcc4 \uac1c\ubc29 \uc9c4\ud589\ub3c4\ub97c \ubcf4\uc5ec\uc90d\ub2c8\ub2e4."}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {boards.length > 0 ? boards.map((board, index) => {
+          const record = asRecord(board) ?? {};
+          return (
+            <div key={index} className="rounded-md border bg-muted/20 px-3 py-2">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate font-medium">{formatPlainValue(record.name ?? record.id ?? "Board")}</span>
+                <Badge variant="outline">{formatPercent(record.openPercent)}</Badge>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-primary" style={{ width: formatCssPercent(record.openPercent) }} />
+              </div>
+            </div>
+          );
+        }) : <EmptyText>{"\ub370\ubc14\ub2c8\uc628 \uc815\ubcf4\uac00 \uc544\uc9c1 \uc5c6\uc5b4\uc694."}</EmptyText>}
+      </CardContent>
+    </Card>
+  );
+}
+
 function SkillBoard({
   skills,
   stigmas,
@@ -513,6 +623,7 @@ function ItemSummary({
           {item.grade && <span>{item.grade}</span>}
           {item.value !== undefined && <span>초월 {item.value}</span>}
         </div>
+        <ItemStatPreview item={item} />
       </div>
       {hasTooltip && <SkillTooltip item={item} />}
     </div>
@@ -631,6 +742,7 @@ function normalizeList(value: unknown): DetailItem[] {
       acquired: pickText(source, ["acquired"]),
       equipped: pickText(source, ["equip", "equipped"]),
       requiredLevel: pickText(source, ["needLevel", "requiredLevel"]),
+      detail: record.detail ?? source.detail,
       slot: pickText(source, [
         "slot",
         "part",
@@ -650,6 +762,103 @@ function normalizeList(value: unknown): DetailItem[] {
   }
 
   return items;
+}
+
+function ItemStatPreview({ item }: { item: DetailItem }) {
+  const lines = getItemStatLines(item).slice(0, 2);
+  if (lines.length === 0) return null;
+  return (
+    <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+      {lines.map((line) => (
+        <div key={line} className="truncate">{line}</div>
+      ))}
+    </div>
+  );
+}
+
+function InfoRow({
+  item,
+  primaryKeys = ["name", "type", "rankingContentsName"],
+  valueKeys = ["value", "rank", "point"],
+}: {
+  item: unknown;
+  primaryKeys?: string[];
+  valueKeys?: string[];
+}) {
+  const record = asRecord(item) ?? {};
+  const label = pickText(record, primaryKeys) ?? "-";
+  const value = pickText(record, valueKeys) ?? "-";
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2 text-sm">
+      <span className="min-w-0 truncate text-muted-foreground">{formatPlainValue(label)}</span>
+      <span className="shrink-0 font-medium">{formatPlainValue(value)}</span>
+    </div>
+  );
+}
+
+function IconInfoRow({ label, item }: { label: string; item: Record<string, unknown> }) {
+  return (
+    <div className="flex items-center gap-3 rounded-md border bg-muted/20 px-3 py-2">
+      {typeof item.icon === "string" && item.icon ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={item.icon} alt="" className="size-10 rounded-md border bg-muted object-cover" />
+      ) : (
+        <Sparkles className="size-5 text-muted-foreground" />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="truncate text-sm font-medium">{formatPlainValue(item.name ?? "-")}</div>
+      </div>
+      {(item.level !== undefined || item.enchantLevel !== undefined) && (
+        <Badge variant="secondary">Lv.{formatPlainValue(item.level ?? item.enchantLevel)}</Badge>
+      )}
+    </div>
+  );
+}
+
+function EmptyText({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+      {children}
+    </p>
+  );
+}
+
+function getItemStatLines(item: DetailItem) {
+  const detail = asRecord(item.detail);
+  const mainStats = asArray(detail?.mainStats);
+  const subStats = asArray(detail?.subStats);
+  return [...mainStats, ...subStats]
+    .map((stat) => {
+      const record = asRecord(stat);
+      if (!record) return "";
+      const name = pickText(record, ["name", "type", "id"]);
+      const value = pickText(record, ["value", "minValue", "extra"]);
+      if (!name || value === undefined) return "";
+      return `${formatPlainValue(name)} ${formatPlainValue(value)}`;
+    })
+    .filter(Boolean);
+}
+
+function formatPlainValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "number") return Number.isInteger(value) ? value.toLocaleString("ko-KR") : value.toFixed(1);
+  return String(value);
+}
+
+function formatPercent(value: unknown) {
+  const number = Number(value ?? 0);
+  if (!Number.isFinite(number)) return "0%";
+  return `${number.toFixed(0)}%`;
+}
+
+function formatCssPercent(value: unknown) {
+  const number = Math.max(0, Math.min(100, Number(value ?? 0)));
+  return `${Number.isFinite(number) ? number : 0}%`;
+}
+
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
 }
 
 function pickText(record: Record<string, unknown>, keys: string[]) {
