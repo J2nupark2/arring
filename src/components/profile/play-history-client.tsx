@@ -36,7 +36,11 @@ export type PlayHistoryItem = {
     nickname: string;
     server: string | null;
     characterRowId: string | null;
-    alreadyEvaluated: boolean;
+    evaluation: {
+      gimmick_review: "mastered" | "uncertain" | "not_mastered";
+      manner_review: "good" | "normal" | "bad";
+      report_reason: string | null;
+    } | null;
   }[];
 };
 
@@ -44,6 +48,7 @@ type ReviewTarget = {
   roomId: string;
   userId: string;
   nickname: string;
+  isEdit: boolean;
 };
 
 export function PlayHistoryClient({
@@ -82,20 +87,23 @@ export function PlayHistoryClient({
     }
 
     setHistoryItems((current) =>
-      current.map((item) =>
-        item.roomId !== reviewTarget.roomId
-          ? item
-          : {
-              ...item,
-              participants: item.participants.map((participant) =>
-                participant.userId === reviewTarget.userId
-                  ? { ...participant, alreadyEvaluated: true }
-                  : participant,
-              ),
-            },
-      ),
+      current.map((item) => ({
+        ...item,
+        participants: item.participants.map((participant) =>
+          participant.userId === reviewTarget.userId
+            ? {
+                ...participant,
+                evaluation: {
+                  gimmick_review: gimmickReview,
+                  manner_review: mannerReview,
+                  report_reason: reportReason || null,
+                },
+              }
+            : participant,
+        ),
+      })),
     );
-    toast.success("평가가 반영됐습니다.");
+    toast.success(reviewTarget.isEdit ? "평가가 수정됐습니다." : "평가가 반영됐습니다.");
     setReviewTarget(null);
     setGimmickReview("uncertain");
     setMannerReview("normal");
@@ -157,7 +165,7 @@ export function PlayHistoryClient({
                           {participant.nickname}
                           {participant.server && ` (${participant.server})`}
                         </div>
-                        {participant.alreadyEvaluated && (
+                        {participant.evaluation && (
                           <div className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Check className="size-3" />
                             평가 완료
@@ -176,16 +184,19 @@ export function PlayHistoryClient({
                       )}
                       <Button
                         size="sm"
-                        disabled={participant.alreadyEvaluated}
-                        onClick={() =>
+                        onClick={() => {
                           setReviewTarget({
                             roomId: item.roomId,
                             userId: participant.userId,
                             nickname: participant.nickname,
-                          })
-                        }
+                            isEdit: !!participant.evaluation,
+                          });
+                          setGimmickReview(participant.evaluation?.gimmick_review ?? "uncertain");
+                          setMannerReview(participant.evaluation?.manner_review ?? "normal");
+                          setReportReason(participant.evaluation?.report_reason ?? "");
+                        }}
                       >
-                        {participant.alreadyEvaluated ? "완료" : "평가"}
+                        {participant.evaluation ? "수정" : "평가"}
                       </Button>
                     </div>
                   </div>
@@ -206,7 +217,7 @@ export function PlayHistoryClient({
           {reviewTarget && (
             <>
               <DialogHeader>
-                <DialogTitle>{reviewTarget.nickname} 평가</DialogTitle>
+                <DialogTitle>{reviewTarget.nickname} {reviewTarget.isEdit ? "평가 수정" : "평가"}</DialogTitle>
               </DialogHeader>
               <div className="flex flex-col gap-4">
                 <ChoiceGroup
@@ -249,7 +260,7 @@ export function PlayHistoryClient({
                 </div>
                 <Button onClick={submitReview} disabled={submitting}>
                   {submitting && <Loader2 className="size-4 animate-spin" />}
-                  평가 제출
+                  {reviewTarget.isEdit ? "수정 저장" : "평가 제출"}
                 </Button>
               </div>
             </>

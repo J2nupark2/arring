@@ -44,8 +44,13 @@ type DungeonRow = {
   name: string;
 };
 
-type EvaluationRow = {
-  party_id: string;
+type EvaluationValue = {
+  gimmick_review: "mastered" | "uncertain" | "not_mastered";
+  manner_review: "good" | "normal" | "bad";
+  report_reason: string | null;
+};
+
+type EvaluationRow = EvaluationValue & {
   target_user_id: string;
 };
 
@@ -84,7 +89,6 @@ export default async function PlayHistoryPage() {
     { data: rooms },
     { data: participants },
     { data: matchRequests },
-    { data: evaluations },
   ] = await Promise.all([
     supabase.from("rooms").select("id, code, title, status").in("id", roomIds),
     supabase
@@ -95,11 +99,6 @@ export default async function PlayHistoryPage() {
       .from("match_requests")
       .select("room_id, dungeon_id, required_stage")
       .in("room_id", roomIds),
-    supabase
-      .from("party_evaluations")
-      .select("party_id, target_user_id")
-      .eq("evaluator_user_id", user.id)
-      .in("party_id", roomIds),
   ]);
 
   const participantRows = (participants ?? []) as ParticipantRow[];
@@ -116,7 +115,7 @@ export default async function PlayHistoryPage() {
     ),
   ];
 
-  const [{ data: profiles }, { data: characters }, { data: dungeons }] =
+  const [{ data: profiles }, { data: characters }, { data: dungeons }, { data: evaluations }] =
     await Promise.all([
       otherUserIds.length > 0
         ? supabase.from("profiles").select("id, nickname, server").in("id", otherUserIds)
@@ -131,6 +130,13 @@ export default async function PlayHistoryPage() {
         : Promise.resolve({ data: [] }),
       dungeonIds.length > 0
         ? supabase.from("dungeons").select("id, name").in("id", dungeonIds)
+        : Promise.resolve({ data: [] }),
+      otherUserIds.length > 0
+        ? supabase
+            .from("party_evaluations")
+            .select("target_user_id, gimmick_review, manner_review, report_reason")
+            .eq("evaluator_user_id", user.id)
+            .in("target_user_id", otherUserIds)
         : Promise.resolve({ data: [] }),
     ]);
 
@@ -153,10 +159,15 @@ export default async function PlayHistoryPage() {
       request,
     ]),
   );
-  const evaluatedKeys = new Set(
-    ((evaluations ?? []) as EvaluationRow[]).map(
-      (evaluation) => `${evaluation.party_id}:${evaluation.target_user_id}`,
-    ),
+  const evaluationByTargetUserId = new Map<string, EvaluationValue>(
+    ((evaluations ?? []) as EvaluationRow[]).map((evaluation) => [
+      evaluation.target_user_id,
+      {
+        gimmick_review: evaluation.gimmick_review,
+        manner_review: evaluation.manner_review,
+        report_reason: evaluation.report_reason,
+      },
+    ]),
   );
 
   const participantsByRoomId = new Map<string, ParticipantRow[]>();
@@ -201,7 +212,7 @@ export default async function PlayHistoryPage() {
             nickname: profile?.nickname ?? "알 수 없음",
             server: profile?.server ?? null,
             characterRowId: characterByUserId.get(participant.user_id) ?? null,
-            alreadyEvaluated: evaluatedKeys.has(`${room.id}:${participant.user_id}`),
+            evaluation: evaluationByTargetUserId.get(participant.user_id) ?? null,
           };
         });
 
