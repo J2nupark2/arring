@@ -842,13 +842,23 @@ function ItemSummary({
   return (
     <div className="group relative flex min-w-0 gap-2">
       {item.icon && (
-        // Official AION2 item and skill icons are small CDN assets.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={item.icon}
-          alt=""
-          className="size-9 shrink-0 rounded-md border bg-muted object-cover"
-        />
+        <div className="relative shrink-0">
+          {/* Official AION2 item and skill icons are small CDN assets. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={item.icon}
+            alt=""
+            className="size-9 rounded-md border bg-muted object-cover"
+          />
+          {Number(item.value) > 0 && (
+            <span
+              className="absolute -top-1 -left-1 flex size-4 items-center justify-center rounded-full bg-violet-500 font-mono text-[9px] font-bold leading-none text-white ring-1 ring-background"
+              title={`돌파 ${item.value}`}
+            >
+              {item.value}
+            </span>
+          )}
+        </div>
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
