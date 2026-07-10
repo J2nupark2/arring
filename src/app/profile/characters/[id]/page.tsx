@@ -777,10 +777,10 @@ function ItemOptionPreview({ item }: { item: DetailItem }) {
   const lines = [
     detail.soulBindRate !== undefined ? `영혼각인 ${formatPlainValue(detail.soulBindRate)}%` : "",
     magicStones.length > 0
-      ? `?? ${magicStones.length}/${formatPlainValue(detail.magicStoneSlotCount ?? magicStones.length)}`
+      ? `마석 ${magicStones.length}/${formatPlainValue(detail.magicStoneSlotCount ?? magicStones.length)}`
       : "",
-    godStones.length > 0 ? `?? ${formatPlainValue(asRecord(godStones[0])?.name ?? godStones.length)}` : "",
-    subSkills.length > 0 ? `?? ?? ${subSkills.length}` : "",
+    godStones.length > 0 ? `신석 ${formatPlainValue(asRecord(godStones[0])?.name ?? godStones.length)}` : "",
+    subSkills.length > 0 ? `장비 스킬 ${subSkills.length}` : "",
   ].filter(Boolean).slice(0, 3);
 
   if (lines.length === 0) return null;
@@ -823,11 +823,11 @@ function EquipmentTooltip({ item }: { item: DetailItem }) {
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <OptionSection title="? ???" items={mainStats} />
+        <OptionSection title="주 능력치" items={mainStats} />
         <OptionSection title="영혼각인 옵션" items={subStats} />
-        <OptionSection title="??" items={magicStones} icon />
-        <OptionSection title="??" items={godStones} icon description />
-        <OptionSection title="?? ??" items={subSkills} icon level />
+        <OptionSection title="마석" items={magicStones} icon />
+        <OptionSection title="신석" items={godStones} icon description />
+        <OptionSection title="장비 스킬" items={subSkills} icon level />
       </div>
     </div>
   );
