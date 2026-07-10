@@ -351,19 +351,22 @@ function EquipmentSlotCard({
   slot?: { slot: string; item?: DetailItem };
   compact?: boolean;
 }) {
+  const gradeColor = slot?.item ? getEquipmentGradeColor(slot.item) : undefined;
+
   return (
     <div
       className={
         "min-h-20 rounded-md border bg-muted/20 p-2.5 " +
         (compact ? "" : "lg:min-h-[92px]")
       }
+      style={gradeColor ? { borderColor: `${gradeColor}66`, boxShadow: `inset 0 0 0 1px ${gradeColor}18` } : undefined}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-xs font-medium text-muted-foreground">
           {slot?.slot ?? "슬롯"}
         </span>
         {slot?.item?.grade && (
-          <span className="truncate text-[11px] text-primary">
+          <span className="truncate text-[11px] font-medium" style={{ color: gradeColor }}>
             {slot.item.grade}
           </span>
         )}
@@ -598,6 +601,7 @@ function ItemSummary({
 }) {
   const hasTooltip = hasSkillTooltip(item);
   const hasEquipmentTooltip = hasEquipmentDetailTooltip(item);
+  const gradeColor = getEquipmentGradeColor(item);
 
   return (
     <div className="group relative z-0 flex min-w-0 gap-2 hover:z-50">
@@ -608,6 +612,7 @@ function ItemSummary({
           src={item.icon}
           alt=""
           className={(compact ? "size-8" : "size-9") + " shrink-0 rounded-md border bg-muted object-cover"}
+          style={{ borderColor: `${gradeColor}88` }}
         />
       )}
       <div className="min-w-0 flex-1">
@@ -767,6 +772,36 @@ function normalizeList(value: unknown): DetailItem[] {
   return items;
 }
 
+function getEquipmentGradeColor(item: DetailItem) {
+  const detail = asRecord(item.detail);
+  const grade = String(detail?.grade ?? item.grade ?? "").toLowerCase();
+  if (grade.includes("epic")) return "#FF6B35";
+  if (grade.includes("unique")) return "#FFD700";
+  if (grade.includes("legend")) return "#4a90e2";
+  if (grade.includes("rare")) return "#4caf50";
+  return "#8b5cf6";
+}
+
+function getSoulInscriptionTier(optionName: unknown) {
+  if (!optionName) return "C";
+  const name = String(optionName).trim();
+  const sTierOptions = ["?? ?? ??", "?? ??", "?? ??", "??? ?? ??", "??", "?? ?? ??", "??"];
+  const bTierOptions = ["??", "??", "??", "???", "?? ???", "?? ??", "???", "??? ??", "?? ???", "???", "??? ??", "?? ??", "?? ??", "???? ??", "???? ??", "?? ??", "?? ??", "??", "??"];
+  const aTierOptions = ["?? ??", "???", "??? ??", "??", "???", "??"];
+  if (sTierOptions.some((option) => name.includes(option))) return "S";
+  if (bTierOptions.some((option) => name.includes(option))) return "B";
+  if (aTierOptions.some((option) => name === option || name.includes(option))) return "A";
+  return "B";
+}
+
+function getSoulTierColor(tier: string) {
+  if (tier === "S") return "#facc15";
+  if (tier === "A") return "#60a5fa";
+  if (tier === "B") return "#4ade80";
+  return "#888888";
+}
+
+
 function ItemOptionPreview({ item }: { item: DetailItem }) {
   const detail = asRecord(item.detail);
   if (!detail) return null;
@@ -799,6 +834,7 @@ function EquipmentTooltip({ item }: { item: DetailItem }) {
   const detail = asRecord(item.detail);
   if (!detail) return null;
 
+  const gradeColor = getEquipmentGradeColor(item);
   const mainStats = asArray(detail.mainStats);
   const subStats = asArray(detail.subStats);
   const magicStones = asArray(detail.magicStoneStat);
@@ -806,13 +842,16 @@ function EquipmentTooltip({ item }: { item: DetailItem }) {
   const subSkills = asArray(detail.subSkills);
 
   return (
-    <div className="pointer-events-none absolute left-0 top-12 z-50 hidden w-[26rem] max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-3 text-popover-foreground shadow-xl group-hover:block">
+    <div
+      className="pointer-events-none absolute left-0 top-12 z-50 hidden w-[26rem] max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-3 text-popover-foreground shadow-xl group-hover:block"
+      style={{ borderColor: `${gradeColor}88`, boxShadow: `0 18px 60px ${gradeColor}22` }}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="break-words text-sm font-semibold">{item.name}</div>
           <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
             {item.slot && <span>{item.slot}</span>}
-            {detail.gradeName !== undefined && <span>{formatPlainValue(detail.gradeName)}</span>}
+            {detail.gradeName !== undefined && <span style={{ color: gradeColor }}>{formatPlainValue(detail.gradeName)}</span>}
             {detail.categoryName !== undefined && <span>{formatPlainValue(detail.categoryName)}</span>}
             {detail.soulBindRate !== undefined && <span>영혼각인 {formatPlainValue(detail.soulBindRate)}%</span>}
           </div>
@@ -855,8 +894,13 @@ function OptionSection({
           const record = asRecord(item) ?? {};
           const name = formatPlainValue(record.name ?? record.id ?? "-");
           const value = record.value !== undefined ? formatPlainValue(record.value) : "";
+          const accentColor = title === "영혼각인 옵션" ? getSoulTierColor(getSoulInscriptionTier(record.name)) : undefined;
           return (
-            <div key={`${title}-${index}`} className="flex min-w-0 items-start gap-2 text-xs">
+            <div
+              key={`${title}-${index}`}
+              className="flex min-w-0 items-start gap-2 rounded-sm border-l-2 pl-2 text-xs"
+              style={accentColor ? { borderLeftColor: accentColor } : { borderLeftColor: "transparent" }}
+            >
               {icon && typeof record.icon === "string" && record.icon ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={record.icon} alt="" className="mt-0.5 size-5 shrink-0 rounded border bg-muted object-cover" />
