@@ -637,7 +637,7 @@ function ItemSummary({ item }: { item: DetailItem }) {
           )}
         </div>
         <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-          {item.slot && <span>{item.slot}</span>}
+          {item.slot && <span>{formatCategory(item.slot)}</span>}
           {item.grade && <span>{item.grade}</span>}
           {item.value !== undefined && <span>초월 {item.value}</span>}
         </div>
@@ -768,13 +768,18 @@ function StatLine({ title, stats }: { title: string; stats?: NamedStat[] }) {
         {stats.map((stat, index) => (
           <span key={`${stat.name}-${index}`}>
             {stat.name}
-            {stat.value !== undefined ? ` +${stat.value}` : ""}
-            {stat.extra ? ` (+${stat.extra})` : ""}
+            {stat.value !== undefined ? ` ${signed(stat.value)}` : ""}
+            {stat.extra ? ` (${signed(stat.extra)})` : ""}
           </span>
         ))}
       </div>
     </div>
   );
+}
+
+function signed(value: string | number) {
+  const text = String(value);
+  return /^[+-]/.test(text) ? text : `+${text}`;
 }
 
 function hasEquipmentDetail(item: DetailItem) {
@@ -813,7 +818,7 @@ function normalizeList(value: unknown): DetailItem[] {
 
     items.push({
       name: String(name),
-      level: pickText(source, ["level", "enchantLevel", "skillLevel", "gradeLevel"]),
+      level: pickText(source, ["enchantLevel", "level", "skillLevel", "gradeLevel"]),
       grade: pickText(source, ["grade", "rarity", "tier", "rank"]),
       icon: pickString(source, ["icon", "iconUrl", "image", "imageUrl"]),
       description: pickString(source, [
@@ -1045,10 +1050,45 @@ function hasSkillTooltip(item: DetailItem) {
   );
 }
 
+const SLOT_NAME_KO: Record<string, string> = {
+  mainhand: "무기",
+  subhand: "보조",
+  helmet: "투구",
+  torso: "상의",
+  pants: "하의",
+  gloves: "장갑",
+  boots: "신발",
+  shoulder: "견갑",
+  cape: "망토",
+  necklace: "목걸이",
+  belt: "허리띠",
+  amulet: "아뮬렛",
+  pendant: "펜던트",
+  wing: "날개",
+  earring1: "귀걸이1",
+  earring2: "귀걸이2",
+  ring1: "반지1",
+  ring2: "반지2",
+  bracelet1: "팔찌1",
+  bracelet2: "팔찌2",
+  brooch1: "브로치1",
+  brooch2: "브로치2",
+  rune1: "룬1",
+  rune2: "룬2",
+  arcana1: "아르카나1",
+  arcana2: "아르카나2",
+  arcana3: "아르카나3",
+  arcana4: "아르카나4",
+  arcana5: "아르카나5",
+  arcana6: "아르카나6",
+  arcana7: "아르카나7",
+  arcana8: "아르카나8",
+};
+
 function formatCategory(value: string | number) {
   const category = String(value);
   if (category.toLowerCase() === "active") return "액티브";
   if (category.toLowerCase() === "passive") return "패시브";
   if (category.toLowerCase() === "dp") return "스티그마";
-  return category;
+  return SLOT_NAME_KO[category.toLowerCase()] ?? category;
 }
