@@ -367,7 +367,7 @@ function EquipmentSlotCard({
         </span>
         {slot?.item?.grade && (
           <span className="truncate text-[11px] font-medium" style={{ color: gradeColor }}>
-            {slot.item.grade}
+            {formatGradeName(slot.item.grade)}
           </span>
         )}
       </div>
@@ -626,7 +626,7 @@ function ItemSummary({
         </div>
         <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
           {item.slot && <span>{item.slot}</span>}
-          {item.grade && <span>{item.grade}</span>}
+          {item.grade && <span>{formatGradeName(item.grade)}</span>}
           {item.value !== undefined && <span>초월 {item.value}</span>}
         </div>
         <ItemStatPreview item={item} />
@@ -782,23 +782,44 @@ function getOptionAccentColor(title: string, record: Record<string, unknown>) {
   return undefined;
 }
 
+function getGradeKey(grade: unknown) {
+  const value = String(grade ?? "").trim().toLowerCase();
+  if (value.includes("epic") || value.includes("영웅")) return "epic";
+  if (value.includes("unique") || value.includes("유일")) return "unique";
+  if (value.includes("legend") || value.includes("전승")) return "legend";
+  if (value.includes("rare") || value.includes("희귀")) return "rare";
+  if (value.includes("common") || value.includes("normal") || value.includes("일반")) return "common";
+  return "";
+}
+
+function formatGradeName(grade: unknown) {
+  const key = getGradeKey(grade);
+  if (key === "epic") return "영웅";
+  if (key === "unique") return "유일";
+  if (key === "legend") return "전승";
+  if (key === "rare") return "희귀";
+  if (key === "common") return "일반";
+  return formatPlainValue(grade);
+}
+
 function getOptionGradeColor(grade: unknown) {
-  const value = String(grade ?? "").toLowerCase();
-  if (value.includes("legend")) return "#4a90e2";
-  if (value.includes("epic")) return "#FF6B35";
-  if (value.includes("unique")) return "#FFD700";
-  if (value.includes("rare")) return "#4caf50";
+  const key = getGradeKey(grade);
+  if (key === "epic") return "#FF6B35";
+  if (key === "unique") return "#FFD700";
+  if (key === "legend") return "#4a90e2";
+  if (key === "rare") return "#4caf50";
+  if (key === "common") return "#a0a0a0";
   return undefined;
 }
 
 function getBestOptionGradeColor(options: unknown[]) {
-  const gradeRank: Record<string, number> = { legend: 5, epic: 4, unique: 3, rare: 2, common: 1 };
+  const gradeRank: Record<string, number> = { epic: 5, unique: 4, legend: 3, rare: 2, common: 1 };
   let bestRank = 0;
   let bestColor: string | undefined;
 
   for (const option of options) {
-    const grade = String(asRecord(option)?.grade ?? "").toLowerCase();
-    const gradeKey = Object.keys(gradeRank).find((key) => grade.includes(key));
+    const grade = asRecord(option)?.grade;
+    const gradeKey = getGradeKey(grade);
     const rank = gradeKey ? gradeRank[gradeKey] : 0;
     if (rank > bestRank) {
       bestRank = rank;
@@ -822,13 +843,7 @@ function getSoulSummaryColor(options: unknown[]) {
 }
 
 function getEquipmentGradeColor(item: DetailItem) {
-  const detail = asRecord(item.detail);
-  const grade = String(detail?.grade ?? item.grade ?? "").toLowerCase();
-  if (grade.includes("epic")) return "#FF6B35";
-  if (grade.includes("unique")) return "#FFD700";
-  if (grade.includes("legend")) return "#4a90e2";
-  if (grade.includes("rare")) return "#4caf50";
-  return "#8b5cf6";
+  return getOptionGradeColor(asRecord(item.detail)?.grade ?? item.grade) ?? "#8b5cf6";
 }
 
 function getSoulInscriptionTier(optionName: unknown) {
@@ -927,7 +942,7 @@ function EquipmentTooltip({ item }: { item: DetailItem }) {
           <div className="break-words text-sm font-semibold">{item.name}</div>
           <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
             {item.slot && <span>{item.slot}</span>}
-            {detail.gradeName !== undefined && <span style={{ color: gradeColor }}>{formatPlainValue(detail.gradeName)}</span>}
+            {detail.gradeName !== undefined && <span style={{ color: gradeColor }}>{formatGradeName(detail.gradeName)}</span>}
             {detail.categoryName !== undefined && <span>{formatPlainValue(detail.categoryName)}</span>}
             {detail.soulBindRate !== undefined && <span>영혼각인 {formatPlainValue(detail.soulBindRate)}%</span>}
           </div>
@@ -997,7 +1012,7 @@ function OptionSection({
                   <span className="min-w-0 truncate" style={accentColor && title === "영혼각인 옵션" ? { color: accentColor } : undefined}>{name}</span>
                   {record.grade !== undefined && title !== "영혼각인 옵션" && (
                     <span className="shrink-0 text-[10px] font-medium" style={{ color: accentColor }}>
-                      {formatPlainValue(record.grade)}
+                      {formatGradeName(record.grade)}
                     </span>
                   )}
                   {value && <span className="shrink-0 font-medium" style={accentColor ? { color: accentColor } : undefined}>{value}</span>}

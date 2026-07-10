@@ -397,7 +397,7 @@ function normalizeEquipmentForRender(item: unknown) {
     itemId: record.id ?? detail.id,
     name: record.name ?? detail.name,
     grade,
-    gradeName: detail.gradeName ?? record.grade,
+    gradeName: formatGradeName(detail.gradeName ?? record.grade),
     gradeColor: getEquipmentGradeColor(grade),
     iconUrl: record.icon ?? detail.icon,
     enchantLevel: record.enchantLevel ?? detail.enchantLevel,
@@ -426,7 +426,7 @@ function normalizeStats(stats: unknown[]) {
       value: record.value,
       extra: record.extra,
       icon: record.icon,
-      grade: record.grade,
+      grade: formatGradeName(record.grade),
       slotPos: record.slotPos,
     };
   });
@@ -440,7 +440,7 @@ function normalizeNamedOption(option: unknown) {
     value: record.value,
     desc: record.desc,
     icon: record.icon,
-    grade: record.grade,
+    grade: formatGradeName(record.grade),
     level: record.level,
     slotPos: record.slotPos,
   };
@@ -504,20 +504,40 @@ function getEquipmentLayoutGroup(slotName: string) {
   return "accessories";
 }
 
+function getGradeKey(grade: unknown) {
+  const value = String(grade ?? "").trim().toLowerCase();
+  if (value.includes("epic") || value.includes("영웅")) return "epic";
+  if (value.includes("unique") || value.includes("유일")) return "unique";
+  if (value.includes("legend") || value.includes("전승")) return "legend";
+  if (value.includes("rare") || value.includes("희귀")) return "rare";
+  if (value.includes("common") || value.includes("normal") || value.includes("일반")) return "common";
+  return "";
+}
+
+function formatGradeName(grade: unknown) {
+  const key = getGradeKey(grade);
+  if (key === "epic") return "영웅";
+  if (key === "unique") return "유일";
+  if (key === "legend") return "전승";
+  if (key === "rare") return "희귀";
+  if (key === "common") return "일반";
+  return grade;
+}
+
 function getEquipmentGradeColor(grade: string) {
-  const value = grade.toLowerCase();
-  if (value.includes("epic")) return "#FF6B35";
-  if (value.includes("unique")) return "#FFD700";
-  if (value.includes("legend")) return "#4a90e2";
-  if (value.includes("rare")) return "#4caf50";
+  const key = getGradeKey(grade);
+  if (key === "epic") return "#FF6B35";
+  if (key === "unique") return "#FFD700";
+  if (key === "legend") return "#4a90e2";
+  if (key === "rare") return "#4caf50";
   return "#a0a0a0";
 }
 
 function getDaevanionGradeColor(grade: string) {
-  const value = grade.toLowerCase();
-  if (value.includes("unique")) return { bg: "rgba(250, 204, 21, 0.15)", border: "#facc15", glow: "rgba(250, 204, 21, 0.6)" };
-  if (value.includes("legend")) return { bg: "rgba(96, 165, 250, 0.15)", border: "#60a5fa", glow: "rgba(96, 165, 250, 0.6)" };
-  if (value.includes("rare")) return { bg: "rgba(74, 222, 128, 0.15)", border: "#4ade80", glow: "rgba(74, 222, 128, 0.6)" };
+  const key = getGradeKey(grade);
+  if (key === "unique") return { bg: "rgba(250, 204, 21, 0.15)", border: "#facc15", glow: "rgba(250, 204, 21, 0.6)" };
+  if (key === "legend") return { bg: "rgba(96, 165, 250, 0.15)", border: "#60a5fa", glow: "rgba(96, 165, 250, 0.6)" };
+  if (key === "rare") return { bg: "rgba(74, 222, 128, 0.15)", border: "#4ade80", glow: "rgba(74, 222, 128, 0.6)" };
   return { bg: "rgba(200, 200, 200, 0.15)", border: "#a0a0a0", glow: "rgba(200, 200, 200, 0.6)" };
 }
 
