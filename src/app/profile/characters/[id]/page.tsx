@@ -94,10 +94,11 @@ function itemsInSlots(items: DetailItem[], slotKeys: readonly string[]) {
 // API — reverse-engineered from real in-game tooltips: weapon 돌파5 gave
 // +150/+5% (30/1% per level), armor 돌파2 gave +160/+160/+2%/+2% (80/1%
 // per level per stat), accessories (목걸이/귀걸이/반지/팔찌/허리띠) gave
-// +100/+200/+5% (20 atk / 40 def / 1% atk per level), and a brooch gave
-// +100/+200 with no percent line at all. Rune/amulet/pendant are assumed
-// to follow the brooch (no-percent) pattern since they're the same
-// "secondary accessory" tier, but that specific case isn't confirmed.
+// +100/+200/+5% (20 atk / 40 def / 1% atk per level), and a brooch 돌파5
+// gave +100/+200/피해증폭+5% (same 20/40 flat rate, but the percent line
+// is 피해 증폭 instead of 공격력 증가). Rune/amulet/pendant aren't
+// confirmed against a real tooltip yet, so they show no bonus rather
+// than a guessed number.
 const EXCEED_WEAPON_SLOTS = new Set(["mainhand", "subhand"]);
 const EXCEED_ARMOR_SLOTS = new Set([
   "helmet",
@@ -116,14 +117,9 @@ const EXCEED_ACCESSORY_PERCENT_SLOTS = new Set([
   "ring2",
   "belt",
 ]);
-const EXCEED_ACCESSORY_FLAT_SLOTS = new Set([
-  "brooch1",
-  "brooch2",
-  "rune1",
-  "rune2",
-  "amulet",
-  "pendant",
-]);
+// Rune/amulet/pendant aren't confirmed against a real tooltip yet — left
+// out of every bucket below so we don't show a guessed number.
+const EXCEED_BROOCH_SLOTS = new Set(["brooch1", "brooch2"]);
 
 function exceedBonusStats(item: DetailItem): NamedStat[] {
   const level = Number(item.value) || 0;
@@ -151,10 +147,11 @@ function exceedBonusStats(item: DetailItem): NamedStat[] {
       { name: "공격력 증가", value: `${level}%` },
     ];
   }
-  if (EXCEED_ACCESSORY_FLAT_SLOTS.has(slot)) {
+  if (EXCEED_BROOCH_SLOTS.has(slot)) {
     return [
       { name: "공격력", value: level * 20 },
       { name: "방어력", value: level * 40 },
+      { name: "피해 증폭", value: `${level}%` },
     ];
   }
   return [];
