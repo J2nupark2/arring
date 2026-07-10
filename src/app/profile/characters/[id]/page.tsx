@@ -3,8 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import {
   Award,
   BarChart3,
+  Dices,
   Gauge,
   Gem,
+  Lamp,
   Layers,
   Network,
   ShieldCheck,
@@ -62,6 +64,9 @@ const ACCESSORY_SLOTS = [
   "pendant",
 ] as const;
 
+// arcana9/10 (주사위, 등불) have no acquisition path in-game yet, so no
+// character will ever have an item there — they're kept as upcoming
+// placeholders so the card shows all 10 card-shaped slots.
 const ARCANA_SLOTS = [
   "arcana1",
   "arcana2",
@@ -71,7 +76,14 @@ const ARCANA_SLOTS = [
   "arcana6",
   "arcana7",
   "arcana8",
+  "arcana9",
+  "arcana10",
 ] as const;
+
+const ARCANA_UPCOMING_ICON: Partial<Record<string, typeof Dices>> = {
+  arcana9: Dices,
+  arcana10: Lamp,
+};
 
 function itemsInSlots(items: DetailItem[], slotKeys: readonly string[]) {
   const keys = new Set<string>(slotKeys);
@@ -307,18 +319,26 @@ function SlotGrid({
   const extras = items.filter((_, index) => !usedIndexes.has(index));
 
   return (
-    <>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+    <div className="overflow-visible">
+      <div className="grid grid-cols-2 gap-2 overflow-visible sm:grid-cols-3">
         {slotted.map(({ key, item }) => (
           <div
             key={key}
-            className="min-h-24 rounded-md border bg-muted/20 px-3 py-2"
+            className="min-h-24 overflow-visible rounded-md border bg-muted/20 px-3 py-2"
           >
             <div className="text-xs font-medium text-muted-foreground">
               {SLOT_NAME_KO[key] ?? key}
             </div>
             {item ? (
               <ItemSummary item={item} />
+            ) : ARCANA_UPCOMING_ICON[key] ? (
+              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                {(() => {
+                  const UpcomingIcon = ARCANA_UPCOMING_ICON[key]!;
+                  return <UpcomingIcon className="size-4" />;
+                })()}
+                출시 예정
+              </div>
             ) : (
               <div className="mt-3 text-sm text-muted-foreground">
                 정보 없음
@@ -340,13 +360,13 @@ function SlotGrid({
           ))}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
 function WeaponArmorCard({ items }: { items: DetailItem[] }) {
   return (
-    <Card>
+    <Card className="overflow-visible">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -361,7 +381,7 @@ function WeaponArmorCard({ items }: { items: DetailItem[] }) {
           <Badge variant="outline">{items.length}개 확인</Badge>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="overflow-visible">
         <SlotGrid items={items} slotKeys={WEAPON_ARMOR_SLOTS} />
       </CardContent>
     </Card>
@@ -370,7 +390,7 @@ function WeaponArmorCard({ items }: { items: DetailItem[] }) {
 
 function AccessoryCard({ items }: { items: DetailItem[] }) {
   return (
-    <Card>
+    <Card className="overflow-visible">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -380,7 +400,7 @@ function AccessoryCard({ items }: { items: DetailItem[] }) {
           <Badge variant="outline">{items.length}개 확인</Badge>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="overflow-visible">
         <SlotGrid items={items} slotKeys={ACCESSORY_SLOTS} />
       </CardContent>
     </Card>
@@ -470,7 +490,7 @@ function ArcanaCard({
   set: ArcanaSetBonus | undefined;
 }) {
   return (
-    <Card>
+    <Card className="overflow-visible">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -487,7 +507,7 @@ function ArcanaCard({
           <Badge variant="outline">{items.length}개 확인</Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 overflow-visible">
         <SlotGrid items={items} slotKeys={ARCANA_SLOTS} />
         {set && set.bonuses.length > 0 && (
           <div className="grid gap-2 sm:grid-cols-2">
@@ -1149,14 +1169,16 @@ const SLOT_NAME_KO: Record<string, string> = {
   brooch2: "브로치2",
   rune1: "룬1",
   rune2: "룬2",
-  arcana1: "아르카나1",
-  arcana2: "아르카나2",
-  arcana3: "아르카나3",
-  arcana4: "아르카나4",
-  arcana5: "아르카나5",
-  arcana6: "아르카나6",
-  arcana7: "아르카나7",
-  arcana8: "아르카나8",
+  arcana1: "성배",
+  arcana2: "양피지",
+  arcana3: "나침반",
+  arcana4: "종",
+  arcana5: "거울",
+  arcana6: "천칭",
+  arcana7: "열쇠",
+  arcana8: "모래시계",
+  arcana9: "주사위",
+  arcana10: "등불",
 };
 
 const GRADE_NAME_KO: Record<string, string> = {
