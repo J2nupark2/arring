@@ -686,10 +686,18 @@ function groupSkills(skills: DetailItem[], stigmas: DetailItem[]) {
   const ordinarySkills = skills.filter((skill) => !isStigmaSkill(skill));
 
   return {
-    active: ordinarySkills.filter((skill) => !isPassiveSkill(skill)),
-    passive: ordinarySkills.filter(isPassiveSkill),
-    stigma: [...stigmas, ...stigmaFromSkills],
+    active: sortByLevelDesc(ordinarySkills.filter((skill) => !isPassiveSkill(skill))),
+    passive: sortByLevelDesc(ordinarySkills.filter(isPassiveSkill)),
+    stigma: sortByLevelDesc([...stigmas, ...stigmaFromSkills]),
   };
+}
+
+function sortByLevelDesc(items: DetailItem[]) {
+  return [...items].sort((a, b) => {
+    const levelA = a.level !== undefined ? Number(a.level) : -Infinity;
+    const levelB = b.level !== undefined ? Number(b.level) : -Infinity;
+    return levelB - levelA;
+  });
 }
 
 function isPassiveSkill(item: DetailItem) {
