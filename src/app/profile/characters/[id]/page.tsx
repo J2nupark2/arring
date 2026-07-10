@@ -21,33 +21,36 @@ export const dynamic = "force-dynamic";
 // 악세사리 / 아르카나). Each key here is the lowercased official
 // slotPosName, matched exactly against the normalized item's `slot`
 // field — see SLOT_NAME_KO below for display labels.
+// Order matches the in-game equipment panel layout, per user reference
+// (weapon, subhand, helmet, shoulder, torso, belt, pants, gloves, cape,
+// boots). Wing is intentionally excluded — it's already shown in the
+// companion/wing card via detailData.petwing.wing.
 const WEAPON_ARMOR_SLOTS = [
   "mainhand",
   "subhand",
   "helmet",
+  "shoulder",
   "torso",
+  "belt",
   "pants",
   "gloves",
-  "boots",
-  "shoulder",
   "cape",
-  "wing",
+  "boots",
 ] as const;
 
 const ACCESSORY_SLOTS = [
-  "necklace",
   "earring1",
   "earring2",
+  "necklace",
+  "amulet",
   "ring1",
   "ring2",
-  "belt",
-  "bracelet1",
-  "bracelet2",
   "brooch1",
   "brooch2",
+  "bracelet1",
+  "bracelet2",
   "rune1",
   "rune2",
-  "amulet",
   "pendant",
 ] as const;
 
@@ -77,7 +80,6 @@ const SLOT_NAME_KO: Record<string, string> = {
   boots: "신발",
   shoulder: "견갑",
   cape: "망토",
-  wing: "날개",
   necklace: "목걸이",
   earring1: "귀걸이1",
   earring2: "귀걸이2",
@@ -158,6 +160,7 @@ export default async function CharacterDetailPage({
   const describedStigmas = describedSkillList.slice(rawSkillCount);
 
   const detailData = asRecord(character.detail_data);
+  const itemLevel = asRecord(detailData?.summary)?.itemLevel;
   const equipment = normalizeList(character.equipment);
   const skills = normalizeList(describedSkills);
   const stigmas = normalizeList(describedStigmas);
@@ -206,12 +209,22 @@ export default async function CharacterDetailPage({
                   {character.server_name} · {character.class_name || "직업 미확인"} · Lv.{character.character_level ?? "-"}
                 </CardDescription>
               </div>
-              <div className="rounded-md border bg-background px-4 py-3 text-right">
-                <div className="text-xs font-medium text-muted-foreground">
-                  전투력
+              <div className="flex divide-x rounded-md border bg-background text-right">
+                <div className="px-4 py-3">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    전투력
+                  </div>
+                  <div className="font-mono text-3xl font-bold text-primary">
+                    {formatCombatPower(character.combat_power)}
+                  </div>
                 </div>
-                <div className="font-mono text-3xl font-bold text-primary">
-                  {formatCombatPower(character.combat_power)}
+                <div className="px-4 py-3">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    아이템 레벨
+                  </div>
+                  <div className="font-mono text-3xl font-bold text-primary">
+                    {formatPlainValue(itemLevel ?? "-")}
+                  </div>
                 </div>
               </div>
             </div>
@@ -541,19 +554,8 @@ function EquipmentSlotCard({
   );
 }
 
-function SpecPill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 rounded-md border bg-background/70 px-3 py-2">
-      <div className="text-[11px] font-medium">{label}</div>
-      <div className="mt-0.5 truncate font-medium text-foreground">{value}</div>
-    </div>
-  );
-}
-
 function CharacterStatsCard({ detailData }: { detailData?: Record<string, unknown> }) {
   const stats = asArray(detailData?.stats).slice(0, 10);
-  const summary = asRecord(detailData?.summary);
-
   return (
     <Card>
       <CardHeader>
@@ -561,12 +563,6 @@ function CharacterStatsCard({ detailData }: { detailData?: Record<string, unknow
         <CardDescription>{"\uacf5\uc2dd \uc815\ubcf4\uc2e4\uc758 \uc8fc\uc694 \ub2a5\ub825\uce58\ub97c \uc815\ub9ac\ud588\uc5b4\uc694."}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <SpecPill label="Item Lv" value={formatPlainValue(summary?.itemLevel ?? "-")} />
-          <SpecPill label="Skills" value={formatPlainValue(summary?.skillCount ?? "-")} />
-          <SpecPill label="Equipped" value={formatPlainValue(summary?.equippedSkillCount ?? "-")} />
-          <SpecPill label="Daeva" value={formatPercent(summary?.daevanionOpenAverage)} />
-        </div>
         {stats.length > 0 ? (
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
             {stats.map((stat, index) => (
