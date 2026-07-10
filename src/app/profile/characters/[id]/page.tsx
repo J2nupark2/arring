@@ -772,6 +772,26 @@ function normalizeList(value: unknown): DetailItem[] {
   return items;
 }
 
+function getOptionAccentColor(title: string, record: Record<string, unknown>) {
+  if (title === "???? ??") {
+    return getSoulTierColor(getSoulInscriptionTier(record.name));
+  }
+  if (title === "??" || title === "??") {
+    return getOptionGradeColor(record.grade);
+  }
+  return undefined;
+}
+
+function getOptionGradeColor(grade: unknown) {
+  const value = String(grade ?? "").toLowerCase();
+  if (value.includes("legend")) return "#4a90e2";
+  if (value.includes("epic")) return "#FF6B35";
+  if (value.includes("unique")) return "#FFD700";
+  if (value.includes("rare")) return "#4caf50";
+  return undefined;
+}
+
+
 function getEquipmentGradeColor(item: DetailItem) {
   const detail = asRecord(item.detail);
   const grade = String(detail?.grade ?? item.grade ?? "").toLowerCase();
@@ -894,21 +914,37 @@ function OptionSection({
           const record = asRecord(item) ?? {};
           const name = formatPlainValue(record.name ?? record.id ?? "-");
           const value = record.value !== undefined ? formatPlainValue(record.value) : "";
-          const accentColor = title === "영혼각인 옵션" ? getSoulTierColor(getSoulInscriptionTier(record.name)) : undefined;
+          const accentColor = getOptionAccentColor(title, record);
           return (
             <div
               key={`${title}-${index}`}
-              className="flex min-w-0 items-start gap-2 rounded-sm border-l-2 pl-2 text-xs"
-              style={accentColor ? { borderLeftColor: accentColor } : { borderLeftColor: "transparent" }}
+              className="flex min-w-0 items-start gap-2 rounded-sm border-l-2 px-2 py-1 text-xs"
+              style={{
+                borderLeftColor: accentColor ?? "transparent",
+                backgroundColor: accentColor ? `${accentColor}12` : undefined,
+              }}
             >
               {icon && typeof record.icon === "string" && record.icon ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={record.icon} alt="" className="mt-0.5 size-5 shrink-0 rounded border bg-muted object-cover" />
+                <img
+                  src={record.icon}
+                  alt=""
+                  className="mt-0.5 size-5 shrink-0 rounded border bg-muted object-cover"
+                  style={accentColor ? { borderColor: `${accentColor}aa` } : undefined}
+                />
               ) : null}
+              {!icon && accentColor && (
+                <span className="mt-1 size-1.5 shrink-0 rounded-full" style={{ backgroundColor: accentColor }} />
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="min-w-0 truncate">{name}</span>
-                  {value && <span className="shrink-0 font-medium text-primary">{value}</span>}
+                  <span className="min-w-0 truncate" style={accentColor && title === "???? ??" ? { color: accentColor } : undefined}>{name}</span>
+                  {record.grade !== undefined && title !== "영혼각인 옵션" && (
+                    <span className="shrink-0 text-[10px] font-medium" style={{ color: accentColor }}>
+                      {formatPlainValue(record.grade)}
+                    </span>
+                  )}
+                  {value && <span className="shrink-0 font-medium" style={accentColor ? { color: accentColor } : undefined}>{value}</span>}
                   {level && record.level !== undefined && <span className="shrink-0 text-muted-foreground">Lv.{formatPlainValue(record.level)}</span>}
                 </div>
                 {description && record.desc !== undefined && (
