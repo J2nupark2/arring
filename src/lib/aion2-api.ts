@@ -58,6 +58,10 @@ export type Aion2CharacterDetailData = {
     boards: unknown[];
     details: unknown[];
   };
+  normalized: {
+    equipment: unknown[];
+    daevanionBoards: unknown[];
+  };
   summary: {
     combatPower: number;
     itemLevel: number;
@@ -83,21 +87,6 @@ export type Aion2CharacterProfile = {
   stigmas: unknown[];
   detailData: Aion2CharacterDetailData;
 };
-
-type SkillDescription = {
-  description?: string;
-  notes?: string;
-};
-
-type SkillDescriptionGroup = Record<string, SkillDescription>;
-
-type JobSkillDescriptions = {
-  active?: SkillDescriptionGroup;
-  passive?: SkillDescriptionGroup;
-  stigma?: SkillDescriptionGroup;
-};
-
-const atoolDescriptionCache = new Map<string, Promise<JobSkillDescriptions | null>>();
 
 async function plaync<T>(path: string, revalidateSeconds: number): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -357,6 +346,8 @@ function buildCharacterDetailData({
   const boardList = asArray(infoData.daevanion?.boardList);
   const classifiedEquipment = classifyEquipment(equipment);
   const classifiedSkills = classifySkills(skills);
+  const normalizedEquipment = equipment.map(normalizeEquipmentForRender);
+  const normalizedDaevanionBoards = normalizeDaevanionBoards(boardList, daevanionDetails);
 
   return {
     profile: infoData.profile,
@@ -379,6 +370,10 @@ function buildCharacterDetailData({
       boards: boardList,
       details: daevanionDetails,
     },
+    normalized: {
+      equipment: normalizedEquipment,
+      daevanionBoards: normalizedDaevanionBoards,
+    },
     summary: {
       combatPower: Number(infoData.profile.combatPower ?? 0),
       itemLevel: Number(findStatValue(statList, "ItemLevel") ?? 0),
@@ -390,6 +385,166 @@ function buildCharacterDetailData({
       daevanionOpenAverage: averageOpenPercent(boardList),
     },
   };
+}
+
+function normalizeEquipmentForRender(item: unknown) {
+  const record = asRecord(item) ?? {};
+  const detail = asRecord(record.detail) ?? {};
+  const grade = String(detail.grade ?? record.grade ?? "");
+  const subStats = asArray(detail.subStats).map(normalizeSoulOption);
+
+  return {
+    itemId: record.id ?? detail.id,
+    name: record.name ?? detail.name,
+    grade,
+    gradeName: detail.gradeName ?? record.grade,
+    gradeColor: getEquipmentGradeColor(grade),
+    iconUrl: record.icon ?? detail.icon,
+    enchantLevel: record.enchantLevel ?? detail.enchantLevel,
+    exceedLevel: record.exceedLevel,
+    level: detail.level,
+    levelValue: detail.levelValue,
+    slotIndex: record.slotPos,
+    slotName: record.slotPosName,
+    layoutGroup: getEquipmentLayoutGroup(String(record.slotPosName ?? "")),
+    categoryName: detail.categoryName,
+    soulBindRate: detail.soulBindRate,
+    mainStats: normalizeStats(asArray(detail.mainStats)),
+    soulOptions: subStats,
+    magicStones: normalizeStats(asArray(detail.magicStoneStat)),
+    godStones: asArray(detail.godStoneStat).map(normalizeNamedOption),
+    subSkills: asArray(detail.subSkills).map(normalizeNamedOption),
+  };
+}
+
+function normalizeStats(stats: unknown[]) {
+  return stats.map((stat) => {
+    const record = asRecord(stat) ?? {};
+    return {
+      id: record.id,
+      name: record.name,
+      value: record.value,
+      extra: record.extra,
+      icon: record.icon,
+      grade: record.grade,
+      slotPos: record.slotPos,
+    };
+  });
+}
+
+function normalizeNamedOption(option: unknown) {
+  const record = asRecord(option) ?? {};
+  return {
+    id: record.id,
+    name: record.name,
+    value: record.value,
+    desc: record.desc,
+    icon: record.icon,
+    grade: record.grade,
+    level: record.level,
+    slotPos: record.slotPos,
+  };
+}
+
+function normalizeSoulOption(option: unknown) {
+  const normalized = normalizeNamedOption(option);
+  const tier = getSoulInscriptionTier(normalized.name);
+  return {
+    ...normalized,
+    tier,
+    color: getSoulTierColor(tier),
+  };
+}
+
+function normalizeDaevanionBoards(boards: unknown[], details: unknown[]) {
+  const detailById = new Map(
+    details.map((detail) => {
+      const record = asRecord(detail) ?? {};
+      return [String(record.boardId), asRecord(record.data) ?? record];
+    }),
+  );
+
+  return boards.map((board) => {
+    const record = asRecord(board) ?? {};
+    const detail = detailById.get(String(record.id));
+    const nodes = asArray(detail?.nodeList).map((node) => {
+      const nodeRecord = asRecord(node) ?? {};
+      const grade = String(nodeRecord.grade ?? "common");
+      return {
+        boardId: nodeRecord.boardId ?? record.id,
+        nodeId: nodeRecord.nodeId,
+        name: nodeRecord.name,
+        row: nodeRecord.row,
+        col: nodeRecord.col,
+        grade,
+        open: Boolean(nodeRecord.open),
+        icon: nodeRecord.icon,
+        effects: asArray(nodeRecord.effectList),
+        color: getDaevanionGradeColor(grade),
+      };
+    });
+
+    return {
+      id: record.id,
+      name: record.name,
+      icon: record.icon,
+      totalNodeCount: record.totalNodeCount,
+      openNodeCount: record.openNodeCount,
+      openPercent: record.openPercent,
+      nodes,
+    };
+  });
+}
+
+function getEquipmentLayoutGroup(slotName: string) {
+  if (["MainHand", "SubHand"].includes(slotName)) return "weapons";
+  if (["Helmet", "Shoulder", "Torso", "Pants", "Gloves", "Boots", "Cape"].includes(slotName)) return "armors";
+  if (slotName.startsWith("Rune")) return "runes";
+  if (slotName.startsWith("Arcana")) return "arcana";
+  return "accessories";
+}
+
+function getEquipmentGradeColor(grade: string) {
+  const value = grade.toLowerCase();
+  if (value.includes("epic")) return "#FF6B35";
+  if (value.includes("unique")) return "#FFD700";
+  if (value.includes("legend")) return "#4a90e2";
+  if (value.includes("rare")) return "#4caf50";
+  return "#a0a0a0";
+}
+
+function getDaevanionGradeColor(grade: string) {
+  const value = grade.toLowerCase();
+  if (value.includes("unique")) return { bg: "rgba(250, 204, 21, 0.15)", border: "#facc15", glow: "rgba(250, 204, 21, 0.6)" };
+  if (value.includes("legend")) return { bg: "rgba(96, 165, 250, 0.15)", border: "#60a5fa", glow: "rgba(96, 165, 250, 0.6)" };
+  if (value.includes("rare")) return { bg: "rgba(74, 222, 128, 0.15)", border: "#4ade80", glow: "rgba(74, 222, 128, 0.6)" };
+  return { bg: "rgba(200, 200, 200, 0.15)", border: "#a0a0a0", glow: "rgba(200, 200, 200, 0.6)" };
+}
+
+function getSoulInscriptionTier(optionName: unknown) {
+  if (!optionName) return "C";
+  const name = String(optionName).trim();
+
+  const sTierGodStones = ["회상[카이시넬]", "시간[시엘]", "파괴[지켈]", "죽음[트리니엘]", "자유[바이젤]", "지혜[루미엘]"];
+  const aTierGodStones = ["정의[아자치]", "공간[이스라펠]"];
+  if (sTierGodStones.some((option) => name.includes(option))) return "S";
+  if (aTierGodStones.some((option) => name.includes(option))) return "A";
+
+  const sTierOptions = ["무기 피해 증폭", "전투 속도", "피해 증폭", "치명타 피해 증폭", "위력", "다단 히트 적중", "정확"];
+  const bTierOptions = ["막기", "비행", "회피", "생명력", "최대 생명력", "피해 내성", "방어력", "치명타 방어", "마법 공격력", "정신력", "치명타 저항", "강화 저항", "환경 저항", "상태이상 저항", "상태이상 적중", "천령 관련", "재생 관련", "재생", "천령"];
+  const aTierOptions = ["이동 속도", "공격력", "공격력 증가", "강화", "치명타", "명중"];
+
+  if (sTierOptions.some((option) => name.includes(option))) return "S";
+  if (bTierOptions.some((option) => name.includes(option))) return "B";
+  if (aTierOptions.some((option) => name === option || name.includes(option))) return "A";
+  return "B";
+}
+
+function getSoulTierColor(tier: string) {
+  if (tier === "S") return "#facc15";
+  if (tier === "A") return "#60a5fa";
+  if (tier === "B") return "#4ade80";
+  return "#888888";
 }
 
 function classifyEquipment(equipment: unknown[]) {
@@ -486,117 +641,15 @@ function isStigmaSkill(skill: unknown) {
 
 export async function enrichAion2SkillsWithDescriptions(
   skills: unknown[],
-  className?: string | null,
-  serverId?: number | string | null,
-  characterName?: string | null,
+  _className?: string | null,
+  _serverId?: number | string | null,
+  _characterName?: string | null,
 ) {
-  if (!Array.isArray(skills) || skills.length === 0 || !className) return skills;
-
-  const descriptions = await fetchAtoolSkillDescriptions(
-    className,
-    serverId,
-    characterName,
-  );
-  if (!descriptions) return skills;
-
-  return skills.map((skill) => {
-    if (!skill || typeof skill !== "object" || Array.isArray(skill)) return skill;
-    const record = skill as Record<string, unknown>;
-    const name = typeof record.name === "string" ? extractBaseSkillName(record.name) : "";
-    const type = getSkillDescriptionType(record);
-    const found = findSkillDescription(descriptions, type, name);
-
-    if (!found) return skill;
-    return {
-      ...record,
-      description:
-        typeof record.description === "string" && record.description.trim()
-          ? record.description
-          : found.description,
-      notes:
-        typeof record.notes === "string" && record.notes.trim()
-          ? record.notes
-          : found.notes,
-    };
-  });
+  void _className;
+  void _serverId;
+  void _characterName;
+  // Skill descriptions are intentionally not fetched from third-party pages.
+  // Official AION2 data is returned as-is; rendering uses our own normalization.
+  return Array.isArray(skills) ? skills : [];
 }
 
-async function fetchAtoolSkillDescriptions(
-  className: string,
-  serverId?: number | string | null,
-  characterName?: string | null,
-): Promise<JobSkillDescriptions | null> {
-  const safeServerId = serverId ? String(serverId) : "1015";
-  const safeCharacterName = characterName?.trim() || "삼촌";
-  const cacheKey = `${className}:${safeServerId}:${safeCharacterName}`;
-  const cached = atoolDescriptionCache.get(cacheKey);
-  if (cached) return cached;
-
-  const promise = fetchAtoolSkillDescriptionsUncached(
-    className,
-    safeServerId,
-    safeCharacterName,
-  ).catch(() => {
-    atoolDescriptionCache.delete(cacheKey);
-    return null;
-  });
-  atoolDescriptionCache.set(cacheKey, promise);
-  return promise;
-}
-
-async function fetchAtoolSkillDescriptionsUncached(
-  className: string,
-  safeServerId: string,
-  safeCharacterName: string,
-): Promise<JobSkillDescriptions | null> {
-  const url = `https://aion2tool.com/char/serverid=${encodeURIComponent(
-    safeServerId,
-  )}/${encodeURIComponent(safeCharacterName)}`;
-
-  const res = await fetch(url, {
-    headers: HEADERS,
-    next: { revalidate: 3600 },
-  });
-  if (!res.ok) return null;
-
-  const html = await res.text();
-  const match = html.match(
-    /<script[^>]*id=["']skill-descriptions-data["'][^>]*>([\s\S]*?)<\/script>/,
-  );
-  if (!match?.[1]) return null;
-
-  const parsed = JSON.parse(match[1]) as Record<string, JobSkillDescriptions>;
-  return parsed[className] ?? null;
-}
-
-function getSkillDescriptionType(skill: Record<string, unknown>) {
-  const category = String(skill.category ?? skill.type ?? "").toLowerCase();
-  if (category === "passive" || category.includes("passive")) return "passive";
-  if (
-    category === "dp" ||
-    category.includes("stigma") ||
-    category.includes("스티그마")
-  ) {
-    return "stigma";
-  }
-  return "active";
-}
-
-function findSkillDescription(
-  descriptions: JobSkillDescriptions,
-  type: string,
-  name: string,
-) {
-  const typed = descriptions[type as keyof JobSkillDescriptions]?.[name];
-  if (typed) return typed;
-
-  return (
-    descriptions.active?.[name] ??
-    descriptions.passive?.[name] ??
-    descriptions.stigma?.[name]
-  );
-}
-
-function extractBaseSkillName(name: string) {
-  return name.split(/[→?]/)[0]?.trim() ?? name.trim();
-}
