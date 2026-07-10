@@ -773,10 +773,10 @@ function normalizeList(value: unknown): DetailItem[] {
 }
 
 function getOptionAccentColor(title: string, record: Record<string, unknown>) {
-  if (title === "???? ??") {
+  if (title === "영혼각인 옵션") {
     return getSoulTierColor(getSoulInscriptionTier(record.name));
   }
-  if (title === "??" || title === "??") {
+  if (title === "마석" || title === "신석") {
     return getOptionGradeColor(record.grade);
   }
   return undefined;
@@ -791,6 +791,35 @@ function getOptionGradeColor(grade: unknown) {
   return undefined;
 }
 
+function getBestOptionGradeColor(options: unknown[]) {
+  const gradeRank: Record<string, number> = { legend: 5, epic: 4, unique: 3, rare: 2, common: 1 };
+  let bestRank = 0;
+  let bestColor: string | undefined;
+
+  for (const option of options) {
+    const grade = String(asRecord(option)?.grade ?? "").toLowerCase();
+    const gradeKey = Object.keys(gradeRank).find((key) => grade.includes(key));
+    const rank = gradeKey ? gradeRank[gradeKey] : 0;
+    if (rank > bestRank) {
+      bestRank = rank;
+      bestColor = getOptionGradeColor(grade);
+    }
+  }
+
+  return bestColor;
+}
+
+function getSoulSummaryColor(options: unknown[]) {
+  const rank: Record<string, number> = { S: 4, A: 3, B: 2, C: 1 };
+  let bestTier = "C";
+
+  for (const option of options) {
+    const tier = getSoulInscriptionTier(asRecord(option)?.name);
+    if ((rank[tier] ?? 0) > rank[bestTier]) bestTier = tier;
+  }
+
+  return getSoulTierColor(bestTier);
+}
 
 function getEquipmentGradeColor(item: DetailItem) {
   const detail = asRecord(item.detail);
@@ -805,9 +834,16 @@ function getEquipmentGradeColor(item: DetailItem) {
 function getSoulInscriptionTier(optionName: unknown) {
   if (!optionName) return "C";
   const name = String(optionName).trim();
-  const sTierOptions = ["?? ?? ??", "?? ??", "?? ??", "??? ?? ??", "??", "?? ?? ??", "??"];
-  const bTierOptions = ["??", "??", "??", "???", "?? ???", "?? ??", "???", "??? ??", "?? ???", "???", "??? ??", "?? ??", "?? ??", "???? ??", "???? ??", "?? ??", "?? ??", "??", "??"];
-  const aTierOptions = ["?? ??", "???", "??? ??", "??", "???", "??"];
+
+  const sTierGodStones = ["회상[카이시넬]", "시간[시엘]", "파괴[지켈]", "죽음[트리니엘]", "자유[바이젤]", "지혜[루미엘]"];
+  const aTierGodStones = ["정의[아자치]", "공간[이스라펠]"];
+  if (sTierGodStones.some((option) => name.includes(option))) return "S";
+  if (aTierGodStones.some((option) => name.includes(option))) return "A";
+
+  const sTierOptions = ["무기 피해 증폭", "전투 속도", "피해 증폭", "치명타 피해 증폭", "위력", "다단 히트 적중", "정확"];
+  const bTierOptions = ["막기", "비행", "회피", "생명력", "최대 생명력", "피해 내성", "방어력", "치명타 방어", "마법 공격력", "정신력", "치명타 저항", "강화 저항", "환경 저항", "상태이상 저항", "상태이상 적중", "천령 관련", "재생 관련", "재생", "천령"];
+  const aTierOptions = ["이동 속도", "공격력", "공격력 증가", "강화", "치명타", "명중"];
+
   if (sTierOptions.some((option) => name.includes(option))) return "S";
   if (bTierOptions.some((option) => name.includes(option))) return "B";
   if (aTierOptions.some((option) => name === option || name.includes(option))) return "A";
@@ -820,36 +856,56 @@ function getSoulTierColor(tier: string) {
   if (tier === "B") return "#4ade80";
   return "#888888";
 }
-
-
 function ItemOptionPreview({ item }: { item: DetailItem }) {
   const detail = asRecord(item.detail);
   if (!detail) return null;
 
+  const subStats = asArray(detail.subStats);
   const magicStones = asArray(detail.magicStoneStat);
   const godStones = asArray(detail.godStoneStat);
   const subSkills = asArray(detail.subSkills);
-  const lines = [
-    detail.soulBindRate !== undefined ? `영혼각인 ${formatPlainValue(detail.soulBindRate)}%` : "",
-    magicStones.length > 0
-      ? `마석 ${magicStones.length}/${formatPlainValue(detail.magicStoneSlotCount ?? magicStones.length)}`
-      : "",
-    godStones.length > 0 ? `신석 ${formatPlainValue(asRecord(godStones[0])?.name ?? godStones.length)}` : "",
-    subSkills.length > 0 ? `장비 스킬 ${subSkills.length}` : "",
-  ].filter(Boolean).slice(0, 3);
+  const chips: Array<{ text: string; color?: string }> = [];
 
-  if (lines.length === 0) return null;
+  if (detail.soulBindRate !== undefined) {
+    chips.push({ text: `영혼각인 ${formatPlainValue(detail.soulBindRate)}%`, color: getSoulSummaryColor(subStats) });
+  }
+  if (magicStones.length > 0) {
+    chips.push({
+      text: `마석 ${magicStones.length}/${formatPlainValue(detail.magicStoneSlotCount ?? magicStones.length)}`,
+      color: getBestOptionGradeColor(magicStones),
+    });
+  }
+  if (godStones.length > 0) {
+    chips.push({
+      text: `신석 ${formatPlainValue(asRecord(godStones[0])?.name ?? godStones.length)}`,
+      color: getBestOptionGradeColor(godStones),
+    });
+  }
+  if (subSkills.length > 0) {
+    chips.push({ text: `장비 스킬 ${subSkills.length}`, color: "#8b5cf6" });
+  }
+
+  const visibleChips = chips.slice(0, 3);
+  if (visibleChips.length === 0) return null;
+
   return (
     <div className="mt-1 flex flex-wrap gap-1">
-      {lines.map((line) => (
-        <span key={line} className="rounded border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] leading-4 text-primary">
-          {line}
+      {visibleChips.map((chip) => (
+        <span
+          key={chip.text}
+          className="rounded border px-1.5 py-0.5 text-[10px] leading-4"
+          style={
+            chip.color
+              ? { borderColor: `${chip.color}66`, backgroundColor: `${chip.color}18`, color: chip.color }
+              : undefined
+          }
+        >
+          {chip.text}
         </span>
       ))}
     </div>
   );
 }
-
 function EquipmentTooltip({ item }: { item: DetailItem }) {
   const detail = asRecord(item.detail);
   if (!detail) return null;
@@ -938,7 +994,7 @@ function OptionSection({
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="min-w-0 truncate" style={accentColor && title === "???? ??" ? { color: accentColor } : undefined}>{name}</span>
+                  <span className="min-w-0 truncate" style={accentColor && title === "영혼각인 옵션" ? { color: accentColor } : undefined}>{name}</span>
                   {record.grade !== undefined && title !== "영혼각인 옵션" && (
                     <span className="shrink-0 text-[10px] font-medium" style={{ color: accentColor }}>
                       {formatPlainValue(record.grade)}
