@@ -249,7 +249,7 @@ export default async function CharacterDetailPage({
           <div className="space-y-5">
             <WeaponArmorCard items={weaponArmorItems} priorityMap={priorityMap} />
             <AccessoryCard items={accessoryItems} priorityMap={priorityMap} />
-            <ArcanaCard items={arcanaItems} set={arcanaSet} priorityMap={priorityMap} />
+            <ArcanaCard items={arcanaItems} set={arcanaSet} />
           </div>
           <div className="space-y-5">
             <SkillBoard skills={skills} stigmas={stigmas} />
@@ -318,11 +318,11 @@ type DetailItem = {
 // specific rows win over the shared '공통' fallback for the same stat_key.
 type StatPriorityMap = Map<string, number>;
 
-const TIER_DOT_COLOR: Record<number, string> = {
-  1: "bg-violet-400",
-  2: "bg-sky-400",
-  3: "bg-muted-foreground",
-  4: "bg-muted-foreground/40",
+const TIER_ACCENT_COLOR: Record<number, string> = {
+  1: "#a78bfa",
+  2: "#38bdf8",
+  3: "#9ca3af",
+  4: "#6b7280",
 };
 
 const TIER_LABELS: Record<number, string> = {
@@ -455,11 +455,9 @@ function AccessoryCard({
 function ArcanaCard({
   items,
   set,
-  priorityMap,
 }: {
   items: DetailItem[];
   set: Record<string, unknown> | undefined;
-  priorityMap: StatPriorityMap;
 }) {
   const bonuses = asArray(set?.bonuses);
   return (
@@ -481,7 +479,7 @@ function ArcanaCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4 p-3 sm:p-5">
-        <SlotGrid items={items} slotKeys={ARCANA_SLOTS} priorityMap={priorityMap} />
+        <ArcanaTileGrid items={items} slotKeys={ARCANA_SLOTS} />
         {bonuses.length > 0 && (
           <div className="grid gap-2 sm:grid-cols-2">
             {bonuses.map((bonus, index) => {
@@ -554,6 +552,84 @@ function EquipmentSlotCard({
   );
 }
 
+function ArcanaTileGrid({
+  items,
+  slotKeys,
+}: {
+  items: DetailItem[];
+  slotKeys: readonly string[];
+}) {
+  const usedIndexes = new Set<number>();
+  const tiles = slotKeys.map((slotKey) => {
+    const index = items.findIndex(
+      (item, itemIndex) =>
+        !usedIndexes.has(itemIndex) &&
+        String(item.slot ?? "").toLowerCase() === slotKey,
+    );
+    if (index >= 0) {
+      usedIndexes.add(index);
+      return { key: slotKey, label: SLOT_NAME_KO[slotKey] ?? slotKey, item: items[index] };
+    }
+    return { key: slotKey, label: SLOT_NAME_KO[slotKey] ?? slotKey, item: undefined };
+  });
+
+  return (
+    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+      {tiles.map((tile) => (
+        <ArcanaTile
+          key={tile.key}
+          label={tile.label}
+          item={tile.item}
+          upcomingIcon={ARCANA_UPCOMING_ICON[tile.key]}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ArcanaTile({
+  label,
+  item,
+  upcomingIcon: UpcomingIcon,
+}: {
+  label: string;
+  item?: DetailItem;
+  upcomingIcon?: typeof Dices;
+}) {
+  const gradeColor = item ? getEquipmentGradeColor(item) : undefined;
+
+  return (
+    <div
+      className="flex flex-col items-center gap-1 rounded-md border bg-muted/20 p-2 text-center"
+      style={gradeColor ? { borderColor: `${gradeColor}66`, boxShadow: `inset 0 0 0 1px ${gradeColor}18` } : undefined}
+    >
+      {item?.icon ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.icon}
+          alt=""
+          className="size-10 rounded-md border bg-muted object-cover"
+          style={{ borderColor: `${gradeColor}88` }}
+        />
+      ) : UpcomingIcon ? (
+        <UpcomingIcon className="size-6 text-muted-foreground" />
+      ) : (
+        <Layers className="size-6 text-muted-foreground" />
+      )}
+      <div className="w-full truncate text-[11px] font-medium">{item?.name ?? label}</div>
+      <div className="text-[10px] text-muted-foreground">
+        {item
+          ? item.level !== undefined
+            ? `+${item.level}`
+            : "장착"
+          : UpcomingIcon
+            ? "출시 예정"
+            : "미장착"}
+      </div>
+    </div>
+  );
+}
+
 function CharacterStatsCard({ detailData }: { detailData?: Record<string, unknown> }) {
   const stats = asArray(detailData?.stats).slice(0, 10);
   return (
@@ -591,10 +667,14 @@ function CompanionCard({ detailData }: { detailData?: Record<string, unknown> })
         <CardTitle className="text-base">{"\ud3ab / \ub0a0\uac1c"}</CardTitle>
         <CardDescription>{"\uc7a5\ucc29 \uc911\uc778 \ub3d9\ub8cc\uc640 \ub0a0\uac1c \uc815\ubcf4\uc785\ub2c8\ub2e4."}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2">
-        {entries.length > 0 ? entries.map((entry) => (
-          <IconInfoRow key={entry.label} label={entry.label} item={entry.item!} />
-        )) : <EmptyText>{"\ud3ab/\ub0a0\uac1c \uc815\ubcf4\uac00 \uc544\uc9c1 \uc5c6\uc5b4\uc694."}</EmptyText>}
+      <CardContent>
+        {entries.length > 0 ? (
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {entries.map((entry) => (
+              <CompanionTile key={entry.label} label={entry.label} item={entry.item!} />
+            ))}
+          </div>
+        ) : <EmptyText>{"\ud3ab/\ub0a0\uac1c \uc815\ubcf4\uac00 \uc544\uc9c1 \uc5c6\uc5b4\uc694."}</EmptyText>}
       </CardContent>
     </Card>
   );
@@ -709,7 +789,7 @@ function SkillGroup({
           {empty}
         </p>
       ) : (
-        <div className="flex flex-wrap gap-2 overflow-visible">
+        <div className="grid grid-cols-4 gap-2 overflow-visible sm:grid-cols-5 lg:grid-cols-6">
           {items.map((item, index) => (
             <SkillIconSummary
               key={`${title}-${item.name}-${index}`}
@@ -764,54 +844,69 @@ function ItemSummary({
   compact?: boolean;
   priorityMap?: StatPriorityMap;
 }) {
-  const hasTooltip = hasSkillTooltip(item);
-  const hasEquipmentTooltip = hasEquipmentDetailTooltip(item);
   const gradeColor = getEquipmentGradeColor(item);
+  const detail = asRecord(item.detail);
+  const mainStats = asArray(detail?.mainStats);
+  const magicStones = asArray(detail?.magicStoneStat);
+  const godStones = asArray(detail?.godStoneStat);
+  // Gear-granted skills (subSkills) are just another soul-engraving
+  // option in-game, so they're shown in the same section as subStats
+  // instead of a separate "장비 스킬" box.
+  const soulOptions = [...asArray(detail?.subStats), ...asArray(detail?.subSkills)];
+  const exceedStats = exceedBonusStats(item);
 
   return (
-    <div className="group relative z-0 flex min-w-0 gap-2 hover:z-50">
-      {item.icon && (
-        <div className="relative shrink-0">
-          {/* Official AION2 item and skill icons are small CDN assets. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={item.icon}
-            alt=""
-            className={(compact ? "size-8" : "size-9") + " rounded-md border bg-muted object-cover"}
-            style={{ borderColor: `${gradeColor}88` }}
-          />
-          {Number(item.value) > 0 && (
-            <span
-              className="absolute -top-1 -left-1 flex size-4 items-center justify-center rounded-full bg-violet-500 font-mono text-[9px] font-bold leading-none text-white ring-1 ring-background"
-              title={`돌파 ${item.value}`}
-            >
-              {item.value}
-            </span>
-          )}
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex min-w-0 gap-2">
+        {Number(item.value) > 0 && (
+          <div className="flex shrink-0 items-center" title={`돌파 ${item.value}`}>
+            <div className="flex size-8 rotate-45 items-center justify-center rounded-[6px] bg-violet-500 ring-1 ring-background">
+              <span
+                className="-rotate-45 text-base font-black leading-none text-white"
+                style={{ WebkitTextStroke: "1px black", textShadow: "0 0 1.5px #000, 0 0 1.5px #000" }}
+              >
+                {item.value}
+              </span>
+            </div>
+          </div>
+        )}
+        {item.icon && (
+          <div className="relative shrink-0">
+            {/* Official AION2 item and skill icons are small CDN assets. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.icon}
+              alt=""
+              className={(compact ? "size-8" : "size-9") + " rounded-md border bg-muted object-cover"}
+              style={{ borderColor: `${gradeColor}88` }}
+            />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <span className={(compact ? "text-sm " : "") + "min-w-0 break-words font-medium"}>{item.name}</span>
+            {item.level !== undefined && (
+              <Badge variant="secondary" className="shrink-0">
+                +{item.level}
+              </Badge>
+            )}
+          </div>
+          <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+            {item.slot && <span>{item.slot}</span>}
+            {item.grade && <span>{formatGradeName(item.grade)}</span>}
+            {Number(item.value) > 0 && (
+              <span className="font-medium text-sky-400">돌파 {item.value}</span>
+            )}
+          </div>
         </div>
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <span className={(compact ? "text-sm " : "") + "min-w-0 break-words font-medium"}>{item.name}</span>
-          {item.level !== undefined && (
-            <Badge variant="secondary" className="shrink-0">
-              +{item.level}
-            </Badge>
-          )}
-        </div>
-        <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-          {item.slot && <span>{item.slot}</span>}
-          {item.grade && <span>{formatGradeName(item.grade)}</span>}
-          {Number(item.value) > 0 && (
-            <span className="font-medium text-violet-400">돌파 {item.value}</span>
-          )}
-        </div>
-        <ItemStatPreview item={item} />
-        <ItemOptionPreview item={item} />
-        <ExceedBonusPreview item={item} />
       </div>
-      {hasTooltip && <SkillTooltip item={item} />}
-      {hasEquipmentTooltip && <EquipmentTooltip item={item} priorityMap={priorityMap} />}
+      <div className="space-y-1.5">
+        <OptionSection title="주 능력치" items={mainStats} />
+        <OptionSection title="돌파 보너스" items={exceedStats} />
+        <OptionSection title="영혼각인 옵션" items={soulOptions} priorityMap={priorityMap} icon level />
+        <OptionSection title="마석" items={magicStones} icon />
+        <OptionSection title="신석" items={godStones} icon description />
+      </div>
     </div>
   );
 }
@@ -820,8 +915,8 @@ function SkillIconSummary({ item }: { item: DetailItem }) {
   const hasTooltip = hasSkillTooltip(item);
 
   return (
-    <div className="group relative z-0 hover:z-50">
-      <div className="relative flex size-12 items-center justify-center rounded-md border bg-muted/20 p-1.5 transition-colors group-hover:border-primary/50 group-hover:bg-primary/10">
+    <div className="group relative z-0 flex flex-col items-center gap-1 rounded-md border bg-muted/20 p-1.5 text-center transition-colors hover:z-50 hover:border-primary/50 hover:bg-primary/10">
+      <div className="relative flex size-9 items-center justify-center">
         {item.icon ? (
           // Official AION2 skill icons are small CDN assets.
           // eslint-disable-next-line @next/next/no-img-element
@@ -838,6 +933,9 @@ function SkillIconSummary({ item }: { item: DetailItem }) {
             {item.level}
           </span>
         )}
+      </div>
+      <div className="line-clamp-2 w-full text-[10px] leading-tight text-muted-foreground">
+        {item.name}
       </div>
       {hasTooltip && <SkillTooltip item={item} compact />}
     </div>
@@ -951,9 +1049,6 @@ function normalizeList(value: unknown): DetailItem[] {
 }
 
 function getOptionAccentColor(title: string, record: Record<string, unknown>) {
-  if (title === "영혼각인 옵션") {
-    return getSoulTierColor(getSoulInscriptionTier(record.name));
-  }
   if (title === "마석" || title === "신석") {
     return getOptionGradeColor(record.grade);
   }
@@ -996,162 +1091,8 @@ function getOptionGradeColor(grade: unknown) {
   return undefined;
 }
 
-function getBestOptionGradeColor(options: unknown[]) {
-  const gradeRank: Record<string, number> = { epic: 5, unique: 4, legend: 3, rare: 2, common: 1 };
-  let bestRank = 0;
-  let bestColor: string | undefined;
-
-  for (const option of options) {
-    const grade = asRecord(option)?.grade;
-    const gradeKey = getGradeKey(grade);
-    const rank = gradeKey ? gradeRank[gradeKey] : 0;
-    if (rank > bestRank) {
-      bestRank = rank;
-      bestColor = getOptionGradeColor(grade);
-    }
-  }
-
-  return bestColor;
-}
-
-function getSoulSummaryColor(options: unknown[]) {
-  const rank: Record<string, number> = { S: 4, A: 3, B: 2, C: 1 };
-  let bestTier = "C";
-
-  for (const option of options) {
-    const tier = getSoulInscriptionTier(asRecord(option)?.name);
-    if ((rank[tier] ?? 0) > rank[bestTier]) bestTier = tier;
-  }
-
-  return getSoulTierColor(bestTier);
-}
-
 function getEquipmentGradeColor(item: DetailItem) {
   return getOptionGradeColor(asRecord(item.detail)?.grade ?? item.grade) ?? "#8b5cf6";
-}
-
-function getSoulInscriptionTier(optionName: unknown) {
-  if (!optionName) return "C";
-  const name = String(optionName).trim();
-
-  const sTierGodStones = ["회상[카이시넬]", "시간[시엘]", "파괴[지켈]", "죽음[트리니엘]", "자유[바이젤]", "지혜[루미엘]"];
-  const aTierGodStones = ["정의[아자치]", "공간[이스라펠]"];
-  if (sTierGodStones.some((option) => name.includes(option))) return "S";
-  if (aTierGodStones.some((option) => name.includes(option))) return "A";
-
-  const sTierOptions = ["무기 피해 증폭", "전투 속도", "피해 증폭", "치명타 피해 증폭", "위력", "다단 히트 적중", "정확"];
-  const bTierOptions = ["막기", "비행", "회피", "생명력", "최대 생명력", "피해 내성", "방어력", "치명타 방어", "마법 공격력", "정신력", "치명타 저항", "강화 저항", "환경 저항", "상태이상 저항", "상태이상 적중", "천령 관련", "재생 관련", "재생", "천령"];
-  const aTierOptions = ["이동 속도", "공격력", "공격력 증가", "강화", "치명타", "명중"];
-
-  if (sTierOptions.some((option) => name.includes(option))) return "S";
-  if (bTierOptions.some((option) => name.includes(option))) return "B";
-  if (aTierOptions.some((option) => name === option || name.includes(option))) return "A";
-  return "B";
-}
-
-function getSoulTierColor(tier: string) {
-  if (tier === "S") return "#facc15";
-  if (tier === "A") return "#60a5fa";
-  if (tier === "B") return "#4ade80";
-  return "#888888";
-}
-function ItemOptionPreview({ item }: { item: DetailItem }) {
-  const detail = asRecord(item.detail);
-  if (!detail) return null;
-
-  const subStats = asArray(detail.subStats);
-  const magicStones = asArray(detail.magicStoneStat);
-  const godStones = asArray(detail.godStoneStat);
-  const subSkills = asArray(detail.subSkills);
-  const chips: Array<{ text: string; color?: string }> = [];
-
-  if (detail.soulBindRate !== undefined) {
-    chips.push({ text: `영혼각인 ${formatPlainValue(detail.soulBindRate)}%`, color: getSoulSummaryColor(subStats) });
-  }
-  if (magicStones.length > 0) {
-    chips.push({
-      text: `마석 ${magicStones.length}/${formatPlainValue(detail.magicStoneSlotCount ?? magicStones.length)}`,
-      color: getBestOptionGradeColor(magicStones),
-    });
-  }
-  if (godStones.length > 0) {
-    chips.push({
-      text: `신석 ${formatPlainValue(asRecord(godStones[0])?.name ?? godStones.length)}`,
-      color: getBestOptionGradeColor(godStones),
-    });
-  }
-  if (subSkills.length > 0) {
-    chips.push({ text: `장비 스킬 ${subSkills.length}`, color: "#8b5cf6" });
-  }
-
-  const visibleChips = chips.slice(0, 3);
-  if (visibleChips.length === 0) return null;
-
-  return (
-    <div className="mt-1 flex flex-wrap gap-1">
-      {visibleChips.map((chip) => (
-        <span
-          key={chip.text}
-          className="rounded border px-1.5 py-0.5 text-[10px] leading-4"
-          style={
-            chip.color
-              ? { borderColor: `${chip.color}66`, backgroundColor: `${chip.color}18`, color: chip.color }
-              : undefined
-          }
-        >
-          {chip.text}
-        </span>
-      ))}
-    </div>
-  );
-}
-function EquipmentTooltip({
-  item,
-  priorityMap,
-}: {
-  item: DetailItem;
-  priorityMap?: StatPriorityMap;
-}) {
-  const detail = asRecord(item.detail);
-  if (!detail) return null;
-
-  const gradeColor = getEquipmentGradeColor(item);
-  const mainStats = asArray(detail.mainStats);
-  const subStats = asArray(detail.subStats);
-  const magicStones = asArray(detail.magicStoneStat);
-  const godStones = asArray(detail.godStoneStat);
-  const subSkills = asArray(detail.subSkills);
-
-  return (
-    <div
-      className="absolute left-0 top-12 z-50 hidden w-[26rem] max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-3 text-popover-foreground shadow-xl group-hover:block"
-      style={{ borderColor: `${gradeColor}88`, boxShadow: `0 18px 60px ${gradeColor}22` }}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="break-words text-sm font-semibold">{item.name}</div>
-          <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-            {item.slot && <span>{item.slot}</span>}
-            {detail.gradeName !== undefined && <span style={{ color: gradeColor }}>{formatGradeName(detail.gradeName)}</span>}
-            {detail.categoryName !== undefined && <span>{formatPlainValue(detail.categoryName)}</span>}
-            {detail.soulBindRate !== undefined && <span>영혼각인 {formatPlainValue(detail.soulBindRate)}%</span>}
-          </div>
-        </div>
-        {detail.enchantLevel !== undefined && (
-          <Badge variant="secondary">+{formatPlainValue(detail.enchantLevel)}</Badge>
-        )}
-      </div>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <OptionSection title="주 능력치" items={mainStats} />
-        <OptionSection title="돌파 보너스" items={exceedBonusStats(item)} />
-        <OptionSection title="영혼각인 옵션" items={subStats} priorityMap={priorityMap} />
-        <OptionSection title="마석" items={magicStones} icon />
-        <OptionSection title="신석" items={godStones} icon description />
-        <OptionSection title="장비 스킬" items={subSkills} icon level />
-      </div>
-    </div>
-  );
 }
 
 function OptionSection({
@@ -1170,19 +1111,23 @@ function OptionSection({
   priorityMap?: StatPriorityMap;
 }) {
   if (items.length === 0) return null;
+  const isSoulOption = title === "영혼각인 옵션";
   return (
     <div className="space-y-1 rounded border bg-background/60 p-2">
       <div className="text-[11px] font-semibold text-muted-foreground">{title}</div>
       <div className="space-y-1">
-        {items.slice(0, 8).map((item, index) => {
+        {items.slice(0, 20).map((item, index) => {
           const record = asRecord(item) ?? {};
           const name = formatPlainValue(record.name ?? record.id ?? "-");
           const value = record.value !== undefined ? formatPlainValue(record.value) : "";
-          const accentColor = getOptionAccentColor(title, record);
           const tier =
-            title === "영혼각인 옵션" && typeof record.id === "string"
+            isSoulOption && typeof record.id === "string"
               ? priorityMap?.get(record.id)
               : undefined;
+          const accentColor = isSoulOption
+            ? (tier !== undefined ? TIER_ACCENT_COLOR[tier] : undefined)
+            : getOptionAccentColor(title, record);
+          const hasIcon = icon && typeof record.icon === "string" && !!record.icon;
           return (
             <div
               key={`${title}-${index}`}
@@ -1191,37 +1136,33 @@ function OptionSection({
                 borderLeftColor: accentColor ?? "transparent",
                 backgroundColor: accentColor ? `${accentColor}12` : undefined,
               }}
+              title={tier !== undefined ? TIER_LABELS[tier] : undefined}
             >
-              {icon && typeof record.icon === "string" && record.icon ? (
+              {hasIcon ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={record.icon}
+                  src={record.icon as string}
                   alt=""
                   className="mt-0.5 size-5 shrink-0 rounded border bg-muted object-cover"
                   style={accentColor ? { borderColor: `${accentColor}aa` } : undefined}
                 />
-              ) : null}
-              {!icon && accentColor && (
+              ) : accentColor ? (
                 <span className="mt-1 size-1.5 shrink-0 rounded-full" style={{ backgroundColor: accentColor }} />
-              )}
+              ) : null}
               <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-1 truncate" style={accentColor && title === "영혼각인 옵션" ? { color: accentColor } : undefined}>
-                    {tier !== undefined && (
-                      <span
-                        className={`size-1.5 shrink-0 rounded-full ${TIER_DOT_COLOR[tier] ?? ""}`}
-                        title={TIER_LABELS[tier]}
-                      />
-                    )}
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate" style={accentColor && isSoulOption ? { color: accentColor } : undefined}>
                     {name}
                   </span>
-                  {record.grade !== undefined && title !== "영혼각인 옵션" && (
-                    <span className="shrink-0 text-[10px] font-medium" style={{ color: accentColor }}>
-                      {formatGradeName(record.grade)}
-                    </span>
-                  )}
-                  {value && <span className="shrink-0 font-medium" style={accentColor ? { color: accentColor } : undefined}>{value}</span>}
-                  {level && record.level !== undefined && <span className="shrink-0 text-muted-foreground">Lv.{formatPlainValue(record.level)}</span>}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {record.grade !== undefined && !isSoulOption && (
+                      <span className="w-10 shrink-0 text-right text-[10px] font-medium" style={{ color: accentColor }}>
+                        {formatGradeName(record.grade)}
+                      </span>
+                    )}
+                    {value && <span className="shrink-0 text-right font-medium" style={accentColor ? { color: accentColor } : undefined}>{value}</span>}
+                    {level && record.level !== undefined && <span className="shrink-0 text-muted-foreground">Lv.{formatPlainValue(record.level)}</span>}
+                  </div>
                 </div>
                 {description && record.desc !== undefined && (
                   <div className="mt-1 whitespace-pre-line text-[11px] leading-4 text-muted-foreground">
@@ -1233,18 +1174,6 @@ function OptionSection({
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function ItemStatPreview({ item }: { item: DetailItem }) {
-  const lines = getItemStatLines(item).slice(0, 2);
-  if (lines.length === 0) return null;
-  return (
-    <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-      {lines.map((line) => (
-        <div key={line} className="truncate">{line}</div>
-      ))}
     </div>
   );
 }
@@ -1316,20 +1245,6 @@ function exceedBonusStats(item: DetailItem): ExceedStat[] {
   return [];
 }
 
-function ExceedBonusPreview({ item }: { item: DetailItem }) {
-  const stats = exceedBonusStats(item);
-  if (stats.length === 0) return null;
-  return (
-    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] font-semibold text-violet-400">
-      {stats.map((stat, index) => (
-        <span key={`${stat.name}-${index}`}>
-          {stat.name} {stat.value}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function InfoRow({
   item,
   primaryKeys = ["name", "type", "rankingContentsName"],
@@ -1350,21 +1265,19 @@ function InfoRow({
   );
 }
 
-function IconInfoRow({ label, item }: { label: string; item: Record<string, unknown> }) {
+function CompanionTile({ label, item }: { label: string; item: Record<string, unknown> }) {
   return (
-    <div className="flex items-center gap-3 rounded-md border bg-muted/20 px-3 py-2">
+    <div className="flex flex-col items-center gap-1 rounded-md border bg-muted/20 p-2 text-center">
       {typeof item.icon === "string" && item.icon ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={item.icon} alt="" className="size-10 rounded-md border bg-muted object-cover" />
       ) : (
         <Sparkles className="size-5 text-muted-foreground" />
       )}
-      <div className="min-w-0 flex-1">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="truncate text-sm font-medium">{formatPlainValue(item.name ?? "-")}</div>
-      </div>
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className="line-clamp-2 w-full text-[11px] font-medium">{formatPlainValue(item.name ?? "-")}</div>
       {(item.level !== undefined || item.enchantLevel !== undefined) && (
-        <Badge variant="secondary">Lv.{formatPlainValue(item.level ?? item.enchantLevel)}</Badge>
+        <Badge variant="secondary" className="text-[10px]">Lv.{formatPlainValue(item.level ?? item.enchantLevel)}</Badge>
       )}
     </div>
   );
@@ -1376,22 +1289,6 @@ function EmptyText({ children }: { children: React.ReactNode }) {
       {children}
     </p>
   );
-}
-
-function getItemStatLines(item: DetailItem) {
-  const detail = asRecord(item.detail);
-  const mainStats = asArray(detail?.mainStats);
-  const subStats = asArray(detail?.subStats);
-  return [...mainStats, ...subStats]
-    .map((stat) => {
-      const record = asRecord(stat);
-      if (!record) return "";
-      const name = pickText(record, ["name", "type", "id"]);
-      const value = pickText(record, ["value", "minValue", "extra"]);
-      if (!name || value === undefined) return "";
-      return `${formatPlainValue(name)} ${formatPlainValue(value)}`;
-    })
-    .filter(Boolean);
 }
 
 function formatPlainValue(value: unknown) {
@@ -1439,18 +1336,6 @@ function asRecord(value: unknown) {
 
 function formatScore(value: number | string | null | undefined) {
   return Number(value ?? 50).toFixed(1);
-}
-
-function hasEquipmentDetailTooltip(item: DetailItem) {
-  const detail = asRecord(item.detail);
-  return !!detail && (
-    asArray(detail.mainStats).length > 0 ||
-    asArray(detail.subStats).length > 0 ||
-    asArray(detail.magicStoneStat).length > 0 ||
-    asArray(detail.godStoneStat).length > 0 ||
-    asArray(detail.subSkills).length > 0 ||
-    detail.soulBindRate !== undefined
-  );
 }
 
 function hasSkillTooltip(item: DetailItem) {
