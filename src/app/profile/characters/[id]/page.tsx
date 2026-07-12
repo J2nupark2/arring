@@ -118,10 +118,14 @@ function itemsInSlots(items: DetailItem[], slotKeys: readonly string[]) {
 
 export default async function CharacterDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ tab?: string }>;
 }) {
   const { id } = await params;
+  const query = await searchParams;
+  const activeTab = query?.tab === "daevanion" ? "daevanion" : "equipment";
   const supabase = await createClient();
   const {
     data: { user },
@@ -160,6 +164,10 @@ export default async function CharacterDetailPage({
   const describedStigmas = describedSkillList.slice(rawSkillCount);
 
   const detailData = asRecord(character.detail_data);
+  const detailProfile = asRecord(detailData?.profile);
+  const profileImage = detailProfile
+    ? pickString(detailProfile, ["profileImage", "profileImageUrl", "image", "imageUrl"])
+    : undefined;
   const itemLevel = asRecord(detailData?.summary)?.itemLevel;
   const equipment = normalizeList(character.equipment);
   const skills = normalizeList(describedSkills);
@@ -198,16 +206,31 @@ export default async function CharacterDetailPage({
         <Card className="overflow-hidden">
           <CardHeader className="border-b bg-muted/35 pb-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <CardTitle className="flex items-center gap-2 text-xl">
-                  {character.character_name}
-                  {character.is_primary && (
-                    <Badge variant="secondary">대표</Badge>
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted sm:size-24">
+                  {profileImage ? (
+                    // Official AION2 profile images are remote CDN assets.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profileImage}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Sparkles className="size-8 text-muted-foreground" />
                   )}
-                </CardTitle>
-                <CardDescription className="mt-1">
-                  {character.server_name} · {character.class_name || "직업 미확인"} · Lv.{character.character_level ?? "-"}
-                </CardDescription>
+                </div>
+                <div className="min-w-0">
+                  <CardTitle className="flex items-center gap-2 text-xl">
+                    {character.character_name}
+                    {character.is_primary && (
+                      <Badge variant="secondary">대표</Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    {character.server_name} · {character.class_name || "직업 미확인"} · Lv.{character.character_level ?? "-"}
+                  </CardDescription>
+                </div>
               </div>
               <div className="flex divide-x rounded-md border bg-background text-right">
                 <div className="px-4 py-3">
@@ -245,23 +268,54 @@ export default async function CharacterDetailPage({
           </CardContent>
         </Card>
 
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]">
-          <div className="space-y-5">
-            <WeaponArmorCard items={weaponArmorItems} priorityMap={priorityMap} />
-            <AccessoryCard items={accessoryItems} priorityMap={priorityMap} />
-            <ArcanaCard items={arcanaItems} set={arcanaSet} />
-          </div>
-          <div className="space-y-5">
-            <SkillBoard skills={skills} stigmas={stigmas} />
-            <CharacterStatsCard detailData={detailData} />
-            <CompanionCard detailData={detailData} />
-          </div>
-        </section>
+        <nav className="flex w-fit rounded-md border bg-muted/20 p-1">
+          <Link
+            href={`/profile/characters/${id}`}
+            className={
+              "rounded px-4 py-2 text-sm font-medium transition-colors " +
+              (activeTab === "equipment"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground")
+            }
+          >
+            장비 / 스킬
+          </Link>
+          <Link
+            href={`/profile/characters/${id}?tab=daevanion`}
+            className={
+              "rounded px-4 py-2 text-sm font-medium transition-colors " +
+              (activeTab === "daevanion"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground")
+            }
+          >
+            데바니온
+          </Link>
+        </nav>
 
-        <section className="grid gap-5 lg:grid-cols-2">
-          <RankingCard detailData={detailData} />
-          <DaevanionCard detailData={detailData} />
-        </section>
+        {activeTab === "equipment" ? (
+          <>
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]">
+              <div className="space-y-5">
+                <WeaponArmorCard items={weaponArmorItems} priorityMap={priorityMap} />
+                <AccessoryCard items={accessoryItems} priorityMap={priorityMap} />
+                <ArcanaCard items={arcanaItems} set={arcanaSet} />
+              </div>
+              <div className="space-y-5">
+                <SkillBoard skills={skills} stigmas={stigmas} />
+                <CharacterStatsCard detailData={detailData} />
+                <CompanionCard detailData={detailData} />
+              </div>
+            </section>
+
+            <section className="grid gap-5 lg:grid-cols-2">
+              <RankingCard detailData={detailData} />
+              <DaevanionCard detailData={detailData} />
+            </section>
+          </>
+        ) : (
+          <DaevanionDetailTab detailData={detailData} />
+        )}
 
         <p className="text-sm text-muted-foreground">
           캐릭터 정보가 바뀌었다면{" "}
@@ -727,6 +781,180 @@ function DaevanionCard({ detailData }: { detailData?: Record<string, unknown> })
   );
 }
 
+function DaevanionDetailTab({ detailData }: { detailData?: Record<string, unknown> }) {
+  const normalized = asRecord(detailData?.normalized);
+  const daevanion = asRecord(detailData?.daevanion);
+  const boards = asArray(normalized?.daevanionBoards).length > 0
+    ? asArray(normalized?.daevanionBoards)
+    : asArray(daevanion?.boards);
+  const details = asArray(daevanion?.details);
+
+  return (
+    <section className="space-y-5">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">데바니온 상세</CardTitle>
+          <CardDescription>
+            공식 정보실에서 가져온 보드 진행률, 열린 스탯/스킬 효과, 노드 배치를 정리했어요.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {boards.length > 0 ? (
+            boards.map((board, index) => (
+              <DaevanionBoardDetail
+                key={String(asRecord(board)?.id ?? index)}
+                board={board}
+                detail={findDaevanionDetail(details, asRecord(board)?.id)}
+              />
+            ))
+          ) : (
+            <EmptyText>데바니온 정보가 아직 없어요.</EmptyText>
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function DaevanionBoardDetail({
+  board,
+  detail,
+}: {
+  board: unknown;
+  detail?: Record<string, unknown>;
+}) {
+  const record = asRecord(board) ?? {};
+  const rawNodes = asArray(record.nodes).length > 0
+    ? asArray(record.nodes)
+    : asArray(detail?.nodeList).map(normalizeDaevanionNode);
+  const nodes = rawNodes
+    .map(normalizeDaevanionNode)
+    .filter((node) => Number.isFinite(node.row) && Number.isFinite(node.col));
+  const statEffects = asArray(detail?.openStatEffectList);
+  const skillEffects = asArray(detail?.openSkillEffectList);
+
+  return (
+    <article className="rounded-md border bg-background/60 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {typeof record.icon === "string" && record.icon ? (
+            // Official AION2 board icons are remote CDN assets.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={record.icon} alt="" className="size-10 rounded-md border bg-muted object-cover" />
+          ) : (
+            <Sparkles className="size-8 text-muted-foreground" />
+          )}
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-semibold">
+              {formatPlainValue(record.name ?? record.id ?? "Board")}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {formatPlainValue(record.openNodeCount ?? 0)} / {formatPlainValue(record.totalNodeCount ?? nodes.length)} 노드 개방
+            </p>
+          </div>
+        </div>
+        <Badge variant="outline">{formatPercent(record.openPercent)}</Badge>
+      </div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary" style={{ width: formatCssPercent(record.openPercent) }} />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <EffectList title="열린 스탯 효과" items={statEffects} />
+        <EffectList title="열린 스킬 효과" items={skillEffects} />
+      </div>
+
+      <div className="mt-4">
+        <div className="mb-2 text-sm font-semibold">노드 배치</div>
+        {nodes.length > 0 ? (
+          <DaevanionNodeGrid nodes={nodes} />
+        ) : (
+          <EmptyText>노드 상세 정보가 아직 없어요.</EmptyText>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function EffectList({ title, items }: { title: string; items: unknown[] }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold">{title}</h4>
+        <Badge variant="secondary">{items.length}</Badge>
+      </div>
+      {items.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {items.map((item, index) => {
+            const record = asRecord(item);
+            return (
+              <Badge key={index} variant="outline" className="max-w-full whitespace-normal text-left">
+                {formatPlainValue(record?.desc ?? item)}
+              </Badge>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">열린 효과가 없어요.</p>
+      )}
+    </div>
+  );
+}
+
+type DaevanionNode = {
+  name: string;
+  row: number;
+  col: number;
+  grade: string;
+  type: string;
+  open: boolean;
+  effects: unknown[];
+};
+
+function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
+  const visibleNodes = nodes.filter((node) => node.type !== "None" || node.name || node.open);
+  const minRow = Math.min(...nodes.map((node) => node.row));
+  const minCol = Math.min(...nodes.map((node) => node.col));
+  const maxRow = Math.max(...nodes.map((node) => node.row));
+  const maxCol = Math.max(...nodes.map((node) => node.col));
+  const columns = Math.max(1, maxCol - minCol + 1);
+  const rows = Math.max(1, maxRow - minRow + 1);
+
+  return (
+    <div className="overflow-x-auto rounded-md border bg-muted/10 p-3">
+      <div
+        className="grid gap-1"
+        style={{
+          gridTemplateColumns: `repeat(${columns}, 24px)`,
+          gridTemplateRows: `repeat(${rows}, 24px)`,
+          minWidth: `${columns * 28}px`,
+        }}
+      >
+        {visibleNodes.map((node, index) => {
+          const color = getDaevanionNodeColor(node.grade);
+          return (
+            <div
+              key={`${node.row}-${node.col}-${index}`}
+              className={
+                "size-6 rounded-sm border text-[0px] transition-opacity " +
+                (node.open ? "opacity-100" : "opacity-35")
+              }
+              style={{
+                gridColumn: node.col - minCol + 1,
+                gridRow: node.row - minRow + 1,
+                borderColor: color.border,
+                backgroundColor: node.open ? color.bg : "rgba(148,163,184,0.08)",
+                boxShadow: node.open ? `0 0 8px ${color.glow}` : undefined,
+              }}
+              title={formatDaevanionNodeTitle(node)}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SkillBoard({
   skills,
   stigmas,
@@ -803,13 +1031,15 @@ function SkillGroup({
 }
 
 function groupSkills(skills: DetailItem[], stigmas: DetailItem[]) {
-  const stigmaFromSkills = skills.filter(isStigmaSkill);
-  const ordinarySkills = skills.filter((skill) => !isStigmaSkill(skill));
+  const leveledSkills = skills.filter(hasPositiveSkillLevel);
+  const leveledStigmas = stigmas.filter(hasPositiveSkillLevel);
+  const stigmaFromSkills = leveledSkills.filter(isStigmaSkill);
+  const ordinarySkills = leveledSkills.filter((skill) => !isStigmaSkill(skill));
 
   return {
     active: sortByLevelDesc(ordinarySkills.filter((skill) => !isPassiveSkill(skill))),
     passive: sortByLevelDesc(ordinarySkills.filter(isPassiveSkill)),
-    stigma: sortByLevelDesc([...stigmas, ...stigmaFromSkills]),
+    stigma: sortByLevelDesc([...leveledStigmas, ...stigmaFromSkills]),
   };
 }
 
@@ -833,6 +1063,11 @@ function isStigmaSkill(item: DetailItem) {
     category.includes("stigma") ||
     category.includes("스티그마")
   );
+}
+
+function hasPositiveSkillLevel(item: DetailItem) {
+  const level = Number(item.level ?? 0);
+  return Number.isFinite(level) && level > 0;
 }
 
 function ItemSummary({
@@ -1030,10 +1265,8 @@ function ItemSummary({
 }
 
 function SkillIconSummary({ item }: { item: DetailItem }) {
-  const hasTooltip = hasSkillTooltip(item);
-
   return (
-    <div className="group relative z-0 flex flex-col items-center gap-1 rounded-md border bg-muted/20 p-1.5 text-center transition-colors hover:z-50 hover:border-primary/50 hover:bg-primary/10">
+    <div className="flex min-h-24 flex-col items-center gap-1 rounded-md border bg-muted/20 p-1.5 text-center">
       <div className="relative flex size-9 items-center justify-center">
         {item.icon ? (
           // Official AION2 skill icons are small CDN assets.
@@ -1046,59 +1279,13 @@ function SkillIconSummary({ item }: { item: DetailItem }) {
         ) : (
           <Sparkles className="size-5 text-muted-foreground" />
         )}
-        {item.level !== undefined && (
-          <span className="absolute -bottom-1 -right-1 rounded bg-background px-1 font-mono text-[10px] font-semibold leading-4 ring-1 ring-border">
-            {item.level}
-          </span>
-        )}
       </div>
-      <div className="line-clamp-2 w-full text-[10px] leading-tight text-muted-foreground">
+      <div className="line-clamp-2 w-full text-[10px] font-medium leading-tight">
         {item.name}
       </div>
-      {hasTooltip && <SkillTooltip item={item} compact />}
-    </div>
-  );
-}
-
-function SkillTooltip({
-  item,
-  compact = false,
-}: {
-  item: DetailItem;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      className={`absolute z-50 hidden w-80 max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-3 text-popover-foreground shadow-lg group-hover:block ${
-        compact ? "right-0 top-14" : "left-0 top-11"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="break-words text-sm font-semibold">{item.name}</div>
-          <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-            {item.slot && <span>{formatCategory(item.slot)}</span>}
-            {item.level !== undefined && <span>Lv.{item.level}</span>}
-            {item.requiredLevel !== undefined && (
-              <span>요구 Lv.{item.requiredLevel}</span>
-            )}
-          </div>
-        </div>
-        {item.equipped !== undefined && (
-          <Badge variant={Number(item.equipped) === 1 ? "secondary" : "outline"}>
-            {Number(item.equipped) === 1 ? "장착" : "미장착"}
-          </Badge>
-        )}
+      <div className="font-mono text-[10px] font-semibold text-primary">
+        Lv.{formatPlainValue(item.level)}
       </div>
-      <p className="mt-3 whitespace-pre-line break-words text-xs leading-5 text-muted-foreground">
-        {item.description ||
-          "공식 응답에 별도 설명문은 없지만, 스킬 레벨과 장착 상태를 확인할 수 있어요."}
-      </p>
-      {item.notes && (
-        <div className="mt-2 rounded border border-primary/20 bg-primary/10 px-2 py-1 text-xs text-primary">
-          {item.notes}
-        </div>
-      )}
     </div>
   );
 }
@@ -1452,28 +1639,56 @@ function asRecord(value: unknown) {
   return value as Record<string, unknown>;
 }
 
+function findDaevanionDetail(details: unknown[], boardId: unknown) {
+  const id = String(boardId ?? "");
+  if (!id) return undefined;
+  for (const detail of details) {
+    const record = asRecord(detail) ?? {};
+    if (String(record.boardId ?? "") !== id) continue;
+    return asRecord(record.data) ?? record;
+  }
+  return undefined;
+}
+
+function normalizeDaevanionNode(node: unknown): DaevanionNode {
+  const record = asRecord(node) ?? {};
+  return {
+    name: String(record.name ?? ""),
+    row: Number(record.row ?? 0),
+    col: Number(record.col ?? 0),
+    grade: String(record.grade ?? "Common"),
+    type: String(record.type ?? ""),
+    open: Boolean(record.open),
+    effects: asArray(record.effects ?? record.effectList),
+  };
+}
+
+function formatDaevanionNodeTitle(node: DaevanionNode) {
+  const effects = node.effects
+    .map((effect) => formatPlainValue(asRecord(effect)?.desc ?? effect))
+    .filter((effect) => effect !== "-")
+    .join(" / ");
+  const title = node.name || node.type || "Node";
+  return `${title}${node.open ? " (개방)" : " (미개방)"}${effects ? ` - ${effects}` : ""}`;
+}
+
+function getDaevanionNodeColor(grade: unknown) {
+  const key = getGradeKey(grade);
+  if (key === "epic") {
+    return { bg: "rgba(249, 115, 22, 0.36)", border: "#fb923c", glow: "rgba(249, 115, 22, 0.48)" };
+  }
+  if (key === "unique") {
+    return { bg: "rgba(250, 204, 21, 0.32)", border: "#facc15", glow: "rgba(250, 204, 21, 0.5)" };
+  }
+  if (key === "legend") {
+    return { bg: "rgba(96, 165, 250, 0.34)", border: "#60a5fa", glow: "rgba(96, 165, 250, 0.5)" };
+  }
+  if (key === "rare") {
+    return { bg: "rgba(74, 222, 128, 0.28)", border: "#4ade80", glow: "rgba(74, 222, 128, 0.42)" };
+  }
+  return { bg: "rgba(148, 163, 184, 0.24)", border: "#94a3b8", glow: "rgba(148, 163, 184, 0.28)" };
+}
+
 function formatScore(value: number | string | null | undefined) {
   return Number(value ?? 50).toFixed(1);
-}
-
-function hasSkillTooltip(item: DetailItem) {
-  const category = String(item.slot ?? "").toLowerCase();
-  return (
-    !!item.description ||
-    !!item.notes ||
-    item.requiredLevel !== undefined ||
-    item.equipped !== undefined ||
-    category === "active" ||
-    category === "passive" ||
-    category === "dp" ||
-    category.includes("stigma")
-  );
-}
-
-function formatCategory(value: string | number) {
-  const category = String(value);
-  if (category.toLowerCase() === "active") return "액티브";
-  if (category.toLowerCase() === "passive") return "패시브";
-  if (category.toLowerCase() === "dp") return "스티그마";
-  return category;
 }
