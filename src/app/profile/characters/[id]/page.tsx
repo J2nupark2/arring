@@ -818,8 +818,8 @@ function DaevanionDetailTab({
         <CardContent className="space-y-5">
           {boards.length > 0 ? (
             <>
-              <div className="overflow-x-auto border-b pb-3">
-                <div className="flex min-w-max gap-2">
+              <div className="border-b pb-3">
+                <div className="flex flex-wrap gap-1.5">
                   {boards.map((board, index) => {
                     const record = asRecord(board) ?? {};
                     const boardId = String(record.id ?? index);
@@ -829,15 +829,15 @@ function DaevanionDetailTab({
                         key={boardId}
                         href={`/profile/characters/${characterId}?tab=daevanion&board=${encodeURIComponent(boardId)}`}
                         className={
-                          "rounded-md border px-4 py-2 text-sm font-semibold transition-colors " +
+                          "min-w-0 rounded-md border px-2.5 py-1.5 text-xs font-semibold leading-none transition-colors " +
                           (isSelected
                             ? "border-sky-500 bg-sky-500/10 text-sky-300"
                             : "bg-muted/20 text-muted-foreground hover:border-sky-500/60 hover:text-foreground")
                         }
                       >
-                        {formatPlainValue(record.name ?? record.id ?? "Board")}{" "}
-                        <span className="text-xs font-medium opacity-75">
-                          ({formatPlainValue(record.openNodeCount ?? 0)}/{formatPlainValue(record.totalNodeCount ?? 0)})
+                        <span>{formatPlainValue(record.name ?? record.id ?? "Board")}</span>{" "}
+                        <span className="font-mono text-[11px] font-medium opacity-75">
+                          {formatPlainValue(record.openNodeCount ?? 0)}/{formatPlainValue(record.totalNodeCount ?? 0)}
                         </span>
                       </Link>
                     );
