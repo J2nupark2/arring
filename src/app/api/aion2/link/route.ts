@@ -1,7 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { fetchCharacterInfo } from "@/lib/aion2-api";
+import { fetchCharacterInfo, type Aion2CharacterProfile } from "@/lib/aion2-api";
+
+const CHARACTER_SYNC_COOLDOWN_MS = 60_000;
+
+type CachedCharacterRow = {
+  character_id: string;
+  character_name: string;
+  server_id: number;
+  server_name: string;
+  class_name: string;
+  character_level: number;
+  combat_power: number;
+  equipment: unknown[] | null;
+  skills: unknown[] | null;
+  stigmas: unknown[] | null;
+  detail_data: Aion2CharacterProfile["detailData"] | null;
+  synced_at: string;
+};
 
 function pickList(source: unknown, keys: string[]) {
   if (!source || typeof source !== "object") return [];
@@ -13,11 +30,27 @@ function pickList(source: unknown, keys: string[]) {
   return [];
 }
 
-// Links (or re-syncs) the caller's Arring profile to an official Aion2
-// character. The client only tells us WHICH character; class and combat
-// power always come from aion2.plaync.com fetched here, and are written
-// with the service role — normal users have no UPDATE grant on those
-// columns, so combat power can't be faked.
+function isFreshSync(syncedAt?: string | null) {
+  if (!syncedAt) return false;
+  return Date.now() - new Date(syncedAt).getTime() < CHARACTER_SYNC_COOLDOWN_MS;
+}
+
+function profileFromCachedRow(row: CachedCharacterRow): Aion2CharacterProfile {
+  return {
+    characterId: row.character_id,
+    characterName: row.character_name,
+    serverId: row.server_id,
+    serverName: row.server_name,
+    className: row.class_name,
+    characterLevel: row.character_level,
+    combatPower: row.combat_power,
+    equipment: Array.isArray(row.equipment) ? row.equipment : [],
+    skills: Array.isArray(row.skills) ? row.skills : [],
+    stigmas: Array.isArray(row.stigmas) ? row.stigmas : [],
+    detailData: row.detail_data ?? ({} as Aion2CharacterProfile["detailData"]),
+  };
+}
+
 export async function POST(request: NextRequest) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) {
@@ -55,17 +88,43 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
   }
 
-  let profile;
-  try {
-    profile = await fetchCharacterInfo(characterId, serverId);
-  } catch {
-    return NextResponse.json(
-      { error: "공식 홈페이지에서 캐릭터 정보를 가져오지 못했습니다." },
-      { status: 502 },
-    );
+  const admin = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serviceKey,
+    { auth: { persistSession: false } },
+  );
+
+  const { data: cachedCharacter } = await admin
+    .from("aion2_characters")
+    .select(
+      "character_id, character_name, server_id, server_name, class_name, character_level, combat_power, equipment, skills, stigmas, detail_data, synced_at",
+    )
+    .eq("character_id", characterId)
+    .eq("server_id", serverId)
+    .order("synced_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<CachedCharacterRow>();
+
+  let profile: Aion2CharacterProfile;
+  let syncedAt = new Date().toISOString();
+  let fromCache = false;
+
+  if (cachedCharacter && isFreshSync(cachedCharacter.synced_at)) {
+    profile = profileFromCachedRow(cachedCharacter);
+    syncedAt = cachedCharacter.synced_at;
+    fromCache = true;
+  } else {
+    try {
+      profile = await fetchCharacterInfo(characterId, serverId);
+    } catch {
+      return NextResponse.json(
+        { error: "공식 정보실에서 캐릭터 정보를 가져오지 못했습니다." },
+        { status: 502 },
+      );
+    }
   }
 
-  if (!profile?.characterName || typeof profile.combatPower !== "number") {
+  if (!profile.characterName || typeof profile.combatPower !== "number") {
     return NextResponse.json(
       { error: "캐릭터 정보를 찾을 수 없습니다." },
       { status: 404 },
@@ -73,12 +132,6 @@ export async function POST(request: NextRequest) {
   }
 
   const rawProfile = profile as unknown;
-
-  const admin = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    serviceKey,
-    { auth: { persistSession: false } },
-  );
 
   const { data: existingCharacters } = await admin
     .from("aion2_characters")
@@ -117,7 +170,7 @@ export async function POST(request: NextRequest) {
         stigmas: pickList(rawProfile, ["stigmas", "stigmaList"]),
         detail_data: profile.detailData,
         is_primary: isPrimary,
-        synced_at: new Date().toISOString(),
+        synced_at: syncedAt,
       } as unknown as never,
       { onConflict: "user_id,character_id,server_id" },
     )
@@ -142,7 +195,7 @@ export async function POST(request: NextRequest) {
         aion2_character_id: profile.characterId,
         aion2_character_name: profile.characterName,
         aion2_server_id: profile.serverId,
-        aion2_synced_at: new Date().toISOString(),
+        aion2_synced_at: syncedAt,
       })
       .eq("id", user.id);
 
@@ -162,6 +215,7 @@ export async function POST(request: NextRequest) {
       className: profile.className,
       level: profile.characterLevel,
       combatPower: profile.combatPower,
+      fromCache,
     },
   });
 }

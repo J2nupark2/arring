@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { Users } from "lucide-react";
+import { CharacterSearchDialog } from "@/components/character-search-dialog";
+import { FriendListContent } from "@/components/friends/friend-list-content";
 import { useFriendsContext } from "@/components/friends/friends-provider";
 import { LinkButton } from "@/components/link-button";
 import { LogoutButton } from "@/components/logout-button";
@@ -13,13 +15,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { FriendListContent } from "@/components/friends/friend-list-content";
 
 // Shared top navigation for authenticated pages. When showFriends is set,
-// a Users button appears below the lg breakpoint (where FriendSidebar is
-// hidden) and opens the same friend list content in a slide-over Sheet.
-// currentRoomCode is passed only from inside an active call room, so the
-// friend list there can offer "invite into my room".
+// a Users button appears below the lg breakpoint and opens the same friend
+// list content in a slide-over Sheet.
 export function AppHeader({
   showFriends = false,
   isGuest = false,
@@ -29,11 +28,8 @@ export function AppHeader({
   isGuest?: boolean;
   currentRoomCode?: string;
 }) {
-  // Shares the FriendsProvider instance mounted around this page (see
-  // party/page.tsx, room/[code]/page.tsx) so the badge here and the full
-  // list in FriendListContent read the same poll instead of each running
-  // their own.
   const { incoming } = useFriendsContext();
+
   return (
     <header className="sticky top-0 z-10 border-b bg-background/70 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
@@ -44,6 +40,7 @@ export function AppHeader({
           Arring
         </Link>
         <nav aria-label="주 메뉴" className="flex items-center gap-2 sm:gap-3">
+          {!isGuest && <CharacterSearchDialog />}
           <LinkButton href="/party" variant="ghost">
             파티 구하기
           </LinkButton>

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Dices, Gem, Lamp, Layers, ShieldCheck, Sparkles, Star, Swords } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { LinkButton } from "@/components/link-button";
+import { CharacterRefreshButton } from "@/components/profile/character-refresh-button";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -202,6 +203,10 @@ export default async function CharacterDetailPage({
           <LinkButton href="/profile" variant="outline">
             프로필로
           </LinkButton>
+          <CharacterRefreshButton
+            characterRowId={character.id}
+            syncedAt={character.synced_at}
+          />
         </div>
 
         <Card className="overflow-hidden">
