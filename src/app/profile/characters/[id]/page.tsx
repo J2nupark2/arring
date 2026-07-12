@@ -854,6 +854,10 @@ function ItemSummary({
   // instead of a separate "장비 스킬" box.
   const soulOptions = [...asArray(detail?.subStats), ...asArray(detail?.subSkills)];
   const exceedStats = exceedBonusStats(item);
+  const breakthroughGradientKey = String(item.slot ?? item.name ?? "item").replace(/[^a-zA-Z0-9_-]/g, "");
+  const breakthroughTopId = `breakthroughTop-${breakthroughGradientKey || "item"}-${item.value}`;
+  const breakthroughSideId = `breakthroughSide-${breakthroughGradientKey || "item"}-${item.value}`;
+  const breakthroughBottomId = `breakthroughBottom-${breakthroughGradientKey || "item"}-${item.value}`;
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -861,76 +865,119 @@ function ItemSummary({
         {Number(item.value) > 0 && (
           <div className="flex shrink-0 items-center" title={`돌파 ${item.value}`}>
             <div
-              className="relative rotate-45 overflow-hidden rounded-[0px] bg-cyan-500 ring-1 ring-cyan-950/80"
+              className="relative overflow-visible"
               style={{
-                // Rotating a square by 45deg grows its visible bounding box
-                // by sqrt(2); the pointed shape also reads visually larger
-                // than a same-size square, so shrink further than the pure
-                // math would suggest to match the item icon's felt size.
-                width: compact ? "20px" : "22px",
-                height: compact ? "20px" : "22px",
-                boxShadow:
-                  "0 0 7px rgba(56,189,248,0.46), 0 2px 4px rgba(0,0,0,0.58), inset 0 0 0 1px rgba(255,255,255,0.42), inset -1px -1px 2px rgba(8,47,73,0.72)",
+                width: compact ? "23px" : "25px",
+                height: compact ? "23px" : "25px",
+                filter:
+                  "drop-shadow(0 0 5px rgba(56,189,248,0.72)) drop-shadow(0 2px 2px rgba(0,0,0,0.75))",
               }}
             >
               <svg
                 aria-hidden="true"
                 className="absolute inset-0 h-full w-full"
                 viewBox="0 0 100 100"
-                preserveAspectRatio="none"
+                preserveAspectRatio="xMidYMid meet"
               >
+                <defs>
+                  <linearGradient
+                    id={breakthroughTopId}
+                    x1="28"
+                    y1="12"
+                    x2="72"
+                    y2="53"
+                    gradientUnits="userSpaceOnUse"
+                  >
+                    <stop stopColor="#f0fdff" />
+                    <stop offset="0.48" stopColor="#67e8f9" />
+                    <stop offset="1" stopColor="#0891b2" />
+                  </linearGradient>
+                  <linearGradient
+                    id={breakthroughSideId}
+                    x1="88"
+                    y1="24"
+                    x2="44"
+                    y2="92"
+                    gradientUnits="userSpaceOnUse"
+                  >
+                    <stop stopColor="#38bdf8" />
+                    <stop offset="1" stopColor="#075985" />
+                  </linearGradient>
+                  <linearGradient
+                    id={breakthroughBottomId}
+                    x1="50"
+                    y1="47"
+                    x2="50"
+                    y2="99"
+                    gradientUnits="userSpaceOnUse"
+                  >
+                    <stop stopColor="#0284c7" />
+                    <stop offset="1" stopColor="#082f49" />
+                  </linearGradient>
+                </defs>
                 <path
-                  d="M0 0H100C78 10 61 24 50 50C39 24 22 10 0 0Z"
-                  fill="rgba(224,252,255,0.96)"
-                />
-                <path
-                  d="M100 0V100C90 78 76 61 50 50C76 39 90 22 100 0Z"
-                  fill="rgba(14,116,144,0.9)"
-                />
-                <path
-                  d="M100 100H0C22 90 39 76 50 50C61 76 78 90 100 100Z"
-                  fill="rgba(8,47,73,0.96)"
-                />
-                <path
-                  d="M0 100V0C10 22 24 39 50 50C24 61 10 78 0 100Z"
-                  fill="rgba(34,211,238,0.86)"
-                />
-                <path
-                  d="M50 38C57 43 62 47 66 50C62 53 57 57 50 62C43 57 38 53 34 50C38 47 43 43 50 38Z"
-                  fill="rgba(3,105,161,0.22)"
-                />
-                <path
-                  d="M8 8C27 18 42 31 50 50"
-                  fill="none"
-                  stroke="rgba(240,253,255,0.72)"
-                  strokeLinecap="round"
-                  strokeWidth="5"
-                />
-                <path
-                  d="M92 92C73 82 58 69 50 50"
-                  fill="none"
-                  stroke="rgba(8,47,73,0.42)"
-                  strokeLinecap="round"
-                  strokeWidth="5"
-                />
-                <path
-                  d="M92 8C76 22 62 35 50 50"
-                  fill="none"
-                  stroke="rgba(125,211,252,0.44)"
-                  strokeLinecap="round"
+                  d="M50 2C58 24 72 42 98 50C72 58 58 72 50 98C42 72 28 58 2 50C28 42 42 24 50 2Z"
+                  fill="#0891b2"
+                  stroke="rgba(224,252,255,0.96)"
+                  strokeLinejoin="round"
                   strokeWidth="4"
                 />
                 <path
-                  d="M8 92C24 78 38 65 50 50"
+                  d="M50 2C58 24 72 42 98 50C72 45 60 42 50 50C40 42 28 45 2 50C28 42 42 24 50 2Z"
+                  fill={`url(#${breakthroughTopId})`}
+                />
+                <path
+                  d="M98 50C72 58 58 72 50 98C55 72 58 60 50 50C60 42 72 45 98 50Z"
+                  fill={`url(#${breakthroughSideId})`}
+                />
+                <path
+                  d="M50 98C42 72 28 58 2 50C28 55 40 58 50 50C60 58 72 55 98 50C72 58 58 72 50 98Z"
+                  fill={`url(#${breakthroughBottomId})`}
+                />
+                <path
+                  d="M2 50C28 42 42 24 50 2C45 28 42 40 50 50C42 60 45 72 2 50Z"
+                  fill="rgba(34,211,238,0.7)"
+                />
+                <path
+                  d="M50 2C45 28 42 40 50 50"
                   fill="none"
-                  stroke="rgba(6,78,118,0.38)"
+                  stroke="rgba(240,253,255,0.78)"
                   strokeLinecap="round"
-                  strokeWidth="4"
+                  strokeWidth="4.5"
+                />
+                <path
+                  d="M98 50C72 45 60 42 50 50"
+                  fill="none"
+                  stroke="rgba(224,252,255,0.36)"
+                  strokeLinecap="round"
+                  strokeWidth="4.5"
+                />
+                <path
+                  d="M50 98C55 72 58 60 50 50"
+                  fill="none"
+                  stroke="rgba(8,47,73,0.62)"
+                  strokeLinecap="round"
+                  strokeWidth="4.5"
+                />
+                <path
+                  d="M2 50C28 55 40 58 50 50"
+                  fill="none"
+                  stroke="rgba(6,78,118,0.48)"
+                  strokeLinecap="round"
+                  strokeWidth="4.5"
+                />
+                <path
+                  d="M50 38C58 43 63 47 68 50C63 53 58 57 50 62C42 57 37 53 32 50C37 47 42 43 50 38Z"
+                  fill="rgba(240,253,255,0.16)"
+                  stroke="rgba(224,252,255,0.42)"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
                 />
               </svg>
-              <span className="absolute inset-[28%] rounded-full bg-sky-950/18 blur-[1px]" />
+              <span className="absolute inset-[30%] rounded-full bg-sky-950/20 blur-[1px]" />
               <span
-                className="absolute inset-0 flex -rotate-45 items-center justify-center text-sm font-black leading-none text-white"
+                className="absolute inset-0 flex items-center justify-center text-sm font-black leading-none text-white"
                 style={{
                   WebkitTextStroke: "1px rgba(0,0,0,0.92)",
                   textShadow: "0 0 1px #000, 0 1px 0 rgba(0,0,0,0.85)",
