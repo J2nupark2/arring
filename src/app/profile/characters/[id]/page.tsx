@@ -861,14 +861,14 @@ function ItemSummary({
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex min-w-0 gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         {Number(item.value) > 0 && (
           <div className="flex shrink-0 items-center" title={`돌파 ${item.value}`}>
             <div
               className="relative overflow-visible"
               style={{
-                width: compact ? "23px" : "25px",
-                height: compact ? "23px" : "25px",
+                width: compact ? "27px" : "29px",
+                height: compact ? "27px" : "29px",
                 filter:
                   "drop-shadow(0 0 5px rgba(56,189,248,0.72)) drop-shadow(0 2px 2px rgba(0,0,0,0.75))",
               }}
