@@ -963,8 +963,8 @@ function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
   const maxCol = Math.max(...nodes.map((node) => node.col));
   const columns = Math.max(1, maxCol - minCol + 1);
   const rows = Math.max(1, maxRow - minRow + 1);
-  const cellWidth = 55;
-  const cellHeight = 55;
+  const cellWidth = 65;
+  const cellHeight = 65;
 
   return (
     <div className="overflow-x-auto rounded-md border bg-muted/10 p-3">
@@ -984,7 +984,7 @@ function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
             <div
               key={`${node.row}-${node.col}-${index}`}
               className={
-                "flex min-h-[55px] flex-col items-center justify-center rounded-sm border px-1 py-1 text-center transition-opacity " +
+                "flex min-h-[65px] flex-col items-center justify-center rounded-sm border px-1 py-1 text-center transition-opacity " +
                 (node.open ? "opacity-100" : "opacity-35")
               }
               style={{
