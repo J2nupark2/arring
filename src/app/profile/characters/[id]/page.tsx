@@ -963,7 +963,7 @@ function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
   const maxCol = Math.max(...nodes.map((node) => node.col));
   const columns = Math.max(1, maxCol - minCol + 1);
   const rows = Math.max(1, maxRow - minRow + 1);
-  const cellWidth = 74;
+  const cellWidth = 44;
   const cellHeight = 44;
 
   return (
@@ -984,7 +984,7 @@ function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
             <div
               key={`${node.row}-${node.col}-${index}`}
               className={
-                "flex min-h-11 flex-col items-center justify-center rounded-sm border px-1 py-1 text-center transition-opacity " +
+                "flex min-h-11 flex-col items-center justify-center rounded-sm border px-0.5 py-1 text-center transition-opacity " +
                 (node.open ? "opacity-100" : "opacity-35")
               }
               style={{
@@ -996,11 +996,11 @@ function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
               }}
               title={formatDaevanionNodeTitle(node)}
             >
-              <span className="line-clamp-1 text-[10px] font-semibold leading-tight">
+              <span className="line-clamp-1 max-w-full text-[9px] font-semibold leading-tight">
                 {effectParts.name}
               </span>
               {effectParts.value && (
-                <span className="mt-0.5 line-clamp-1 font-mono text-[10px] font-bold leading-tight text-primary">
+                <span className="mt-0.5 line-clamp-1 max-w-full font-mono text-[10px] font-bold leading-tight text-primary">
                   {effectParts.value}
                 </span>
               )}
