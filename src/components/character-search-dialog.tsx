@@ -124,24 +124,35 @@ export function CharacterSearchDialog() {
               value={serverId ?? ""}
               onChange={(e) => setServerId(Number(e.target.value))}
               className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              style={{ colorScheme: "dark" }}
             >
-              <optgroup label="천족">
+              <optgroup
+                label="천족"
+                className="bg-popover text-popover-foreground"
+                style={{ backgroundColor: "#09090b", color: "#fafafa" }}
+              >
                 {elyosServers.map((server) => (
                   <option
                     key={server.serverId}
                     value={server.serverId}
-                    className="bg-popover"
+                    className="bg-popover text-popover-foreground"
+                    style={{ backgroundColor: "#09090b", color: "#fafafa" }}
                   >
                     {server.serverName}
                   </option>
                 ))}
               </optgroup>
-              <optgroup label="마족">
+              <optgroup
+                label="마족"
+                className="bg-popover text-popover-foreground"
+                style={{ backgroundColor: "#09090b", color: "#fafafa" }}
+              >
                 {asmodianServers.map((server) => (
                   <option
                     key={server.serverId}
                     value={server.serverId}
-                    className="bg-popover"
+                    className="bg-popover text-popover-foreground"
+                    style={{ backgroundColor: "#09090b", color: "#fafafa" }}
                   >
                     {server.serverName}
                   </option>
