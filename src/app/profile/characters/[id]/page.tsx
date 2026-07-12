@@ -861,24 +861,64 @@ function ItemSummary({
         {Number(item.value) > 0 && (
           <div className="flex shrink-0 items-center" title={`돌파 ${item.value}`}>
             <div
-              className="flex rotate-45 items-center justify-center rounded-[4px] bg-gradient-to-br from-violet-300 via-violet-500 to-violet-800 ring-1 ring-violet-900/50"
+              className="relative rotate-45 overflow-hidden rounded-[3px] bg-violet-600 ring-1 ring-black/65"
               style={{
                 // Rotating a square by 45deg grows its visible bounding box
                 // by sqrt(2); the pointed shape also reads visually larger
                 // than a same-size square, so shrink further than the pure
                 // math would suggest to match the item icon's felt size.
-                width: compact ? "19px" : "21px",
-                height: compact ? "19px" : "21px",
+                width: compact ? "20px" : "22px",
+                height: compact ? "20px" : "22px",
                 boxShadow:
-                  "inset 1px 1px 1px rgba(255,255,255,0.6), inset -1px -1px 1.5px rgba(0,0,0,0.55), 0 2px 3px rgba(0,0,0,0.5)",
+                  "0 2px 4px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.18)",
               }}
             >
               <span
-                className="-rotate-45 text-xs font-black leading-none text-white"
+                className="absolute inset-0"
                 style={{
-                  WebkitTextStroke: "1px black",
-                  textShadow:
-                    "1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000",
+                  clipPath: "polygon(0 0, 100% 0, 50% 50%)",
+                  background:
+                    "linear-gradient(180deg, rgba(236,221,255,0.95), rgba(167,139,250,0.55) 58%, rgba(109,40,217,0.05))",
+                  borderBottomLeftRadius: "42%",
+                  borderBottomRightRadius: "42%",
+                }}
+              />
+              <span
+                className="absolute inset-0"
+                style={{
+                  clipPath: "polygon(100% 0, 100% 100%, 50% 50%)",
+                  background:
+                    "linear-gradient(270deg, rgba(49,18,101,0.92), rgba(109,40,217,0.56) 52%, rgba(196,181,253,0.1))",
+                  borderTopLeftRadius: "42%",
+                  borderBottomLeftRadius: "42%",
+                }}
+              />
+              <span
+                className="absolute inset-0"
+                style={{
+                  clipPath: "polygon(0 100%, 100% 100%, 50% 50%)",
+                  background:
+                    "linear-gradient(0deg, rgba(30,16,66,0.96), rgba(91,33,182,0.72) 58%, rgba(167,139,250,0.08))",
+                  borderTopLeftRadius: "42%",
+                  borderTopRightRadius: "42%",
+                }}
+              />
+              <span
+                className="absolute inset-0"
+                style={{
+                  clipPath: "polygon(0 0, 0 100%, 50% 50%)",
+                  background:
+                    "linear-gradient(90deg, rgba(76,29,149,0.95), rgba(124,58,237,0.58) 54%, rgba(221,214,254,0.12))",
+                  borderTopRightRadius: "42%",
+                  borderBottomRightRadius: "42%",
+                }}
+              />
+              <span className="absolute inset-[22%] rounded-full bg-violet-950/18 blur-[1px]" />
+              <span
+                className="absolute inset-0 flex -rotate-45 items-center justify-center text-[11px] font-black leading-none text-white"
+                style={{
+                  WebkitTextStroke: "0.45px rgba(0,0,0,0.92)",
+                  textShadow: "0 0 1px #000, 0 1px 0 rgba(0,0,0,0.85)",
                 }}
               >
                 {item.value}
