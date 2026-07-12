@@ -860,10 +860,26 @@ function ItemSummary({
       <div className="flex min-w-0 gap-2">
         {Number(item.value) > 0 && (
           <div className="flex shrink-0 items-center" title={`돌파 ${item.value}`}>
-            <div className="flex size-6 rotate-45 items-center justify-center rounded-[5px] bg-violet-500 ring-1 ring-background">
+            <div
+              className="flex rotate-45 items-center justify-center rounded-[4px] bg-gradient-to-br from-violet-300 via-violet-500 to-violet-800 ring-1 ring-violet-900/50"
+              style={{
+                // Rotating a square by 45deg grows its visible bounding box
+                // by sqrt(2); the pointed shape also reads visually larger
+                // than a same-size square, so shrink further than the pure
+                // math would suggest to match the item icon's felt size.
+                width: compact ? "19px" : "21px",
+                height: compact ? "19px" : "21px",
+                boxShadow:
+                  "inset 1px 1px 1px rgba(255,255,255,0.6), inset -1px -1px 1.5px rgba(0,0,0,0.55), 0 2px 3px rgba(0,0,0,0.5)",
+              }}
+            >
               <span
-                className="-rotate-45 text-sm font-black leading-none text-white"
-                style={{ WebkitTextStroke: "1px black", textShadow: "0 0 1.5px #000, 0 0 1.5px #000" }}
+                className="-rotate-45 text-xs font-black leading-none text-white"
+                style={{
+                  WebkitTextStroke: "1px black",
+                  textShadow:
+                    "1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000",
+                }}
               >
                 {item.value}
               </span>
