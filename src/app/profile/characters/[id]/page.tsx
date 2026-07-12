@@ -861,7 +861,7 @@ function ItemSummary({
         {Number(item.value) > 0 && (
           <div className="flex shrink-0 items-center" title={`돌파 ${item.value}`}>
             <div
-              className="relative rotate-45 overflow-hidden rounded-[3px] bg-violet-600 ring-1 ring-black/65"
+              className="relative rotate-45 overflow-hidden rounded-[1px] bg-cyan-500 ring-1 ring-cyan-950/80"
               style={{
                 // Rotating a square by 45deg grows its visible bounding box
                 // by sqrt(2); the pointed shape also reads visually larger
@@ -870,50 +870,51 @@ function ItemSummary({
                 width: compact ? "20px" : "22px",
                 height: compact ? "20px" : "22px",
                 boxShadow:
-                  "0 2px 4px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.18)",
+                  "0 0 7px rgba(56,189,248,0.46), 0 2px 4px rgba(0,0,0,0.58), inset 0 0 0 1px rgba(255,255,255,0.42), inset -1px -1px 2px rgba(8,47,73,0.72)",
               }}
             >
-              <span
-                className="absolute inset-0"
-                style={{
-                  clipPath: "polygon(0 0, 100% 0, 50% 50%)",
-                  background:
-                    "linear-gradient(180deg, rgba(236,221,255,0.95), rgba(167,139,250,0.55) 58%, rgba(109,40,217,0.05))",
-                  borderBottomLeftRadius: "42%",
-                  borderBottomRightRadius: "42%",
-                }}
-              />
-              <span
-                className="absolute inset-0"
-                style={{
-                  clipPath: "polygon(100% 0, 100% 100%, 50% 50%)",
-                  background:
-                    "linear-gradient(270deg, rgba(49,18,101,0.92), rgba(109,40,217,0.56) 52%, rgba(196,181,253,0.1))",
-                  borderTopLeftRadius: "42%",
-                  borderBottomLeftRadius: "42%",
-                }}
-              />
-              <span
-                className="absolute inset-0"
-                style={{
-                  clipPath: "polygon(0 100%, 100% 100%, 50% 50%)",
-                  background:
-                    "linear-gradient(0deg, rgba(30,16,66,0.96), rgba(91,33,182,0.72) 58%, rgba(167,139,250,0.08))",
-                  borderTopLeftRadius: "42%",
-                  borderTopRightRadius: "42%",
-                }}
-              />
-              <span
-                className="absolute inset-0"
-                style={{
-                  clipPath: "polygon(0 0, 0 100%, 50% 50%)",
-                  background:
-                    "linear-gradient(90deg, rgba(76,29,149,0.95), rgba(124,58,237,0.58) 54%, rgba(221,214,254,0.12))",
-                  borderTopRightRadius: "42%",
-                  borderBottomRightRadius: "42%",
-                }}
-              />
-              <span className="absolute inset-[22%] rounded-full bg-violet-950/18 blur-[1px]" />
+              <svg
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M0 0H100C75 16 61 31 50 50C39 31 25 16 0 0Z"
+                  fill="rgba(224,252,255,0.96)"
+                />
+                <path
+                  d="M100 0V100C84 75 69 61 50 50C69 39 84 25 100 0Z"
+                  fill="rgba(14,116,144,0.9)"
+                />
+                <path
+                  d="M100 100H0C25 84 39 69 50 50C61 69 75 84 100 100Z"
+                  fill="rgba(8,47,73,0.96)"
+                />
+                <path
+                  d="M0 100V0C16 25 31 39 50 50C31 61 16 75 0 100Z"
+                  fill="rgba(34,211,238,0.86)"
+                />
+                <path
+                  d="M50 50C42 42 42 42 50 50C58 42 58 42 50 50C58 58 58 58 50 50C42 58 42 58 50 50Z"
+                  fill="rgba(3,105,161,0.2)"
+                />
+                <path
+                  d="M9 11C28 20 40 32 50 50"
+                  fill="none"
+                  stroke="rgba(240,253,255,0.72)"
+                  strokeLinecap="round"
+                  strokeWidth="5"
+                />
+                <path
+                  d="M91 92C72 82 60 68 50 50"
+                  fill="none"
+                  stroke="rgba(8,47,73,0.42)"
+                  strokeLinecap="round"
+                  strokeWidth="5"
+                />
+              </svg>
+              <span className="absolute inset-[28%] rounded-full bg-sky-950/18 blur-[1px]" />
               <span
                 className="absolute inset-0 flex -rotate-45 items-center justify-center text-[11px] font-black leading-none text-white"
                 style={{
