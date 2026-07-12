@@ -860,9 +860,9 @@ function ItemSummary({
       <div className="flex min-w-0 gap-2">
         {Number(item.value) > 0 && (
           <div className="flex shrink-0 items-center" title={`돌파 ${item.value}`}>
-            <div className="flex size-8 rotate-45 items-center justify-center rounded-[6px] bg-violet-500 ring-1 ring-background">
+            <div className="flex size-6 rotate-45 items-center justify-center rounded-[5px] bg-violet-500 ring-1 ring-background">
               <span
-                className="-rotate-45 text-base font-black leading-none text-white"
+                className="-rotate-45 text-sm font-black leading-none text-white"
                 style={{ WebkitTextStroke: "1px black", textShadow: "0 0 1.5px #000, 0 0 1.5px #000" }}
               >
                 {item.value}
