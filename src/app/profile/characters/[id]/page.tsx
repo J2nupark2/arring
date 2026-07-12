@@ -861,7 +861,7 @@ function ItemSummary({
         {Number(item.value) > 0 && (
           <div className="flex shrink-0 items-center" title={`돌파 ${item.value}`}>
             <div
-              className="relative rotate-45 overflow-hidden rounded-[1px] bg-cyan-500 ring-1 ring-cyan-950/80"
+              className="relative rotate-45 overflow-hidden rounded-[0px] bg-cyan-500 ring-1 ring-cyan-950/80"
               style={{
                 // Rotating a square by 45deg grows its visible bounding box
                 // by sqrt(2); the pointed shape also reads visually larger
@@ -880,45 +880,59 @@ function ItemSummary({
                 preserveAspectRatio="none"
               >
                 <path
-                  d="M0 0H100C75 16 61 31 50 50C39 31 25 16 0 0Z"
+                  d="M0 0H100C78 10 61 24 50 50C39 24 22 10 0 0Z"
                   fill="rgba(224,252,255,0.96)"
                 />
                 <path
-                  d="M100 0V100C84 75 69 61 50 50C69 39 84 25 100 0Z"
+                  d="M100 0V100C90 78 76 61 50 50C76 39 90 22 100 0Z"
                   fill="rgba(14,116,144,0.9)"
                 />
                 <path
-                  d="M100 100H0C25 84 39 69 50 50C61 69 75 84 100 100Z"
+                  d="M100 100H0C22 90 39 76 50 50C61 76 78 90 100 100Z"
                   fill="rgba(8,47,73,0.96)"
                 />
                 <path
-                  d="M0 100V0C16 25 31 39 50 50C31 61 16 75 0 100Z"
+                  d="M0 100V0C10 22 24 39 50 50C24 61 10 78 0 100Z"
                   fill="rgba(34,211,238,0.86)"
                 />
                 <path
-                  d="M50 50C42 42 42 42 50 50C58 42 58 42 50 50C58 58 58 58 50 50C42 58 42 58 50 50Z"
-                  fill="rgba(3,105,161,0.2)"
+                  d="M50 38C57 43 62 47 66 50C62 53 57 57 50 62C43 57 38 53 34 50C38 47 43 43 50 38Z"
+                  fill="rgba(3,105,161,0.22)"
                 />
                 <path
-                  d="M9 11C28 20 40 32 50 50"
+                  d="M8 8C27 18 42 31 50 50"
                   fill="none"
                   stroke="rgba(240,253,255,0.72)"
                   strokeLinecap="round"
                   strokeWidth="5"
                 />
                 <path
-                  d="M91 92C72 82 60 68 50 50"
+                  d="M92 92C73 82 58 69 50 50"
                   fill="none"
                   stroke="rgba(8,47,73,0.42)"
                   strokeLinecap="round"
                   strokeWidth="5"
                 />
+                <path
+                  d="M92 8C76 22 62 35 50 50"
+                  fill="none"
+                  stroke="rgba(125,211,252,0.44)"
+                  strokeLinecap="round"
+                  strokeWidth="4"
+                />
+                <path
+                  d="M8 92C24 78 38 65 50 50"
+                  fill="none"
+                  stroke="rgba(6,78,118,0.38)"
+                  strokeLinecap="round"
+                  strokeWidth="4"
+                />
               </svg>
               <span className="absolute inset-[28%] rounded-full bg-sky-950/18 blur-[1px]" />
               <span
-                className="absolute inset-0 flex -rotate-45 items-center justify-center text-[11px] font-black leading-none text-white"
+                className="absolute inset-0 flex -rotate-45 items-center justify-center text-sm font-black leading-none text-white"
                 style={{
-                  WebkitTextStroke: "0.45px rgba(0,0,0,0.92)",
+                  WebkitTextStroke: "1px rgba(0,0,0,0.92)",
                   textShadow: "0 0 1px #000, 0 1px 0 rgba(0,0,0,0.85)",
                 }}
               >
