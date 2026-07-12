@@ -121,11 +121,12 @@ export default async function CharacterDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ tab?: string }>;
+  searchParams?: Promise<{ tab?: string; board?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
   const activeTab = query?.tab === "daevanion" ? "daevanion" : "equipment";
+  const selectedDaevanionBoardId = query?.board;
   const supabase = await createClient();
   const {
     data: { user },
@@ -314,7 +315,11 @@ export default async function CharacterDetailPage({
             </section>
           </>
         ) : (
-          <DaevanionDetailTab detailData={detailData} />
+          <DaevanionDetailTab
+            characterId={id}
+            detailData={detailData}
+            selectedBoardId={selectedDaevanionBoardId}
+          />
         )}
 
         <p className="text-sm text-muted-foreground">
@@ -781,13 +786,25 @@ function DaevanionCard({ detailData }: { detailData?: Record<string, unknown> })
   );
 }
 
-function DaevanionDetailTab({ detailData }: { detailData?: Record<string, unknown> }) {
+function DaevanionDetailTab({
+  characterId,
+  detailData,
+  selectedBoardId,
+}: {
+  characterId: string;
+  detailData?: Record<string, unknown>;
+  selectedBoardId?: string;
+}) {
   const normalized = asRecord(detailData?.normalized);
   const daevanion = asRecord(detailData?.daevanion);
   const boards = asArray(normalized?.daevanionBoards).length > 0
     ? asArray(normalized?.daevanionBoards)
     : asArray(daevanion?.boards);
   const details = asArray(daevanion?.details);
+  const selectedBoard =
+    boards.find((board) => String(asRecord(board)?.id ?? "") === String(selectedBoardId ?? "")) ??
+    boards[0];
+  const selectedRecord = asRecord(selectedBoard);
 
   return (
     <section className="space-y-5">
@@ -800,13 +817,38 @@ function DaevanionDetailTab({ detailData }: { detailData?: Record<string, unknow
         </CardHeader>
         <CardContent className="space-y-5">
           {boards.length > 0 ? (
-            boards.map((board, index) => (
+            <>
+              <div className="overflow-x-auto border-b pb-3">
+                <div className="flex min-w-max gap-2">
+                  {boards.map((board, index) => {
+                    const record = asRecord(board) ?? {};
+                    const boardId = String(record.id ?? index);
+                    const isSelected = String(selectedRecord?.id ?? "") === boardId;
+                    return (
+                      <Link
+                        key={boardId}
+                        href={`/profile/characters/${characterId}?tab=daevanion&board=${encodeURIComponent(boardId)}`}
+                        className={
+                          "rounded-md border px-4 py-2 text-sm font-semibold transition-colors " +
+                          (isSelected
+                            ? "border-sky-500 bg-sky-500/10 text-sky-300"
+                            : "bg-muted/20 text-muted-foreground hover:border-sky-500/60 hover:text-foreground")
+                        }
+                      >
+                        {formatPlainValue(record.name ?? record.id ?? "Board")}{" "}
+                        <span className="text-xs font-medium opacity-75">
+                          ({formatPlainValue(record.openNodeCount ?? 0)}/{formatPlainValue(record.totalNodeCount ?? 0)})
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
               <DaevanionBoardDetail
-                key={String(asRecord(board)?.id ?? index)}
-                board={board}
-                detail={findDaevanionDetail(details, asRecord(board)?.id)}
+                board={selectedBoard}
+                detail={findDaevanionDetail(details, selectedRecord?.id)}
               />
-            ))
+            </>
           ) : (
             <EmptyText>데바니온 정보가 아직 없어요.</EmptyText>
           )}
@@ -912,31 +954,41 @@ type DaevanionNode = {
 };
 
 function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
-  const visibleNodes = nodes.filter((node) => node.type !== "None" || node.name || node.open);
+  const visibleNodes = nodes.filter(
+    (node) => node.type !== "None" && getDaevanionNodeEffectText(node) !== "-",
+  );
   const minRow = Math.min(...nodes.map((node) => node.row));
   const minCol = Math.min(...nodes.map((node) => node.col));
   const maxRow = Math.max(...nodes.map((node) => node.row));
   const maxCol = Math.max(...nodes.map((node) => node.col));
   const columns = Math.max(1, maxCol - minCol + 1);
   const rows = Math.max(1, maxRow - minRow + 1);
+  const cellWidth = 116;
+  const cellHeight = 64;
 
   return (
     <div className="overflow-x-auto rounded-md border bg-muted/10 p-3">
       <div
         className="grid gap-1"
         style={{
-          gridTemplateColumns: `repeat(${columns}, 24px)`,
-          gridTemplateRows: `repeat(${rows}, 24px)`,
-          minWidth: `${columns * 28}px`,
+          gridTemplateColumns: `repeat(${columns}, ${cellWidth}px)`,
+          gridTemplateRows: `repeat(${rows}, ${cellHeight}px)`,
+          minWidth: `${columns * (cellWidth + 4)}px`,
         }}
       >
         {visibleNodes.map((node, index) => {
           const color = getDaevanionNodeColor(node.grade);
+          const effectText = getDaevanionNodeEffectText(node);
+          const showNodeName =
+            node.name &&
+            node.name !== effectText &&
+            !effectText.includes(node.name) &&
+            !node.name.includes(effectText);
           return (
             <div
               key={`${node.row}-${node.col}-${index}`}
               className={
-                "size-6 rounded-sm border text-[0px] transition-opacity " +
+                "flex min-h-16 flex-col justify-center rounded-sm border px-2 py-1.5 text-center transition-opacity " +
                 (node.open ? "opacity-100" : "opacity-35")
               }
               style={{
@@ -947,7 +999,16 @@ function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
                 boxShadow: node.open ? `0 0 8px ${color.glow}` : undefined,
               }}
               title={formatDaevanionNodeTitle(node)}
-            />
+            >
+              <span className="line-clamp-2 text-[11px] font-semibold leading-tight">
+                {effectText}
+              </span>
+              {showNodeName && (
+                <span className="mt-1 line-clamp-1 text-[10px] leading-tight text-muted-foreground">
+                  {node.name}
+                </span>
+              )}
+            </div>
           );
         })}
       </div>
@@ -1670,6 +1731,22 @@ function formatDaevanionNodeTitle(node: DaevanionNode) {
     .join(" / ");
   const title = node.name || node.type || "Node";
   return `${title}${node.open ? " (개방)" : " (미개방)"}${effects ? ` - ${effects}` : ""}`;
+}
+
+function getDaevanionNodeEffectText(node: DaevanionNode) {
+  const effects = node.effects
+    .map((effect) => {
+      const record = asRecord(effect);
+      if (!record) return formatPlainValue(effect);
+      const name = formatPlainValue(record.name ?? record.statName ?? record.skillName);
+      const value = formatPlainValue(record.value ?? record.effectValue ?? record.desc);
+      if (name !== "-" && value !== "-" && value !== name) return `${name} ${value}`;
+      if (value !== "-") return value;
+      return name;
+    })
+    .filter((effect) => effect !== "-");
+
+  return effects.length > 0 ? effects.slice(0, 2).join(" / ") : node.name || node.type || "-";
 }
 
 function getDaevanionNodeColor(grade: unknown) {
