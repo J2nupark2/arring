@@ -963,8 +963,8 @@ function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
   const maxCol = Math.max(...nodes.map((node) => node.col));
   const columns = Math.max(1, maxCol - minCol + 1);
   const rows = Math.max(1, maxRow - minRow + 1);
-  const cellWidth = 116;
-  const cellHeight = 64;
+  const cellWidth = 74;
+  const cellHeight = 44;
 
   return (
     <div className="overflow-x-auto rounded-md border bg-muted/10 p-3">
@@ -979,16 +979,12 @@ function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
         {visibleNodes.map((node, index) => {
           const color = getDaevanionNodeColor(node.grade);
           const effectText = getDaevanionNodeEffectText(node);
-          const showNodeName =
-            node.name &&
-            node.name !== effectText &&
-            !effectText.includes(node.name) &&
-            !node.name.includes(effectText);
+          const effectParts = splitDaevanionNodeEffect(effectText);
           return (
             <div
               key={`${node.row}-${node.col}-${index}`}
               className={
-                "flex min-h-16 flex-col justify-center rounded-sm border px-2 py-1.5 text-center transition-opacity " +
+                "flex min-h-11 flex-col items-center justify-center rounded-sm border px-1 py-1 text-center transition-opacity " +
                 (node.open ? "opacity-100" : "opacity-35")
               }
               style={{
@@ -1000,12 +996,12 @@ function DaevanionNodeGrid({ nodes }: { nodes: DaevanionNode[] }) {
               }}
               title={formatDaevanionNodeTitle(node)}
             >
-              <span className="line-clamp-2 text-[11px] font-semibold leading-tight">
-                {effectText}
+              <span className="line-clamp-1 text-[10px] font-semibold leading-tight">
+                {effectParts.name}
               </span>
-              {showNodeName && (
-                <span className="mt-1 line-clamp-1 text-[10px] leading-tight text-muted-foreground">
-                  {node.name}
+              {effectParts.value && (
+                <span className="mt-0.5 line-clamp-1 font-mono text-[10px] font-bold leading-tight text-primary">
+                  {effectParts.value}
                 </span>
               )}
             </div>
@@ -1747,6 +1743,17 @@ function getDaevanionNodeEffectText(node: DaevanionNode) {
     .filter((effect) => effect !== "-");
 
   return effects.length > 0 ? effects.slice(0, 2).join(" / ") : node.name || node.type || "-";
+}
+
+function splitDaevanionNodeEffect(effectText: string) {
+  const firstEffect = effectText.split(" / ")[0]?.trim() || effectText;
+  const match = firstEffect.match(/^(.*?)(\s*[+-]\s*[\d.,]+%?)$/);
+  if (!match) return { name: firstEffect, value: "" };
+
+  return {
+    name: match[1].trim(),
+    value: match[2].replace(/\s+/g, ""),
+  };
 }
 
 function getDaevanionNodeColor(grade: unknown) {
