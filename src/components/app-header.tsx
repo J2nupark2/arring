@@ -16,9 +16,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
-// Shared top navigation for authenticated pages. When showFriends is set,
-// a Users button appears below the lg breakpoint and opens the same friend
-// list content in a slide-over Sheet.
+// Shared navigation for public and authenticated pages.
 export function AppHeader({
   showFriends = false,
   isGuest = false,
@@ -40,14 +38,16 @@ export function AppHeader({
           Arring
         </Link>
         <nav aria-label="주 메뉴" className="flex items-center gap-2 sm:gap-3">
-          {!isGuest && <CharacterSearchDialog />}
+          <CharacterSearchDialog />
           <LinkButton href="/party" variant="ghost">
             파티 구하기
           </LinkButton>
-          <LinkButton href="/profile" variant="ghost">
-            내 프로필
-          </LinkButton>
-          {showFriends && (
+          {!isGuest && (
+            <LinkButton href="/profile" variant="ghost">
+              내 프로필
+            </LinkButton>
+          )}
+          {showFriends && !isGuest && (
             <Sheet>
               <SheetTrigger asChild>
                 <Button
@@ -73,7 +73,16 @@ export function AppHeader({
               </SheetContent>
             </Sheet>
           )}
-          <LogoutButton />
+          {isGuest ? (
+            <>
+              <LinkButton href="/login" variant="ghost">
+                로그인
+              </LinkButton>
+              <LinkButton href="/signup">회원가입</LinkButton>
+            </>
+          ) : (
+            <LogoutButton />
+          )}
         </nav>
       </div>
     </header>

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import type { Dungeon } from "@/lib/aion2";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
@@ -21,28 +20,30 @@ export default async function PartyPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user || user.is_anonymous) {
-    redirect(`/login?next=${encodeURIComponent("/party")}`);
-  }
+  const isGuest = !user || user.is_anonymous === true;
+  const { data: dungeons } = await supabase
+    .from("dungeons")
+    .select("id, category, name, gimmick_stages, sort_order, is_active")
+    .eq("is_active", true)
+    .order("category")
+    .order("sort_order");
 
-  const [
-    { data: dungeons },
-    { data: profile },
-    { data: progress },
-    { data: characters },
-  ] =
-    await Promise.all([
-      supabase
-        .from("dungeons")
-        .select("id, category, name, gimmick_stages, sort_order, is_active")
-        .eq("is_active", true)
-        .order("category")
-        .order("sort_order"),
+  let profile = null;
+  let progress: { dungeon_id: string; stage: number }[] = [];
+  let characters: {
+    id: string;
+    character_name: string;
+    server_name: string;
+    class_name: string;
+    combat_power: number;
+    is_primary: boolean;
+  }[] = [];
+
+  if (!isGuest && user) {
+    const [profileResult, progressResult, characterResult] = await Promise.all([
       supabase
         .from("profiles")
-        .select(
-          "char_class, combat_power, manner_temperature, trust_temperature",
-        )
+        .select("char_class, combat_power, manner_temperature, trust_temperature")
         .eq("id", user.id)
         .single(),
       supabase
@@ -51,17 +52,17 @@ export default async function PartyPage({
         .eq("user_id", user.id),
       supabase
         .from("aion2_characters")
-        .select(
-          "id, character_name, server_name, class_name, combat_power, is_primary",
-        )
+        .select("id, character_name, server_name, class_name, combat_power, is_primary")
         .eq("user_id", user.id)
         .order("is_primary", { ascending: false })
         .order("synced_at", { ascending: false }),
     ]);
+    profile = profileResult.data;
+    progress = progressResult.data ?? [];
+    characters = characterResult.data ?? [];
+  }
 
   const { error, welcome } = await searchParams;
-  const isGuest = false;
-
   return (
     <FriendsProvider isGuest={isGuest}>
       <AppHeader showFriends isGuest={isGuest} />

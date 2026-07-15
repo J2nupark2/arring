@@ -101,7 +101,7 @@ grant update (nickname, server) on public.profiles to authenticated;
 
 create table public.aion2_characters (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles (id) on delete cascade,
+  user_id uuid references public.profiles (id) on delete cascade,
   character_id text not null,
   character_name text not null,
   server_id integer not null,
@@ -121,6 +121,10 @@ create table public.aion2_characters (
 
 create index aion2_characters_user_idx
   on public.aion2_characters (user_id, is_primary desc, synced_at desc);
+
+create unique index aion2_public_character_unique_idx
+  on public.aion2_characters (character_id, server_id)
+  where user_id is null;
 
 alter table public.aion2_characters enable row level security;
 
@@ -842,6 +846,13 @@ create policy "dungeons viewable by authenticated"
   on public.dungeons for select
   to authenticated
   using (true);
+
+create policy "active dungeons viewable by anonymous users"
+  on public.dungeons for select
+  to anon
+  using (is_active = true);
+
+grant select on public.dungeons to anon;
 
 create policy "admins can insert dungeons"
   on public.dungeons for insert

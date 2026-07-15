@@ -368,6 +368,10 @@ export function MatchingPanel({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isGuest) {
+      router.push(`/login?next=${encodeURIComponent("/party")}`);
+      return;
+    }
     if (!dungeonId || pending) return;
     setPending(true);
     try {
@@ -762,20 +766,25 @@ export function MatchingPanel({
               {selectedCharacter?.combatPower && ` · 투력 ${formatCombatPower(selectedCharacter.combatPower)}`}
               {mode === "leader" && ` · 최소 ${minCombatPowerK.toLocaleString()}k · ${maxMembers}명 고정`}
             </span>
-            <Button
-              type="submit"
-              disabled={
-                pending ||
-                isGuest ||
-                !hasLinkedCharacter ||
-                !characterId ||
-                dungeons.length === 0 ||
-                hasUnreadyInvitedFriends
-              }
-            >
-              {pending && <Loader2 className="size-4 animate-spin" />}
-              {mode === "leader" ? "매칭 열기" : "자동매칭 대기"}
-            </Button>
+            {isGuest ? (
+              <LinkButton href="/login?next=%2Fparty">
+                로그인 후 매칭 시작
+              </LinkButton>
+            ) : (
+              <Button
+                type="submit"
+                disabled={
+                  pending ||
+                  !hasLinkedCharacter ||
+                  !characterId ||
+                  dungeons.length === 0 ||
+                  hasUnreadyInvitedFriends
+                }
+              >
+                {pending && <Loader2 className="size-4 animate-spin" />}
+                {mode === "leader" ? "매칭 열기" : "자동매칭 대기"}
+              </Button>
+            )}
           </div>
         </form>
         </CardContent>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { Dices, Gem, Lamp, Layers, ShieldCheck, Sparkles, Star, Swords } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { LinkButton } from "@/components/link-button";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { enrichAion2SkillsWithDescriptions } from "@/lib/aion2-api";
 import { formatCombatPower } from "@/lib/format";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -132,12 +133,10 @@ export default async function CharacterDetailPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const isGuest = !user || user.is_anonymous === true;
+  const admin = createAdminClient();
 
-  if (!user || user.is_anonymous) {
-    redirect(`/login?next=${encodeURIComponent(`/profile/characters/${id}`)}`);
-  }
-
-  const { data: character } = await supabase
+  const { data: character } = await admin
     .from("aion2_characters")
     .select(
       "id, user_id, character_id, character_name, server_id, server_name, class_name, character_level, combat_power, equipment, skills, stigmas, detail_data, is_primary, synced_at, created_at",
@@ -147,11 +146,14 @@ export default async function CharacterDetailPage({
 
   if (!character) notFound();
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("manner_temperature, trust_temperature")
-    .eq("id", character.user_id)
-    .single();
+  const profileResult = character.user_id
+    ? await admin
+        .from("profiles")
+        .select("manner_temperature, trust_temperature")
+        .eq("id", character.user_id)
+        .single()
+    : { data: null };
+  const profile = profileResult.data;
 
   const rawSkills = Array.isArray(character.skills) ? character.skills : [];
   const rawStigmas = Array.isArray(character.stigmas) ? character.stigmas : [];
@@ -181,7 +183,7 @@ export default async function CharacterDetailPage({
     .map((item) => asRecord(asRecord(item.detail)?.set))
     .find((set): set is Record<string, unknown> => !!set);
 
-  const { data: priorityRows } = await supabase
+  const { data: priorityRows } = await admin
     .from("class_stat_priority")
     .select("stat_key, tier, class_name")
     .in("class_name", [character.class_name, "공통"].filter(Boolean));
@@ -189,7 +191,7 @@ export default async function CharacterDetailPage({
 
   return (
     <>
-      <AppHeader />
+      <AppHeader isGuest={isGuest} />
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -200,13 +202,24 @@ export default async function CharacterDetailPage({
               {character.character_name}
             </h1>
           </div>
-          <LinkButton href="/profile" variant="outline">
-            프로필로
-          </LinkButton>
-          <CharacterRefreshButton
-            characterRowId={character.id}
-            syncedAt={character.synced_at}
-          />
+          <div className="flex flex-wrap gap-2">
+            <LinkButton href={isGuest ? "/party" : "/profile"} variant="outline">
+              {isGuest ? "파티 찾기로" : "프로필로"}
+            </LinkButton>
+            {isGuest ? (
+              <LinkButton
+                href={`/login?next=${encodeURIComponent("/profile")}`}
+                variant="outline"
+              >
+                로그인 후 캐릭터 연동
+              </LinkButton>
+            ) : (
+              <CharacterRefreshButton
+                characterRowId={character.id}
+                syncedAt={character.synced_at}
+              />
+            )}
+          </div>
         </div>
 
         <Card className="overflow-hidden">
@@ -328,11 +341,19 @@ export default async function CharacterDetailPage({
         )}
 
         <p className="text-sm text-muted-foreground">
-          캐릭터 정보가 바뀌었다면{" "}
-          <Link href="/profile" className="underline underline-offset-4">
-            프로필
-          </Link>
-          에서 다시 동기화하면 최신 정보로 갱신돼요.
+          {isGuest ? (
+            <>
+              이 캐릭터를 내 계정에 연동하려면{" "}
+              <Link href="/login?next=%2Fprofile" className="underline underline-offset-4">
+                로그인
+              </Link>
+              해주세요.
+            </>
+          ) : (
+            <>
+              캐릭터 정보가 바뀌었다면 상단의 갱신 버튼으로 최신 정보를 불러올 수 있어요.
+            </>
+          )}
         </p>
       </main>
     </>

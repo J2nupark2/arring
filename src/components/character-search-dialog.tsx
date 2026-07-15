@@ -75,7 +75,7 @@ export function CharacterSearchDialog() {
   async function openCharacter(result: SearchResult) {
     setLinking(result.characterId);
     try {
-      const res = await fetch("/api/aion2/link", {
+      const res = await fetch("/api/aion2/view", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
