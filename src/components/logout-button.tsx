@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
@@ -21,9 +21,27 @@ export function LogoutButton() {
   }
 
   return (
-    <Button variant="ghost" disabled={pending} onClick={onClick}>
-      {pending && <Loader2 className="animate-spin" />}
-      {pending ? "로그아웃 중..." : "로그아웃"}
-    </Button>
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="sm:hidden"
+        disabled={pending}
+        onClick={onClick}
+        aria-label={pending ? "로그아웃 중" : "로그아웃"}
+        title="로그아웃"
+      >
+        {pending ? <Loader2 className="animate-spin" /> : <LogOut />}
+      </Button>
+      <Button
+        variant="ghost"
+        className="hidden sm:inline-flex"
+        disabled={pending}
+        onClick={onClick}
+      >
+        {pending && <Loader2 className="animate-spin" />}
+        {pending ? "로그아웃 중..." : "로그아웃"}
+      </Button>
+    </>
   );
 }

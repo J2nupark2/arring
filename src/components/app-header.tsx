@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { MessageCircle, ShieldCheck, Users } from "lucide-react";
+import {
+  MessageCircle,
+  ShieldCheck,
+  Swords,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { CharacterSearchDialog } from "@/components/character-search-dialog";
 import { FriendListContent } from "@/components/friends/friend-list-content";
 import { useFriendsContext } from "@/components/friends/friends-provider";
@@ -74,13 +80,41 @@ export function AppHeader({
               <MessageCircle className="size-4.5" />
             </Link>
           </Button>
-          <LinkButton href="/party" variant="ghost">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="sm:hidden"
+            asChild
+            title="파티 구하기"
+          >
+            <Link href="/party" aria-label="파티 구하기">
+              <Swords className="size-4.5" />
+            </Link>
+          </Button>
+          <LinkButton href="/party" variant="ghost" className="hidden sm:inline-flex">
             파티 구하기
           </LinkButton>
           {!isGuest && (
-            <LinkButton href="/profile" variant="ghost">
-              내 프로필
-            </LinkButton>
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="sm:hidden"
+                asChild
+                title="내 프로필"
+              >
+                <Link href="/profile" aria-label="내 프로필">
+                  <UserRound className="size-4.5" />
+                </Link>
+              </Button>
+              <LinkButton
+                href="/profile"
+                variant="ghost"
+                className="hidden sm:inline-flex"
+              >
+                내 프로필
+              </LinkButton>
+            </>
           )}
           {!isGuest && isAdmin && (
             <LinkButton href="/admin" variant="ghost">

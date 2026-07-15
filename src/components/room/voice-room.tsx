@@ -192,43 +192,57 @@ export function VoiceRoom({
 
       <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
         {participants.map((p) => (
-          <button
+          <div
             key={p.id}
-            type="button"
-            onClick={() => setSelectedId(p.id)}
-            className="flex flex-col items-center gap-1 rounded-md border px-1.5 py-2 text-center transition-colors hover:bg-muted/50"
+            className="flex min-w-0 flex-col rounded-md border bg-card p-1.5"
           >
-            <span className="relative">
-              <Avatar
-                className={cn(
-                  "size-10 transition-shadow",
-                  speaking[p.id] &&
-                    "ring-2 ring-green-500 ring-offset-2 ring-offset-card",
+            <button
+              type="button"
+              onClick={() => setSelectedId(p.id)}
+              className="flex min-w-0 flex-col items-center gap-1 rounded-sm px-1 py-1.5 text-center transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`${p.nickname} 프로필 보기`}
+            >
+              <span className="relative">
+                <Avatar
+                  className={cn(
+                    "size-10 transition-shadow",
+                    speaking[p.id] &&
+                      "ring-2 ring-green-500 ring-offset-2 ring-offset-card",
+                  )}
+                >
+                  <AvatarFallback>{p.nickname.slice(0, 1)}</AvatarFallback>
+                </Avatar>
+                {p.id === hostId && (
+                  <Crown
+                    className="absolute -top-1 -right-1 size-3.5 fill-amber-500 text-amber-500"
+                    aria-label="방장"
+                  />
                 )}
-              >
-                <AvatarFallback>{p.nickname.slice(0, 1)}</AvatarFallback>
-              </Avatar>
-              {p.id === hostId && (
-                <Crown
-                  className="absolute -top-1 -right-1 size-3.5 fill-amber-500 text-amber-500"
-                  aria-label="방장"
-                />
-              )}
-              <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-card ring-1 ring-border">
-                {p.id !== hostId ? (
-                  <Headphones className="size-2.5 text-muted-foreground" />
-                ) : p.muted ? (
-                  <MicOff className="size-2.5 text-muted-foreground" />
-                ) : (
-                  <Mic className="size-2.5 text-muted-foreground" />
-                )}
+                <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-card ring-1 ring-border">
+                  {p.id !== hostId ? (
+                    <Headphones className="size-2.5 text-muted-foreground" />
+                  ) : p.muted ? (
+                    <MicOff className="size-2.5 text-muted-foreground" />
+                  ) : (
+                    <Mic className="size-2.5 text-muted-foreground" />
+                  )}
+                </span>
               </span>
-            </span>
-            <span className="w-full truncate text-xs font-medium">
-              {p.nickname}
-              {p.isSelf && " (나)"}
-            </span>
-          </button>
+              <span className="w-full truncate text-xs font-medium">
+                {p.nickname}
+                {p.isSelf && " (나)"}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => copyInviteName(p.inviteName)}
+              className="mt-1 flex h-7 w-full items-center justify-center gap-1 rounded-sm border border-primary/40 bg-primary/10 px-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`${p.inviteName} 복사`}
+            >
+              <Copy className="size-3 shrink-0" />
+              <span className="whitespace-nowrap">닉네임 복사</span>
+            </button>
+          </div>
         ))}
       </div>
 
