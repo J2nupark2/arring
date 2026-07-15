@@ -42,6 +42,9 @@ export function DungeonManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<DungeonCategory>(
+    DUNGEON_CATEGORIES[0],
+  );
 
   const refresh = useCallback(async () => {
     const { data, error } = await loadDungeons();
@@ -72,11 +75,12 @@ export function DungeonManager() {
   }, []);
 
   function startCreate() {
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, category: selectedCategory });
     setEditingId("new");
   }
 
   function startEdit(d: Dungeon) {
+    setSelectedCategory(d.category);
     setForm({
       category: d.category,
       name: d.name,
@@ -116,6 +120,7 @@ export function DungeonManager() {
       return;
     }
     toast.success(editingId === "new" ? "던전을 추가했습니다" : "저장했습니다");
+    setSelectedCategory(form.category);
     setEditingId(null);
     refresh();
   }
@@ -146,6 +151,15 @@ export function DungeonManager() {
     }
     refresh();
   }
+
+  const selectedDungeons = dungeons
+    .filter((dungeon) => dungeon.category === selectedCategory)
+    .sort(
+      (a, b) =>
+        (b.tier ?? 1) - (a.tier ?? 1) ||
+        a.sort_order - b.sort_order ||
+        a.name.localeCompare(b.name, "ko"),
+    );
 
   return (
     <div className="flex flex-col gap-6">
@@ -274,77 +288,98 @@ export function DungeonManager() {
         </Card>
       )}
 
-      {DUNGEON_CATEGORIES.map((category) => {
-        const list = dungeons
-          .filter((d) => d.category === category)
-          .sort(
-            (a, b) =>
-              (b.tier ?? 1) - (a.tier ?? 1) ||
-              a.sort_order - b.sort_order ||
-              a.name.localeCompare(b.name, "ko"),
-          );
-        if (list.length === 0) return null;
-        return (
-          <div key={category} className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-muted-foreground">
-              {category}
-            </h2>
-            {list.map((d) => (
-              <Card key={d.id}>
-                <CardContent className="flex items-start justify-between gap-4">
-                  <div className="flex min-w-0 flex-col gap-1.5">
-                    <span className="flex items-center gap-2 font-medium">
-                      {d.name}
-                      <Badge variant="outline">★ x {d.tier ?? 1}</Badge>
-                      {!d.is_active && (
-                        <Badge variant="secondary">비활성</Badge>
-                      )}
-                    </span>
-                    {d.gimmick_stages.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-1">
-                        {d.gimmick_stages.map((stage, i) => (
-                          <Badge key={i} variant="outline">
-                            {i + 1}. {stage}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        진도 단계 없음
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleActive(d)}
-                    >
-                      {d.is_active ? "비활성화" : "활성화"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`${d.name} 수정`}
-                      onClick={() => startEdit(d)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`${d.name} 삭제`}
-                      onClick={() => remove(d)}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+      {!loading && dungeons.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div
+            role="tablist"
+            aria-label="던전 분류"
+            className="grid grid-cols-3 gap-2"
+          >
+            {DUNGEON_CATEGORIES.map((category) => {
+              const count = dungeons.filter(
+                (dungeon) => dungeon.category === category,
+              ).length;
+              return (
+                <Button
+                  key={category}
+                  type="button"
+                  role="tab"
+                  aria-selected={selectedCategory === category}
+                  variant={
+                    selectedCategory === category ? "secondary" : "outline"
+                  }
+                  onClick={() => setSelectedCategory(category)}
+                >
+                  {category}
+                  <span className="text-xs text-muted-foreground">{count}</span>
+                </Button>
+              );
+            })}
           </div>
-        );
-      })}
+
+          <div role="tabpanel" className="flex flex-col gap-2">
+            {selectedDungeons.length === 0 ? (
+              <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                등록된 {selectedCategory} 던전이 없습니다.
+              </div>
+            ) : (
+              selectedDungeons.map((d) => (
+                <Card key={d.id}>
+                  <CardContent className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                      <span className="flex items-center gap-2 font-medium">
+                        {d.name}
+                        <Badge variant="outline">★ x {d.tier ?? 1}</Badge>
+                        {!d.is_active && (
+                          <Badge variant="secondary">비활성</Badge>
+                        )}
+                      </span>
+                      {d.gimmick_stages.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {d.gimmick_stages.map((stage, i) => (
+                            <Badge key={i} variant="outline">
+                              {i + 1}. {stage}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          진도 단계 없음
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleActive(d)}
+                      >
+                        {d.is_active ? "비활성화" : "활성화"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`${d.name} 수정`}
+                        onClick={() => startEdit(d)}
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`${d.name} 삭제`}
+                        onClick={() => remove(d)}
+                      >
+                        <Trash2 className="size-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
