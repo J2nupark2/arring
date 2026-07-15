@@ -22,7 +22,7 @@ export default async function SignupPage({
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-24 sm:px-6">
       <Link
         href="/"
-        className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-2xl font-bold tracking-tight text-transparent"
+        className="arring-wordmark text-2xl"
       >
         Arring
       </Link>

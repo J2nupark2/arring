@@ -71,7 +71,7 @@ export default async function PartyPage({
         <main className="flex min-w-0 flex-1 flex-col gap-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">파티 구하기</h1>
+              <h1 className="text-2xl font-bold tracking-tight">매치 메이킹</h1>
               <p className="text-sm text-muted-foreground">
                 조건과 진도를 기준으로 자동매칭하고, 방장은 마이크로 리딩합니다.
               </p>
@@ -85,7 +85,7 @@ export default async function PartyPage({
             </div>
           )}
           {isGuest && (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-200">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary">
               <span>게스트로 이용 중입니다. 친구 추가 등 계정 기능은 회원가입 후 이용할 수 있어요.</span>
               <Link href="/signup" className="shrink-0 font-medium underline underline-offset-4">
                 회원가입하기

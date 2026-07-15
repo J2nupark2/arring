@@ -71,7 +71,7 @@ export function MatchFloatingStatus({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-semibold">
-              <Loader2 className="size-4 animate-spin text-violet-400" />
+              <Loader2 className="size-4 animate-spin text-primary" />
               매칭 수락 대기 중
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -79,7 +79,7 @@ export function MatchFloatingStatus({
               수락, {remainingSeconds}초 남음
             </p>
             {temporaryMatch.role === "leader" && (
-              <p className="mt-1 text-xs font-medium text-violet-300">
+              <p className="mt-1 text-xs font-medium text-primary">
                 파티장으로 매칭됩니다.
               </p>
             )}
@@ -114,7 +114,7 @@ export function MatchFloatingStatus({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <Loader2 className="size-4 animate-spin text-violet-400" />
+            <Loader2 className="size-4 animate-spin text-primary" />
             매칭 대기 중
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -123,7 +123,7 @@ export function MatchFloatingStatus({
               : "조건에 맞는 파티가 열리면 자동으로 방에 입장합니다."}
           </p>
           {!isLeader && status.canAutoLead && (
-            <p className="mt-1 text-xs font-medium text-violet-300">
+            <p className="mt-1 text-xs font-medium text-primary">
               {autoLeadRemainingSeconds > 0
                 ? `파티장 전환 가능까지 ${autoLeadRemainingSeconds}초`
                 : "파티장 후보로 전환됨. 설정한 조건으로 파티원을 찾는 중입니다."}

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ImageAttachmentPicker } from "@/components/chat/image-attachment-picker";
 import { PrivateChatImage } from "@/components/chat/private-chat-image";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +48,8 @@ export function VoiceRoom({
   inviteName,
   maxMembers,
   initialHostId,
+  initialCharacterRowId,
+  initialProfileImageUrl,
   isGuest = false,
 }: {
   roomCode: string;
@@ -57,6 +59,8 @@ export function VoiceRoom({
   inviteName: string;
   maxMembers: number;
   initialHostId: string;
+  initialCharacterRowId: string | null;
+  initialProfileImageUrl: string | null;
   isGuest?: boolean;
 }) {
   const router = useRouter();
@@ -88,6 +92,8 @@ export function VoiceRoom({
     nickname,
     inviteName,
     initialHostId,
+    initialCharacterRowId,
+    initialProfileImageUrl,
     onKicked: () => {
       router.push(
         "/party?error=" + encodeURIComponent("방장에 의해 추방되었습니다."),
@@ -210,6 +216,9 @@ export function VoiceRoom({
                       "ring-2 ring-green-500 ring-offset-2 ring-offset-card",
                   )}
                 >
+                  {p.profileImageUrl && (
+                    <AvatarImage src={p.profileImageUrl} alt="" />
+                  )}
                   <AvatarFallback>{p.nickname.slice(0, 1)}</AvatarFallback>
                 </Avatar>
                 {p.id === hostId && (
@@ -258,6 +267,9 @@ export function VoiceRoom({
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Avatar className="size-8">
+                    {selected.profileImageUrl && (
+                      <AvatarImage src={selected.profileImageUrl} alt="" />
+                    )}
                     <AvatarFallback>
                       {selected.nickname.slice(0, 1)}
                     </AvatarFallback>
@@ -474,7 +486,7 @@ export function VoiceRoom({
                   className={cn(
                     "max-w-[80%] rounded-lg px-3 py-1.5 text-sm break-words",
                     isMine
-                      ? "bg-violet-600 text-white"
+                      ? "bg-primary text-primary-foreground"
                       : "bg-muted text-foreground",
                   )}
                 >

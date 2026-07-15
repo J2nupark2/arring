@@ -65,15 +65,15 @@ export function AppHeader({
   }, [isGuest]);
 
   return (
-    <header className="sticky top-0 z-10 border-b bg-background/70 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
+    <header className="sticky top-0 z-10 border-b border-border bg-card/92 shadow-[0_10px_35px_rgba(0,0,0,.18)] backdrop-blur-xl">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-1 px-3 py-3 sm:gap-2 sm:px-6">
         <Link
           href="/party"
-          className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-lg font-bold tracking-tight text-transparent"
+          className="arring-wordmark text-lg"
         >
           Arring
         </Link>
-        <nav aria-label="주 메뉴" className="flex items-center gap-2 sm:gap-3">
+        <nav aria-label="주 메뉴" className="flex items-center gap-0.5 sm:gap-3 [&_[data-size=icon]]:size-7 sm:[&_[data-size=icon]]:size-8">
           <CharacterSearchDialog />
           <Button variant="ghost" size="icon" asChild title="문의">
             <Link href="/contact" aria-label="문의">
@@ -85,14 +85,14 @@ export function AppHeader({
             size="icon"
             className="sm:hidden"
             asChild
-            title="파티 구하기"
+            title="매치 메이킹"
           >
-            <Link href="/party" aria-label="파티 구하기">
+            <Link href="/party" aria-label="매치 메이킹">
               <Swords className="size-4.5" />
             </Link>
           </Button>
           <LinkButton href="/party" variant="ghost" className="hidden sm:inline-flex">
-            파티 구하기
+            매치 메이킹
           </LinkButton>
           {!isGuest && (
             <>

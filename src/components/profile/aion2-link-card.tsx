@@ -195,7 +195,7 @@ export function Aion2LinkCard({
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Swords className="size-4 text-violet-400" />
+              <Swords className="size-4 text-primary" />
               연동된 캐릭터
             </CardTitle>
             <CardDescription>

@@ -49,7 +49,7 @@ const sections = [
 export default function PrivacyPage() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-12 sm:px-6">
-      <Link href="/" className="text-sm font-medium text-violet-300">Arring</Link>
+      <Link href="/" className="arring-wordmark text-sm">Arring</Link>
       <h1 className="text-3xl font-bold tracking-tight">개인정보처리방침</h1>
       <p className="text-sm text-muted-foreground">시행일: 2026년 7월 15일</p>
       {sections.map((section) => (

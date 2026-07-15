@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function AboutPage() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-4 py-12 sm:px-6">
-      <Link href="/" className="text-sm font-medium text-violet-300">
+      <Link href="/" className="arring-wordmark text-sm">
         Arring
       </Link>
       <section className="space-y-4">

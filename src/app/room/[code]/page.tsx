@@ -8,6 +8,7 @@ import { CopyInvite } from "@/components/room/copy-invite";
 import { PasswordGate } from "@/components/room/password-gate";
 import { VoiceRoom } from "@/components/room/voice-room";
 import { formatAion2InviteName } from "@/lib/aion2-invite";
+import { getAion2ProfileImage } from "@/lib/aion2-profile-image";
 import {
   Card,
   CardContent,
@@ -59,13 +60,13 @@ export default async function RoomPage({
             <CardHeader>
               <CardTitle>통화방을 찾을 수 없습니다</CardTitle>
               <CardDescription>
-                존재하지 않거나 만료된 통화방 코드예요. 파티 구하기에서 새
+                존재하지 않거나 만료된 통화방 코드예요. 매치 메이킹에서 새
                 통화방을 만들어보세요.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex justify-center">
               <LinkButton href="/party" variant="outline">
-                파티 구하기로 이동
+                매치 메이킹으로 이동
               </LinkButton>
             </CardContent>
           </Card>
@@ -74,8 +75,7 @@ export default async function RoomPage({
     );
   }
 
-  // These four are all independent of each other's results, so run them
-  // together instead of waterfalling four sequential Supabase round trips.
+  // These reads are independent, so keep them off the room render waterfall.
   // room_has_password is fetched unconditionally (even though its result is
   // discarded when skipPasswordGate ends up true) to keep it out of the
   // critical path — it's a cheap SECURITY DEFINER read either way.
@@ -84,6 +84,9 @@ export default async function RoomPage({
     { data: ownActiveRow },
     { data: profile },
     { data: hasPasswordRaw },
+    { data: ownQueueMatch },
+    { data: ownLeaderMatch },
+    { data: ownCharacters },
   ] = await Promise.all([
     supabase.rpc("room_member_count", { target_room_id: room.id }),
     // A user already counted as active (e.g. rejoining after a refresh or a
@@ -99,6 +102,30 @@ export default async function RoomPage({
       .maybeSingle(),
     supabase.from("profiles").select("nickname, server").eq("id", user.id).single(),
     supabase.rpc("room_has_password", { target_room_id: room.id }),
+    supabase
+      .from("match_queue")
+      .select("character_row_id")
+      .eq("room_id", room.id)
+      .eq("user_id", user.id)
+      .eq("status", "matched")
+      .order("matched_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("match_requests")
+      .select("character_row_id")
+      .eq("room_id", room.id)
+      .eq("leader_id", user.id)
+      .eq("status", "matched")
+      .order("matched_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("aion2_characters")
+      .select("id, detail_data")
+      .eq("user_id", user.id)
+      .order("is_primary", { ascending: false })
+      .order("synced_at", { ascending: false }),
   ]);
 
   if (
@@ -138,6 +165,20 @@ export default async function RoomPage({
     profile?.nickname ?? user.email ?? "익명",
     profile?.server,
   );
+  const characterRows = (ownCharacters ?? []) as {
+    id: string;
+    detail_data: unknown;
+  }[];
+  const matchedCharacterRowId =
+    (ownQueueMatch as { character_row_id: string | null } | null)
+      ?.character_row_id ??
+    (ownLeaderMatch as { character_row_id: string | null } | null)
+      ?.character_row_id ??
+    null;
+  const roomCharacter =
+    characterRows.find((character) => character.id === matchedCharacterRowId) ??
+    characterRows[0] ??
+    null;
 
   // Already-joined participants and the room's creator never need to
   // re-enter the password.
@@ -161,7 +202,7 @@ export default async function RoomPage({
                 <CardTitle>{room.title}</CardTitle>
                 <CardDescription>
                   방 코드{" "}
-                  <span className="font-mono font-semibold text-violet-300">
+                  <span className="font-mono font-semibold text-primary">
                     {room.code}
                   </span>{" "}
                   — 코드나 링크를 공유하면 파티원이 바로 들어올 수 있어요.
@@ -179,6 +220,10 @@ export default async function RoomPage({
                   inviteName={inviteName}
                   maxMembers={room.max_members}
                   initialHostId={room.host_id ?? room.created_by}
+                  initialCharacterRowId={roomCharacter?.id ?? null}
+                  initialProfileImageUrl={getAion2ProfileImage(
+                    roomCharacter?.detail_data,
+                  )}
                   isGuest={isGuest}
                 />
               </CardContent>

@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: "아링(Arring) - 아이온2 파티 자동매칭",
   description:
-    "아이온2 원정, 초월, 성역 파티를 클래스 조합, 전투력, 기믹 진도, 매너 점수 기준으로 자동 매칭하는 파티 구하기 서비스입니다.",
+    "아이온2 원정, 초월, 성역 파티를 클래스 조합, 전투력, 기믹 진도, 매너 점수 기준으로 자동 매칭하는 매치 메이킹 서비스입니다.",
   openGraph: {
     title: "아링(Arring) - 아이온2 파티 자동매칭",
     description:
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary",
     title: "아링(Arring) - 아이온2 파티 자동매칭",
-    description: "아이온2 파티 자동매칭과 플레이어 평가 기반 파티 구하기 서비스입니다.",
+    description: "아이온2 파티 자동매칭과 플레이어 평가 기반 매치 메이킹 서비스입니다.",
   },
 };
 

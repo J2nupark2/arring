@@ -5,7 +5,7 @@ import { RedirectIfAuthed } from "@/components/redirect-if-authed";
 export const metadata: Metadata = {
   title: "아링(Arring) - 아이온2 파티 자동매칭",
   description:
-    "아이온2 원정, 초월, 성역 파티를 전투력, 기믹 진도, 클래스 조합, 매너 점수 기준으로 자동 매칭하는 파티 구하기 서비스입니다.",
+    "아이온2 원정, 초월, 성역 파티를 전투력, 기믹 진도, 클래스 조합, 매너 점수 기준으로 자동 매칭하는 매치 메이킹 서비스입니다.",
   alternates: { canonical: "/" },
 };
 
@@ -19,7 +19,7 @@ export default function Home() {
             <div className="flex flex-col justify-center gap-6">
               <Link
                 href="/"
-                className="w-fit bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-2xl font-bold tracking-tight text-transparent"
+                className="arring-wordmark w-fit text-2xl"
               >
                 Arring
               </Link>
@@ -29,7 +29,7 @@ export default function Home() {
                 </h1>
                 <p className="max-w-2xl text-base leading-7 text-muted-foreground">
                   Arring은 원정, 초월, 성역 파티를 전투력, 기믹 진도, 클래스 조합,
-                  매너 점수 기준으로 연결하는 아이온2 파티 구하기 서비스입니다.
+                  매너 점수 기준으로 연결하는 아이온2 매치 메이킹 서비스입니다.
                   파티장은 원하는 조합을 정하고, 파티원은 연동한 캐릭터와 진도를
                   선택해 빠르게 매칭을 시작할 수 있습니다.
                 </p>

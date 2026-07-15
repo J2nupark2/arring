@@ -447,7 +447,7 @@ export function MatchingPanel({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <RadioTower className="size-5 text-violet-400" />
+              <RadioTower className="size-5 text-primary" />
               아이온2 자동매칭
             </CardTitle>
             <CardDescription>
@@ -471,7 +471,7 @@ export function MatchingPanel({
         )}
 
         {!isGuest && !hasLinkedCharacter && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
             <span>투력을 속일 수 없도록 공식 홈페이지 캐릭터 연동이 먼저 필요합니다.</span>
             <LinkButton href="/profile" variant="outline">캐릭터 연동</LinkButton>
           </div>
@@ -483,7 +483,7 @@ export function MatchingPanel({
             onClick={() => setMode("member")}
             aria-pressed={mode === "member"}
             className={`rounded-md border px-3 py-3 text-left transition-colors ${
-              mode === "member" ? "border-violet-500 bg-violet-500/10" : "hover:bg-muted/50"
+              mode === "member" ? "border-primary bg-primary/10" : "hover:bg-muted/50"
             }`}
           >
             <HeadsetLabel icon={<Users className="size-4" />} title="파티원" body="내 진도를 기준으로 자동 대기" />
@@ -493,7 +493,7 @@ export function MatchingPanel({
             onClick={() => setMode("leader")}
             aria-pressed={mode === "leader"}
             className={`rounded-md border px-3 py-3 text-left transition-colors sm:col-span-2 ${
-              mode === "leader" ? "border-violet-500 bg-violet-500/10" : "hover:bg-muted/50"
+              mode === "leader" ? "border-primary bg-primary/10" : "hover:bg-muted/50"
             }`}
           >
             <HeadsetLabel icon={<ShieldCheck className="size-4" />} title="파티장" body="리딩 가능, 조합과 투력 조건 설정" />
@@ -584,7 +584,7 @@ export function MatchingPanel({
                         aria-pressed={contentCategory === category}
                         className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
                           contentCategory === category
-                            ? "border-violet-500 bg-violet-500/15 text-violet-100"
+                            ? "border-primary bg-primary/15 text-primary"
                             : "bg-background/40 hover:bg-muted"
                         }`}
                       >
@@ -625,7 +625,7 @@ export function MatchingPanel({
                               aria-pressed={selected}
                               className={`min-h-24 rounded-md border p-3 text-left transition-colors ${
                                 selected
-                                  ? "border-violet-500 bg-violet-500/15"
+                                  ? "border-primary bg-primary/15"
                                   : "bg-background/50 hover:bg-muted/60"
                               }`}
                             >
@@ -715,7 +715,7 @@ export function MatchingPanel({
                   type="checkbox"
                   checked={canAutoLead}
                   onChange={(event) => setCanAutoLead(event.target.checked)}
-                  className="mt-1 size-4 accent-violet-500"
+                  className="mt-1 size-4 accent-primary"
                 />
                 <span className="flex flex-col gap-1">
                   <span className="font-medium">파티장 가능</span>
@@ -771,7 +771,7 @@ export function MatchingPanel({
                         type="checkbox"
                         checked={allowConditionRelaxation}
                         onChange={(event) => setAllowConditionRelaxation(event.target.checked)}
-                        className="size-4 accent-violet-500"
+                        className="size-4 accent-primary"
                       />
                       조건 완화 허용
                     </label>
@@ -988,14 +988,14 @@ function ClassSlotGroup({
     <div className="rounded-md border p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="flex items-center gap-2 text-sm font-medium">
-          <Swords className="size-4 text-violet-400" />
+          <Swords className="size-4 text-primary" />
           {title}
         </span>
         <Badge variant="secondary">{leaderClass ? slots.length + 1 : slots.length}명</Badge>
       </div>
       <div className="grid gap-2 sm:grid-cols-5">
         {leaderClass && (
-          <div className="flex h-9 items-center rounded-md border border-violet-500/40 bg-violet-500/10 px-3 text-sm">
+          <div className="flex h-9 items-center rounded-md border border-primary/40 bg-primary/10 px-3 text-sm">
             방장 · {leaderClass}
           </div>
         )}
@@ -1078,7 +1078,7 @@ function ClassSlotGroup({
                   {visibleInviteStatus && (
                     <span
                       className={`text-[11px] ${
-                        visibleInviteStatus === "accepted" ? "text-green-400" : "text-violet-300"
+                        visibleInviteStatus === "accepted" ? "text-green-400" : "text-primary"
                       }`}
                     >
                       {visibleInviteStatus === "ready"

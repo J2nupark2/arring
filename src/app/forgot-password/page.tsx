@@ -14,7 +14,7 @@ export default async function ForgotPasswordPage({
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-24 sm:px-6">
-      <Link href="/" className="text-2xl font-bold text-violet-300">Arring</Link>
+      <Link href="/" className="arring-wordmark text-2xl">Arring</Link>
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>비밀번호 찾기</CardTitle>

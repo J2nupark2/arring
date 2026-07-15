@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { formatAion2InviteName } from "@/lib/aion2-invite";
+import { getAion2ProfileImage } from "@/lib/aion2-profile-image";
 
 type SignalPayload = {
   from: string;
@@ -20,7 +21,13 @@ type KickPayload = { targetId: string; from: string };
 
 type HostChangePayload = { newHostId: string; from: string };
 
-type PresenceState = { userId: string; nickname: string; inviteName?: string };
+type PresenceState = {
+  userId: string;
+  nickname: string;
+  inviteName?: string;
+  characterRowId?: string | null;
+  profileImageUrl?: string | null;
+};
 
 export type AudioInputDevice = {
   deviceId: string;
@@ -34,6 +41,7 @@ export type Participant = {
   isSelf: boolean;
   muted: boolean;
   characterRowId: string | null;
+  profileImageUrl: string | null;
   isFriend: boolean;
 };
 
@@ -68,6 +76,8 @@ export function useVoiceRoom({
   nickname,
   inviteName,
   initialHostId,
+  initialCharacterRowId,
+  initialProfileImageUrl,
   onKicked,
 }: {
   roomCode: string;
@@ -76,6 +86,8 @@ export function useVoiceRoom({
   nickname: string;
   inviteName: string;
   initialHostId: string;
+  initialCharacterRowId: string | null;
+  initialProfileImageUrl: string | null;
   onKicked?: () => void;
 }) {
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -121,6 +133,7 @@ export function useVoiceRoom({
       const next = {
         ...p,
         characterRowId: p.characterRowId ?? existing?.characterRowId ?? null,
+        profileImageUrl: p.profileImageUrl ?? existing?.profileImageUrl ?? null,
         isFriend: p.isFriend || existing?.isFriend || false,
       };
       return [...others, next].sort((a, b) =>
@@ -401,7 +414,8 @@ export function useVoiceRoom({
         inviteName,
         isSelf: true,
         muted: false,
-        characterRowId: null,
+        characterRowId: initialCharacterRowId,
+        profileImageUrl: initialProfileImageUrl,
         isFriend: false,
       });
 
@@ -494,7 +508,8 @@ export function useVoiceRoom({
             inviteName: presence.inviteName ?? legacyInviteName(presence.nickname),
             isSelf: false,
             muted: false,
-            characterRowId: null,
+            characterRowId: presence.characterRowId ?? null,
+            profileImageUrl: presence.profileImageUrl ?? null,
             isFriend: false,
           });
 
@@ -535,7 +550,13 @@ export function useVoiceRoom({
       channel.subscribe(async (subscribeStatus) => {
         if (subscribeStatus === "SUBSCRIBED") {
           joinedRef.current = true;
-          await channel.track({ userId, nickname, inviteName } satisfies PresenceState);
+          await channel.track({
+            userId,
+            nickname,
+            inviteName,
+            characterRowId: initialCharacterRowId,
+            profileImageUrl: initialProfileImageUrl,
+          } satisfies PresenceState);
           const { data: activeParticipant } = await supabase
             .from("room_participants")
             .select("id")
@@ -626,7 +647,15 @@ export function useVoiceRoom({
       joinedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode, roomId, userId, nickname, inviteName]);
+  }, [
+    roomCode,
+    roomId,
+    userId,
+    nickname,
+    inviteName,
+    initialCharacterRowId,
+    initialProfileImageUrl,
+  ]);
 
   const participantIds = participants.map((p) => p.id).sort().join("|");
 
@@ -641,7 +670,7 @@ export function useVoiceRoom({
       const [characterResult, friendResult] = await Promise.all([
         supabase
           .from("aion2_characters")
-          .select("id, user_id")
+          .select("id, user_id, detail_data")
           .in("user_id", ids)
           .order("is_primary", { ascending: false })
           .order("synced_at", { ascending: false }),
@@ -650,13 +679,20 @@ export function useVoiceRoom({
 
       if (cancelled) return;
 
-      const characterByUser = new Map<string, string>();
+      const characterByUser = new Map<
+        string,
+        { id: string; profileImageUrl: string | null }
+      >();
       for (const character of (characterResult.data ?? []) as {
         id: string;
         user_id: string;
+        detail_data: unknown;
       }[]) {
         if (!characterByUser.has(character.user_id)) {
-          characterByUser.set(character.user_id, character.id);
+          characterByUser.set(character.user_id, {
+            id: character.id,
+            profileImageUrl: getAion2ProfileImage(character.detail_data),
+          });
         }
       }
 
@@ -667,11 +703,19 @@ export function useVoiceRoom({
       );
 
       setParticipants((prev) =>
-        prev.map((participant) => ({
-          ...participant,
-          characterRowId: characterByUser.get(participant.id) ?? null,
-          isFriend: friendIds.has(participant.id),
-        })),
+        prev.map((participant) => {
+          const fallbackCharacter = characterByUser.get(participant.id);
+          return {
+            ...participant,
+            characterRowId:
+              participant.characterRowId ?? fallbackCharacter?.id ?? null,
+            profileImageUrl:
+              participant.profileImageUrl ??
+              fallbackCharacter?.profileImageUrl ??
+              null,
+            isFriend: friendIds.has(participant.id),
+          };
+        }),
       );
     }
 
