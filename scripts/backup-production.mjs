@@ -4,11 +4,15 @@ import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
 const root = resolve(process.cwd());
-const envText = await readFile(resolve(root, ".env.local"), "utf8");
-for (const line of envText.split(/\r?\n/)) {
-  const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-  if (!match || process.env[match[1]]) continue;
-  process.env[match[1]] = match[2].replace(/^["']|["']$/g, "");
+try {
+  const envText = await readFile(resolve(root, ".env.local"), "utf8");
+  for (const line of envText.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match || process.env[match[1]]) continue;
+    process.env[match[1]] = match[2].replace(/^["']|["']$/g, "");
+  }
+} catch (error) {
+  if (error?.code !== "ENOENT") throw error;
 }
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
