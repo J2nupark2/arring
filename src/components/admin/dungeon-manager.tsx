@@ -24,6 +24,15 @@ const EMPTY_FORM = {
   sortOrder: 0,
 };
 
+function loadDungeons() {
+  return createClient()
+    .from("dungeons")
+    .select("*")
+    .order("category")
+    .order("sort_order")
+    .order("name");
+}
+
 export function DungeonManager() {
   const [dungeons, setDungeons] = useState<Dungeon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,13 +42,7 @@ export function DungeonManager() {
   const [saving, setSaving] = useState(false);
 
   const refresh = useCallback(async () => {
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("dungeons")
-      .select("*")
-      .order("category")
-      .order("sort_order")
-      .order("name");
+    const { data, error } = await loadDungeons();
     if (error) {
       toast.error("던전 목록을 불러오지 못했습니다: " + error.message);
       return;
@@ -49,8 +52,22 @@ export function DungeonManager() {
   }, []);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let cancelled = false;
+
+    loadDungeons().then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        toast.error("던전 목록을 불러오지 못했습니다: " + error.message);
+      } else {
+        setDungeons((data ?? []) as Dungeon[]);
+      }
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function startCreate() {
     setForm(EMPTY_FORM);

@@ -23,8 +23,11 @@ export function useConversation(friendId: string, onRead?: () => void) {
   const [sending, setSending] = useState(false);
   const [myId, setMyId] = useState<string | null>(null);
   const onReadRef = useRef(onRead);
-  onReadRef.current = onRead;
   const channelRef = useRef<RealtimeChannel | null>(null);
+
+  useEffect(() => {
+    onReadRef.current = onRead;
+  }, [onRead]);
 
   useEffect(() => {
     let cancelled = false;
