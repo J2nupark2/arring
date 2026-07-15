@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { MessageCircle, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { MessageCircle, ShieldCheck, Users } from "lucide-react";
 import { CharacterSearchDialog } from "@/components/character-search-dialog";
 import { FriendListContent } from "@/components/friends/friend-list-content";
 import { useFriendsContext } from "@/components/friends/friends-provider";
 import { LinkButton } from "@/components/link-button";
 import { LogoutButton } from "@/components/logout-button";
 import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
 import {
   Sheet,
   SheetContent,
@@ -27,6 +29,34 @@ export function AppHeader({
   currentRoomCode?: string;
 }) {
   const { incoming } = useFriendsContext();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (isGuest) return;
+
+    let active = true;
+    const supabase = createClient();
+
+    void (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user || user.is_anonymous) return;
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("is_admin")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (active) setIsAdmin(data?.is_admin === true);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [isGuest]);
 
   return (
     <header className="sticky top-0 z-10 border-b bg-background/70 backdrop-blur">
@@ -50,6 +80,12 @@ export function AppHeader({
           {!isGuest && (
             <LinkButton href="/profile" variant="ghost">
               내 프로필
+            </LinkButton>
+          )}
+          {!isGuest && isAdmin && (
+            <LinkButton href="/admin" variant="ghost">
+              <ShieldCheck className="size-4" />
+              <span className="hidden sm:inline">관리자</span>
             </LinkButton>
           )}
           {showFriends && !isGuest && (
