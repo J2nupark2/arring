@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Arring
 
-## Getting Started
+아이온2 파티 자동매칭, 캐릭터 정보, 친구 초대와 음성 통화방을 제공하는 Next.js 서비스입니다.
 
-First, run the development server:
+## Local development
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+필수 환경 변수는 `.env.local`에 설정합니다. 값 자체는 Git에 커밋하지 않습니다.
+
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+NEXT_PUBLIC_SITE_URL
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+```bash
+npm install
+npm run dev
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+로컬 주소는 `http://localhost:3000`이며 상태 점검은 `/api/health`에서 확인합니다.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Release checks
 
-## Learn More
+프로덕션 푸시 전 아래 검사를 모두 통과해야 합니다.
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+npm run test:matching
+npm run test:matching:http
+npm audit --omit=dev --audit-level=high
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`test:matching:http`는 로컬 개발 서버가 실행 중이어야 합니다. 테스트는 격리된 던전과 계정을 만들고 종료 시 정리합니다.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Database migrations
 
-## Deploy on Vercel
+마이그레이션은 `supabase/migrations`에 순번대로 추가합니다. 기존 파일은 프로덕션 적용 후 수정하지 않습니다.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+supabase migration list
+supabase db push
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+DB 적용 후 매칭 스모크 테스트를 다시 실행합니다. RLS 변경은 브라우저 클라이언트와 서비스 역할 경로를 각각 확인합니다.
+
+## Deployment
+
+`main` 푸시가 Vercel 프로덕션 배포를 시작합니다.
+
+```bash
+git push origin HEAD:main
+vercel ls
+vercel inspect <deployment-url>
+```
+
+배포가 Ready가 되면 아래를 확인합니다.
+
+- `https://a2rring.com/api/health`가 `200`과 `status: ok`를 반환하는지 확인
+- 홈, 로그인, 파티 구하기, 캐릭터 상세 페이지 응답 확인
+- 테스트 계정으로 매칭 시작, 수락, 방 이동, 채팅, 닉네임 복사 확인
+- Vercel Runtime Logs에서 `uncaught_request_error`, `health_check_failed`, `rate_limit_check_failed` 검색
+
+## Incident response
+
+1. `/api/health`와 Vercel 배포 상태를 확인합니다.
+2. Runtime Logs에서 오류 이벤트와 최초 발생 시간을 찾습니다.
+3. DB 문제면 Supabase 상태, 연결 수, 최근 마이그레이션을 확인합니다.
+4. 앱 배포 문제면 직전 Ready 배포를 Vercel에서 Promote해 롤백합니다.
+5. 데이터 변경이 포함된 장애는 코드를 먼저 롤백하지 말고 호환성을 확인한 뒤 보정 마이그레이션을 추가합니다.
+6. 복구 후 매칭 HTTP E2E와 핵심 페이지 스모크 테스트를 다시 실행합니다.
+
+운영 전 Supabase 백업 보존 기간과 복구 가능 여부를 대시보드에서 확인하고, 운영자 계정에는 MFA를 적용합니다.

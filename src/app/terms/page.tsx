@@ -1,40 +1,39 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "이용약관",
-  description: "Arring 서비스 이용 조건, 사용자 책임, 금지 행위 안내입니다.",
+  description: "Arring 서비스 이용 조건, 사용자 책임, 금지 행위와 운영 정책 안내입니다.",
   alternates: { canonical: "/terms" },
 };
+
+const sections = [
+  ["1. 목적", "이 약관은 Arring이 제공하는 아이온2 파티 매칭, 캐릭터 정보, 친구, 채팅 및 통화방 서비스의 이용 조건과 운영자·이용자의 권리와 책임을 정합니다."],
+  ["2. 계정", "서비스의 캐릭터 연동과 매칭 기능은 이메일 인증을 마친 계정으로 이용합니다. 이용자는 정확한 정보를 사용하고 계정 접근 수단을 안전하게 관리해야 하며, 타인의 계정을 사용하거나 양도해서는 안 됩니다."],
+  ["3. 캐릭터 정보", "캐릭터 상세 정보는 게임사가 공개한 정보실 데이터를 바탕으로 캐시되며 갱신 시점, 공식 서비스 변경 또는 수집 오류에 따라 실제 게임 상태와 다를 수 있습니다. 이용자는 중요한 판단 전에 공식 정보실을 함께 확인해야 합니다."],
+  ["4. 매칭과 통화방", "이용자는 전투력, 기믹 진도와 참여 의사를 정확히 입력해야 합니다. 매칭 수락 후 반복적인 거절·무응답·중도 이탈에는 대기열 제외 또는 일정 시간 이용 제한이 적용될 수 있습니다. 통화 기능은 방장에게만 마이크 송신 권한을 제공하며 네트워크 환경에 따라 품질이 달라질 수 있습니다."],
+  ["5. 평가와 신고", "평가는 실제로 함께 매칭된 이용자 사이에서만 제출할 수 있습니다. 같은 평가자와 대상 사이에는 하나의 평가만 반영되며 이후 다시 만난 경우 기존 내용을 변경할 수 있습니다. 허위 신고, 보복 평가, 집단적인 점수 조작은 취소 또는 계정 제한 대상입니다."],
+  ["6. 금지 행위", "욕설·혐오·괴롭힘, 허위 진도, 고의적인 파티 방해, 불법 프로그램이나 자동화 도구를 이용한 요청, 서비스 취약점 악용, 개인정보 침해, 광고성 도배, 게임사 또는 제3자의 권리 침해를 금지합니다."],
+  ["7. 이용 제한", "운영자는 금지 행위, 보안 위험, 반복적인 매칭 방해가 확인되면 사전 경고, 콘텐츠 삭제, 매칭 제한 또는 계정 이용 제한을 적용할 수 있습니다. 긴급한 피해 방지가 필요하지 않은 경우 문의를 통한 이의 제기 기회를 제공합니다."],
+  ["8. 서비스 변경과 중단", "점검, 장애, 외부 API 또는 플랫폼 변경, 보안 대응을 위해 서비스 일부를 변경하거나 일시 중단할 수 있습니다. 중요한 변경이나 장기 중단은 가능한 범위에서 미리 안내합니다."],
+  ["9. 권리와 책임", "Arring의 코드, 디자인과 운영 데이터에 관한 권리는 운영자 또는 정당한 권리자에게 있습니다. 이용자가 작성한 채팅과 평가에 대한 책임은 작성자에게 있으며, 운영에 필요한 범위에서 저장·표시·검토될 수 있습니다."],
+  ["10. 책임의 범위", "Arring은 파티 구성을 돕는 중개 도구이며 실제 게임 플레이 결과, 이용자 간 분쟁, 게임 계정 제재를 보증하지 않습니다. 고의 또는 중대한 과실이 없는 한 무료 서비스의 일시적 장애나 외부 서비스 변경으로 발생한 간접 손해에 책임을 지지 않습니다."],
+  ["11. 비공식 서비스", "Arring은 NCSOFT 또는 아이온2의 공식 서비스가 아닌 독립 커뮤니티 서비스입니다. 게임명과 게임 내 공개 정보의 권리는 각 권리자에게 있습니다."],
+  ["12. 약관 변경과 문의", "약관이 변경되면 시행일 전에 서비스 화면을 통해 알립니다. 문의와 이의 제기는 wlsdn1323@naver.com으로 접수합니다. 이 약관은 대한민국 법률에 따릅니다."],
+];
 
 export default function TermsPage() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-12 sm:px-6">
       <Link href="/" className="text-sm font-medium text-violet-300">Arring</Link>
       <h1 className="text-3xl font-bold tracking-tight">이용약관</h1>
-      <p className="text-sm text-muted-foreground">시행일: 2026년 7월 9일</p>
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold">서비스 목적</h2>
-        <p className="leading-7 text-muted-foreground">
-          Arring은 아이온2 유저가 파티를 찾고, 친구를 초대하고, 매칭 기록을 관리할
-          수 있도록 돕는 커뮤니티 기반 웹 서비스입니다.
-        </p>
-      </section>
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold">사용자 책임</h2>
-        <p className="leading-7 text-muted-foreground">
-          사용자는 자신의 캐릭터 정보, 기믹 진도, 파티 참여 의사를 정확하게 입력해야
-          합니다. 허위 정보, 욕설, 괴롭힘, 부정 이용, 타인의 계정 또는 정보를 침해하는
-          행위는 제한될 수 있습니다.
-        </p>
-      </section>
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold">평가와 신고</h2>
-        <p className="leading-7 text-muted-foreground">
-          매칭 후 평가는 파티 안전망을 높이기 위한 참고 자료입니다. 악의적인 허위 평가와
-          반복적인 신고 남용은 제한될 수 있습니다.
-        </p>
-      </section>
+      <p className="text-sm text-muted-foreground">시행일: 2026년 7월 15일</p>
+      {sections.map(([title, body]) => (
+        <section key={title} className="space-y-3">
+          <h2 className="text-xl font-semibold">{title}</h2>
+          <p className="leading-7 text-muted-foreground">{body}</p>
+        </section>
+      ))}
     </main>
   );
 }
