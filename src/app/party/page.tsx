@@ -23,8 +23,9 @@ export default async function PartyPage({
   const isGuest = !user || user.is_anonymous === true;
   const { data: dungeons } = await supabase
     .from("dungeons")
-    .select("id, category, name, gimmick_stages, sort_order, is_active")
+    .select("id, category, name, gimmick_stages, tier, sort_order, is_active")
     .eq("is_active", true)
+    .order("tier", { ascending: false })
     .order("category")
     .order("sort_order");
 

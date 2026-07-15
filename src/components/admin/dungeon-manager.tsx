@@ -21,6 +21,7 @@ const EMPTY_FORM = {
   category: "원정" as DungeonCategory,
   name: "",
   stagesText: "",
+  tier: 1,
   sortOrder: 0,
 };
 
@@ -29,6 +30,7 @@ function loadDungeons() {
     .from("dungeons")
     .select("*")
     .order("category")
+    .order("tier", { ascending: false })
     .order("sort_order")
     .order("name");
 }
@@ -79,6 +81,7 @@ export function DungeonManager() {
       category: d.category,
       name: d.name,
       stagesText: d.gimmick_stages.join("\n"),
+      tier: d.tier ?? 1,
       sortOrder: d.sort_order,
     });
     setEditingId(d.id);
@@ -99,6 +102,7 @@ export function DungeonManager() {
       category: form.category,
       name,
       gimmick_stages: stages,
+      tier: Math.min(99, Math.max(1, Math.round(form.tier))),
       sort_order: form.sortOrder,
     };
     const { error } =
@@ -201,6 +205,24 @@ export function DungeonManager() {
                   />
                 </div>
                 <div className="flex w-24 flex-col gap-1.5">
+                  <Label htmlFor="dungeon-tier">티어</Label>
+                  <Input
+                    id="dungeon-tier"
+                    type="number"
+                    min={1}
+                    max={99}
+                    step={1}
+                    value={form.tier}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        tier: Number(e.target.value) || 1,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div className="flex w-24 flex-col gap-1.5">
                   <Label htmlFor="dungeon-sort">정렬 순서</Label>
                   <Input
                     id="dungeon-sort"
@@ -253,7 +275,14 @@ export function DungeonManager() {
       )}
 
       {DUNGEON_CATEGORIES.map((category) => {
-        const list = dungeons.filter((d) => d.category === category);
+        const list = dungeons
+          .filter((d) => d.category === category)
+          .sort(
+            (a, b) =>
+              (b.tier ?? 1) - (a.tier ?? 1) ||
+              a.sort_order - b.sort_order ||
+              a.name.localeCompare(b.name, "ko"),
+          );
         if (list.length === 0) return null;
         return (
           <div key={category} className="flex flex-col gap-2">
@@ -266,6 +295,7 @@ export function DungeonManager() {
                   <div className="flex min-w-0 flex-col gap-1.5">
                     <span className="flex items-center gap-2 font-medium">
                       {d.name}
+                      <Badge variant="outline">★ x {d.tier ?? 1}</Badge>
                       {!d.is_active && (
                         <Badge variant="secondary">비활성</Badge>
                       )}

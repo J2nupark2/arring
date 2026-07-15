@@ -208,9 +208,24 @@ export function MatchingPanel({
           categories.indexOf(category) === index,
       ),
   ];
-  const categoryDungeons = dungeons.filter(
-    (dungeon) => dungeon.category === contentCategory,
-  );
+  const categoryDungeons = dungeons
+    .filter((dungeon) => dungeon.category === contentCategory)
+    .sort(
+      (a, b) =>
+        (b.tier ?? 1) - (a.tier ?? 1) ||
+        a.sort_order - b.sort_order ||
+        a.name.localeCompare(b.name, "ko"),
+    );
+  const categoryDungeonGroups = [
+    ...new Set(categoryDungeons.map((dungeon) => dungeon.tier ?? 1)),
+  ]
+    .sort((a, b) => b - a)
+    .map((tier) => ({
+      tier,
+      dungeons: categoryDungeons.filter(
+        (dungeon) => (dungeon.tier ?? 1) === tier,
+      ),
+    }));
 
   useEffect(() => {
     if (isGuest || mode !== "leader" || slottedFriendIds.length === 0) return;
@@ -542,7 +557,7 @@ export function MatchingPanel({
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {selectedDungeon
-                    ? `${partySizeForDungeon(selectedDungeon)}명 고정 · 기믹 ${selectedDungeon.gimmick_stages.length}단계`
+                    ? `★ x ${selectedDungeon.tier ?? 1} · ${partySizeForDungeon(selectedDungeon)}명 고정 · 기믹 ${selectedDungeon.gimmick_stages.length}단계`
                     : "원정, 초월, 성역을 카드로 골라요"}
                 </span>
               </span>
@@ -582,42 +597,64 @@ export function MatchingPanel({
                   })}
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {categoryDungeons.map((dungeon) => {
-                    const selected = dungeon.id === dungeonId;
-                    const savedProgress =
-                      progress.find((item) => item.dungeonId === dungeon.id)?.stage ?? 0;
-                    return (
-                      <button
-                        key={dungeon.id}
-                        type="button"
-                        onClick={() => changeDungeon(dungeon.id)}
-                        aria-pressed={selected}
-                        className={`min-h-24 rounded-md border p-3 text-left transition-colors ${
-                          selected
-                            ? "border-violet-500 bg-violet-500/15"
-                            : "bg-background/50 hover:bg-muted/60"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="text-sm font-semibold">{dungeon.name}</span>
-                          <Badge variant={selected ? "default" : "outline"}>
-                            {partySizeForDungeon(dungeon)}명
-                          </Badge>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-1 text-xs text-muted-foreground">
-                          <span>기믹 {dungeon.gimmick_stages.length}단계</span>
-                          <span>·</span>
-                          <span>내 진도 {stageLabel(dungeon, savedProgress)}</span>
-                        </div>
-                        {dungeon.gimmick_stages.length > 0 && (
-                          <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
-                            {dungeon.gimmick_stages.join(" / ")}
-                          </p>
-                        )}
-                      </button>
-                    );
-                  })}
+                <div className="flex flex-col gap-4">
+                  {categoryDungeonGroups.map((group) => (
+                    <section key={group.tier} aria-labelledby={`dungeon-tier-${group.tier}`}>
+                      <div className="mb-2 flex items-center gap-2">
+                        <h3
+                          id={`dungeon-tier-${group.tier}`}
+                          className="text-sm font-semibold text-amber-300"
+                        >
+                          ★ x {group.tier}
+                        </h3>
+                        <span className="text-xs text-muted-foreground">
+                          {group.dungeons.length}개
+                        </span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {group.dungeons.map((dungeon) => {
+                          const selected = dungeon.id === dungeonId;
+                          const savedProgress =
+                            progress.find((item) => item.dungeonId === dungeon.id)
+                              ?.stage ?? 0;
+                          return (
+                            <button
+                              key={dungeon.id}
+                              type="button"
+                              onClick={() => changeDungeon(dungeon.id)}
+                              aria-pressed={selected}
+                              className={`min-h-24 rounded-md border p-3 text-left transition-colors ${
+                                selected
+                                  ? "border-violet-500 bg-violet-500/15"
+                                  : "bg-background/50 hover:bg-muted/60"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="text-sm font-semibold">
+                                  {dungeon.name}
+                                </span>
+                                <Badge variant={selected ? "default" : "outline"}>
+                                  {partySizeForDungeon(dungeon)}명
+                                </Badge>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-1 text-xs text-muted-foreground">
+                                <span>기믹 {dungeon.gimmick_stages.length}단계</span>
+                                <span>·</span>
+                                <span>
+                                  내 진도 {stageLabel(dungeon, savedProgress)}
+                                </span>
+                              </div>
+                              {dungeon.gimmick_stages.length > 0 && (
+                                <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                                  {dungeon.gimmick_stages.join(" / ")}
+                                </p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
                 </div>
               </div>
             )}

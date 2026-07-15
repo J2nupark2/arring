@@ -25,6 +25,7 @@ export type Dungeon = {
   category: DungeonCategory;
   name: string;
   gimmick_stages: string[];
+  tier: number;
   sort_order: number;
   is_active: boolean;
 };
