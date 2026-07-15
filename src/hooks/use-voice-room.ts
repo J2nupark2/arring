@@ -55,20 +55,10 @@ function legacyInviteName(displayName: string) {
     : displayName.replace(/\s+/g, "");
 }
 
-// Google's public STUN server plus Open Relay Project's free demo TURN
-// server. Fine for a personal-project MVP; swap for a paid/self-hosted TURN
-// if usage grows (see plan's Phase 1 risk notes).
+// Voice calls intentionally use STUN only. Some restrictive NAT environments
+// may not connect without TURN, but the service does not relay voice traffic.
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
-  {
-    urls: [
-      "turn:openrelay.metered.ca:80",
-      "turn:openrelay.metered.ca:443",
-      "turn:openrelay.metered.ca:443?transport=tcp",
-    ],
-    username: "openrelayproject",
-    credential: "openrelayproject",
-  },
 ];
 
 export function useVoiceRoom({
@@ -594,15 +584,20 @@ export function useVoiceRoom({
       });
     }, 180);
 
+    const analysers = analysersRef.current;
+    const peers = peersRef.current;
+    const audioElements = audioElsRef.current;
+    const otherPeerIds = otherPeerIdsRef.current;
+
     return () => {
       cancelled = true;
       clearInterval(speakingInterval);
-      analysersRef.current.clear();
+      analysers.clear();
       channelRef.current?.unsubscribe();
-      peersRef.current.forEach((pc) => pc.close());
-      peersRef.current.clear();
-      audioElsRef.current.forEach((el) => el.remove());
-      audioElsRef.current.clear();
+      peers.forEach((pc) => pc.close());
+      peers.clear();
+      audioElements.forEach((el) => el.remove());
+      audioElements.clear();
       audioContainerRef.current?.remove();
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       rawStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -621,7 +616,7 @@ export function useVoiceRoom({
       // Leaving an empty room closes it. joinedRef guards against React
       // Strict Mode's dev-only mount/cleanup/mount dry run, where cleanup
       // fires before the channel ever subscribed.
-      if (joinedRef.current && otherPeerIdsRef.current.size === 0) {
+      if (joinedRef.current && otherPeerIds.size === 0) {
         supabase
           .from("rooms")
           .update({ status: "ended" })
