@@ -49,6 +49,12 @@ type SearchResult = {
   serverName: string;
 };
 
+const syncedAtFormatter = new Intl.DateTimeFormat("ko-KR", {
+  dateStyle: "medium",
+  timeStyle: "medium",
+  timeZone: "Asia/Seoul",
+});
+
 export function Aion2LinkCard({
   linked,
   characters,
@@ -225,7 +231,7 @@ export function Aion2LinkCard({
                   {character.syncedAt && (
                     <span className="text-xs text-muted-foreground">
                       마지막 동기화:{" "}
-                      {new Date(character.syncedAt).toLocaleString("ko-KR")}
+                      {syncedAtFormatter.format(new Date(character.syncedAt))}
                     </span>
                   )}
                 </div>
