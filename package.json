@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:matching": "node scripts/matching-smoke-test.mjs",
     "test:matching:http": "node scripts/matching-api-e2e.mjs",
-    "backup:production": "node scripts/backup-production.mjs"
+    "backup:production": "node scripts/backup-production.mjs",
+    "backup:verify": "node scripts/verify-latest-backup.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

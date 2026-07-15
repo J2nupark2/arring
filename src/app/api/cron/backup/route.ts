@@ -117,6 +117,7 @@ export async function GET(request: NextRequest) {
     const compressed = gzipSync(payload, { level: 9 });
     const sha256 = createHash("sha256").update(compressed).digest("hex");
     const fileName = `${createdAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}.json.gz`;
+    const hashFileName = `${fileName}.sha256`;
 
     await ensurePrivateBucket();
     const { error: uploadError } = await admin.storage
@@ -128,11 +129,23 @@ export async function GET(request: NextRequest) {
       });
     if (uploadError) throw new Error(`Upload backup: ${uploadError.message}`);
 
+    const { error: hashUploadError } = await admin.storage
+      .from(BACKUP_BUCKET)
+      .upload(hashFileName, `${sha256}  ${fileName}\n`, {
+        contentType: "text/plain; charset=utf-8",
+        upsert: false,
+      });
+    if (hashUploadError) {
+      await admin.storage.from(BACKUP_BUCKET).remove([fileName]);
+      throw new Error(`Upload backup hash: ${hashUploadError.message}`);
+    }
+
     const removedFiles = await removeExpiredBackups();
     return NextResponse.json({
       ok: true,
       createdAt,
       fileName,
+      hashFileName,
       tables: TABLES.length,
       totalRows,
       compressedBytes: compressed.byteLength,
