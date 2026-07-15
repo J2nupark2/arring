@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchCharacterInfo, type Aion2CharacterProfile } from "@/lib/aion2-api";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 const CHARACTER_CACHE_MS = 60_000;
 
@@ -53,6 +54,13 @@ export async function POST(request: NextRequest) {
   if (!characterId || !Number.isInteger(serverId) || serverId <= 0) {
     return NextResponse.json({ error: "캐릭터와 서버 정보가 필요합니다." }, { status: 400 });
   }
+
+  const limited = await enforceRateLimit(request, {
+    scope: "aion2-view",
+    limit: 20,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
 
   const admin = createAdminClient();
   const { data: cached } = await admin

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCharacterInfo } from "@/lib/aion2-api";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 const CHARACTER_REFRESH_COOLDOWN_MS = 60_000;
 
@@ -48,6 +49,14 @@ export async function POST(request: NextRequest) {
   if (!user || user.is_anonymous) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
+
+  const limited = await enforceRateLimit(request, {
+    scope: "aion2-refresh",
+    identifier: user.id,
+    limit: 10,
+    windowSeconds: 600,
+  });
+  if (limited) return limited;
 
   let body: { id?: string };
   try {

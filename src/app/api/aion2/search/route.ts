@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchServers, searchCharacters } from "@/lib/aion2-api";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
+  const limited = await enforceRateLimit(request, {
+    scope: "aion2-search",
+    limit: 30,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
+
   const name = request.nextUrl.searchParams.get("name")?.trim();
   const serverId = Number(request.nextUrl.searchParams.get("serverId"));
 

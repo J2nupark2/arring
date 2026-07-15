@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCharacterInfo, type Aion2CharacterProfile } from "@/lib/aion2-api";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 const CHARACTER_SYNC_COOLDOWN_MS = 60_000;
 
@@ -74,6 +75,14 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     );
   }
+
+  const limited = await enforceRateLimit(request, {
+    scope: "aion2-link",
+    identifier: user.id,
+    limit: 10,
+    windowSeconds: 600,
+  });
+  if (limited) return limited;
 
   let body: { characterId?: string; serverId?: number };
   try {

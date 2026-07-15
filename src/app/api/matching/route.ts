@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { generateRoomCode } from "@/lib/room-code";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 const ROOM_TTL_HOURS = 6;
 const MATCH_HEARTBEAT_TTL_MS = 2 * 60 * 1000;
@@ -1568,7 +1569,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(await getMatchStatus(admin, user.id, matchedAfter));
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   const admin = getAdmin();
   if (!admin) {
     return jsonError("서버에 SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.", 500);
@@ -1580,6 +1581,14 @@ export async function DELETE() {
   } = await supabase.auth.getUser();
 
   if (!user) return jsonError("로그인이 필요합니다.", 401);
+
+  const limited = await enforceRateLimit(request, {
+    scope: "matching-mutation",
+    identifier: user.id,
+    limit: 30,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
 
   await expireStaleActiveMatches(admin);
   await expirePendingTemporaryMatches(admin);
@@ -1623,7 +1632,7 @@ export async function DELETE() {
 export async function PATCH(request: NextRequest) {
   const admin = getAdmin();
   if (!admin) {
-    return jsonError("?쒕쾭??SUPABASE_SERVICE_ROLE_KEY媛 ?ㅼ젙?섏? ?딆븯?듬땲??", 500);
+    return jsonError("서버에 SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.", 500);
   }
 
   const supabase = await createClient();
@@ -1631,13 +1640,21 @@ export async function PATCH(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return jsonError("濡쒓렇?몄씠 ?꾩슂?⑸땲??", 401);
+  if (!user) return jsonError("로그인이 필요합니다.", 401);
+
+  const limited = await enforceRateLimit(request, {
+    scope: "matching-mutation",
+    identifier: user.id,
+    limit: 30,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
 
   let body: { action?: "accept" | "reject" };
   try {
     body = await request.json();
   } catch {
-    return jsonError("?섎せ???붿껌?낅땲??", 400);
+    return jsonError("잘못된 요청입니다.", 400);
   }
 
   if (body.action !== "accept" && body.action !== "reject") {
@@ -1670,6 +1687,14 @@ export async function POST(request: NextRequest) {
   if (user.is_anonymous) {
     return jsonError("자동매칭은 회원가입 후 이용할 수 있습니다.", 403);
   }
+
+  const limited = await enforceRateLimit(request, {
+    scope: "matching-mutation",
+    identifier: user.id,
+    limit: 30,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
 
   await expireStaleActiveMatches(admin);
   await expirePendingTemporaryMatches(admin);

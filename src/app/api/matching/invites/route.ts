@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -146,6 +147,14 @@ export async function POST(request: NextRequest) {
   if (!draftId || !receiverId || !dungeonId) {
     return jsonError("초대 조건이 부족합니다.", 400);
   }
+
+  const limited = await enforceRateLimit(request, {
+    scope: "matching-invite",
+    identifier: user.id,
+    limit: 30,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
   if (receiverId === user.id) return jsonError("자기 자신은 초대할 수 없습니다.", 400);
 
   const { data: friendship, error: friendshipError } = await admin
@@ -208,6 +217,14 @@ export async function PATCH(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) return jsonError("로그인이 필요합니다.", 401);
+
+  const limited = await enforceRateLimit(request, {
+    scope: "matching-invite",
+    identifier: user.id,
+    limit: 30,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
 
   let body: { inviteId?: string; accept?: boolean };
   try {

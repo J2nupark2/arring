@@ -9,5 +9,11 @@ export const config = {
   // Session refresh only matters where auth is actually checked — keeping
   // public pages (landing, login, signup) out of the matcher saves a
   // Supabase round trip on every visit.
-  matcher: ["/room/:path*", "/auth/:path*", "/party/:path*", "/profile/:path*"],
+  matcher: [
+    "/room/:path*",
+    "/auth/:path*",
+    "/party/:path*",
+    "/profile/:path*",
+    "/reset-password/:path*",
+  ],
 };

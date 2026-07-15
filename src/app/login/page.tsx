@@ -14,9 +14,9 @@ import {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; passwordUpdated?: string }>;
 }) {
-  const { error, next } = await searchParams;
+  const { error, next, passwordUpdated } = await searchParams;
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-24 sm:px-6">
@@ -45,9 +45,17 @@ export default async function LoginPage({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="password">비밀번호</Label>
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="password">비밀번호</Label>
+                <Link href="/forgot-password" className="text-xs text-muted-foreground underline underline-offset-4">
+                  비밀번호 찾기
+                </Link>
+              </div>
               <Input id="password" name="password" type="password" required />
             </div>
+            {passwordUpdated && (
+              <p className="text-sm text-emerald-400">비밀번호가 변경되었습니다. 다시 로그인해주세요.</p>
+            )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             <SubmitButton pendingText="로그인 중..." className="w-full">
               로그인

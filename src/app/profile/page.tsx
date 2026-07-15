@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
 import { LinkButton } from "@/components/link-button";
 import { Aion2LinkCard } from "@/components/profile/aion2-link-card";
+import { DeleteAccountCard } from "@/components/profile/delete-account-card";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,7 @@ export default async function ProfilePage() {
               : null
           }
         />
+        <DeleteAccountCard />
       </main>
     </>
   );

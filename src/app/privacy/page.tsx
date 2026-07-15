@@ -31,9 +31,10 @@ export default function PrivacyPage() {
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">보관과 삭제</h2>
         <p className="leading-7 text-muted-foreground">
-          서비스 운영에 필요한 정보는 계정 유지 기간 동안 보관합니다. 계정 삭제나
-          정보 정정을 원하면 문의 페이지를 통해 요청할 수 있으며, 법적 보관 의무나
-          분쟁 대응에 필요한 경우를 제외하고 합리적인 기간 내 처리합니다.
+          서비스 운영에 필요한 정보는 계정 유지 기간 동안 보관합니다. 회원은 내 프로필의
+          계정 관리에서 직접 탈퇴할 수 있으며, 법적 보관 의무나 분쟁 대응에 필요한 경우를
+          제외하고 계정과 연결된 개인정보를 삭제합니다. 정보 정정은 문의 페이지를 통해
+          요청할 수 있습니다.
         </p>
       </section>
       <section className="space-y-3">
