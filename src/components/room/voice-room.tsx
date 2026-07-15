@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Check,
+  Copy,
   Crown,
   Eye,
   Headphones,
@@ -38,6 +39,7 @@ export function VoiceRoom({
   roomId,
   userId,
   nickname,
+  inviteName,
   maxMembers,
   initialHostId,
   isGuest = false,
@@ -46,6 +48,7 @@ export function VoiceRoom({
   roomId: string;
   userId: string;
   nickname: string;
+  inviteName: string;
   maxMembers: number;
   initialHostId: string;
   isGuest?: boolean;
@@ -58,6 +61,10 @@ export function VoiceRoom({
     toggleMute,
     micGain,
     setMicGain,
+    audioInputs,
+    selectedMicId,
+    switchingMic,
+    switchMicDevice,
     volumes,
     setParticipantVolume,
     speaking,
@@ -73,6 +80,7 @@ export function VoiceRoom({
     roomId,
     userId,
     nickname,
+    inviteName,
     initialHostId,
     onKicked: () => {
       router.push(
@@ -103,6 +111,15 @@ export function VoiceRoom({
     if (!chatText.trim()) return;
     sendChatMessage(chatText);
     setChatText("");
+  }
+
+  async function copyInviteName(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${value} 복사 완료`);
+    } catch {
+      toast.error("닉네임 복사에 실패했습니다.");
+    }
   }
 
   async function submitReview() {
@@ -241,6 +258,13 @@ export function VoiceRoom({
                     </span>
                   </div>
                 )}
+                <Button
+                  variant="outline"
+                  onClick={() => copyInviteName(selected.inviteName)}
+                >
+                  <Copy className="size-4" />
+                  인게임 닉네임 복사
+                </Button>
                 {selected.characterRowId && (
                   <Button variant="outline" asChild>
                     <Link href={`/profile/characters/${selected.characterRowId}`}>
@@ -449,21 +473,47 @@ export function VoiceRoom({
 
       {/* Only the host publishes audio — listeners have no mic controls. */}
       {isHost && (
-        <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-          <Mic className="size-4 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 text-sm">내 마이크 음량</span>
-          <input
-            type="range"
-            min={0}
-            max={200}
-            value={Math.round(micGain * 100)}
-            onChange={(e) => setMicGain(Number(e.target.value) / 100)}
-            className="h-1.5 w-full cursor-pointer accent-primary"
-            aria-label="내 마이크 음량"
-          />
-          <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
-            {Math.round(micGain * 100)}%
-          </span>
+        <div className="flex flex-col gap-3 rounded-md border px-3 py-3">
+          <div className="flex items-center gap-2">
+            <Mic className="size-4 shrink-0 text-muted-foreground" />
+            <label htmlFor="microphone-device" className="shrink-0 text-sm">
+              마이크 기기
+            </label>
+            <select
+              id="microphone-device"
+              value={selectedMicId}
+              disabled={switchingMic || audioInputs.length === 0}
+              onChange={async (event) => {
+                const changed = await switchMicDevice(event.target.value);
+                if (!changed) toast.error("마이크 기기를 변경하지 못했습니다.");
+              }}
+              className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+            >
+              {audioInputs.length === 0 && <option value="">기본 마이크</option>}
+              {audioInputs.map((device) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label}
+                </option>
+              ))}
+            </select>
+            {switchingMic && <Loader2 className="size-4 shrink-0 animate-spin" />}
+          </div>
+          <div className="flex items-center gap-2">
+            <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+            <span className="shrink-0 text-sm">내 마이크 음량</span>
+            <input
+              type="range"
+              min={0}
+              max={200}
+              value={Math.round(micGain * 100)}
+              onChange={(e) => setMicGain(Number(e.target.value) / 100)}
+              className="h-1.5 w-full cursor-pointer accent-primary"
+              aria-label="내 마이크 음량"
+            />
+            <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
+              {Math.round(micGain * 100)}%
+            </span>
+          </div>
         </div>
       )}
 

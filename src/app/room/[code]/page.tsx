@@ -7,6 +7,7 @@ import { LinkButton } from "@/components/link-button";
 import { CopyInvite } from "@/components/room/copy-invite";
 import { PasswordGate } from "@/components/room/password-gate";
 import { VoiceRoom } from "@/components/room/voice-room";
+import { formatAion2InviteName } from "@/lib/aion2-invite";
 import {
   Card,
   CardContent,
@@ -133,6 +134,10 @@ export default async function RoomPage({
       ? `${profile.nickname} (${profile.server})`
       : profile.nickname
     : (user.email ?? "익명");
+  const inviteName = formatAion2InviteName(
+    profile?.nickname ?? user.email ?? "익명",
+    profile?.server,
+  );
 
   // Already-joined participants and the room's creator never need to
   // re-enter the password.
@@ -171,6 +176,7 @@ export default async function RoomPage({
                   roomId={room.id}
                   userId={user.id}
                   nickname={displayName}
+                  inviteName={inviteName}
                   maxMembers={room.max_members}
                   initialHostId={room.host_id ?? room.created_by}
                   isGuest={isGuest}

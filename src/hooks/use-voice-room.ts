@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { formatAion2InviteName } from "@/lib/aion2-invite";
 
 type SignalPayload = {
   from: string;
@@ -19,11 +20,17 @@ type KickPayload = { targetId: string; from: string };
 
 type HostChangePayload = { newHostId: string; from: string };
 
-type PresenceState = { userId: string; nickname: string };
+type PresenceState = { userId: string; nickname: string; inviteName?: string };
+
+export type AudioInputDevice = {
+  deviceId: string;
+  label: string;
+};
 
 export type Participant = {
   id: string;
   nickname: string;
+  inviteName: string;
   isSelf: boolean;
   muted: boolean;
   characterRowId: string | null;
@@ -39,6 +46,13 @@ export type RoomChatMessage = {
 };
 
 type ChatPayload = RoomChatMessage;
+
+function legacyInviteName(displayName: string) {
+  const match = displayName.match(/^(.*?)\s*\(([^()]+)\)$/);
+  return match
+    ? formatAion2InviteName(match[1], match[2])
+    : displayName.replace(/\s+/g, "");
+}
 
 // Google's public STUN server plus Open Relay Project's free demo TURN
 // server. Fine for a personal-project MVP; swap for a paid/self-hosted TURN
@@ -61,6 +75,7 @@ export function useVoiceRoom({
   roomId,
   userId,
   nickname,
+  inviteName,
   initialHostId,
   onKicked,
 }: {
@@ -68,12 +83,16 @@ export function useVoiceRoom({
   roomId: string;
   userId: string;
   nickname: string;
+  inviteName: string;
   initialHostId: string;
   onKicked?: () => void;
 }) {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [muted, setMuted] = useState(false);
   const [micGain, setMicGainState] = useState(1);
+  const [audioInputs, setAudioInputs] = useState<AudioInputDevice[]>([]);
+  const [selectedMicId, setSelectedMicId] = useState("");
+  const [switchingMic, setSwitchingMic] = useState(false);
   const [volumes, setVolumes] = useState<Record<string, number>>({});
   const [speaking, setSpeaking] = useState<Record<string, boolean>>({});
   const [hostId, setHostId] = useState(initialHostId);
@@ -86,6 +105,8 @@ export function useVoiceRoom({
   const channelRef = useRef<RealtimeChannel | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const rawStreamRef = useRef<MediaStream | null>(null);
+  const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const selectedMicIdRef = useRef("");
   const audioCtxRef = useRef<AudioContext | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -163,6 +184,19 @@ export function useVoiceRoom({
     channelRef.current?.send({ type: "broadcast", event: "signal", payload });
   }, []);
 
+  const refreshAudioInputs = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter(
+      (device) => device.kind === "audioinput",
+    );
+    setAudioInputs(
+      devices.map((device, index) => ({
+        deviceId: device.deviceId,
+        label: device.label || `마이크 ${index + 1}`,
+      })),
+    );
+  }, []);
+
   const ensurePeer = useCallback(
     (peerId: string) => {
       const existing = peersRef.current.get(peerId);
@@ -215,7 +249,9 @@ export function useVoiceRoom({
     if (localStreamRef.current) return true;
     try {
       const rawStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: selectedMicIdRef.current
+          ? { deviceId: { exact: selectedMicIdRef.current } }
+          : true,
       });
       // Route the mic through a GainNode so its level can be adjusted
       // live; peers receive the gain-processed stream.
@@ -229,23 +265,80 @@ export function useVoiceRoom({
       audioCtx.resume().catch(() => {});
 
       rawStreamRef.current = rawStream;
+      micSourceRef.current = source;
       gainNodeRef.current = gainNode;
       localStreamRef.current = destination.stream;
+      const capturedDeviceId = rawStream.getAudioTracks()[0]?.getSettings().deviceId;
+      if (capturedDeviceId) {
+        selectedMicIdRef.current = capturedDeviceId;
+        setSelectedMicId(capturedDeviceId);
+      }
+      void refreshAudioInputs();
       attachAnalyser(userId, destination.stream);
       return true;
     } catch {
       return false;
     }
-  }, [userId, attachAnalyser]);
+  }, [userId, attachAnalyser, refreshAudioInputs]);
 
   const releaseMic = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     rawStreamRef.current?.getTracks().forEach((t) => t.stop());
+    micSourceRef.current?.disconnect();
     localStreamRef.current = null;
     rawStreamRef.current = null;
+    micSourceRef.current = null;
     gainNodeRef.current = null;
     analysersRef.current.delete(userId);
   }, [userId]);
+
+  const switchMicDevice = useCallback(
+    async (deviceId: string) => {
+      if (
+        hostIdRef.current !== userId ||
+        !deviceId ||
+        deviceId === selectedMicIdRef.current
+      ) {
+        return true;
+      }
+
+      setSwitchingMic(true);
+      try {
+        const audioContext = audioCtxRef.current;
+        const gainNode = gainNodeRef.current;
+        if (!audioContext || !gainNode) return false;
+
+        const nextRawStream = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: { exact: deviceId } },
+        });
+        const nextSource = audioContext.createMediaStreamSource(nextRawStream);
+        nextSource.connect(gainNode);
+
+        micSourceRef.current?.disconnect();
+        rawStreamRef.current?.getTracks().forEach((track) => track.stop());
+        micSourceRef.current = nextSource;
+        rawStreamRef.current = nextRawStream;
+        selectedMicIdRef.current = deviceId;
+        setSelectedMicId(deviceId);
+        void refreshAudioInputs();
+        return true;
+      } catch {
+        return false;
+      } finally {
+        setSwitchingMic(false);
+      }
+    },
+    [userId, refreshAudioInputs],
+  );
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.addEventListener) return;
+    const handleDeviceChange = () => void refreshAudioInputs();
+    navigator.mediaDevices.addEventListener("devicechange", handleDeviceChange);
+    return () => {
+      navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange);
+    };
+  }, [refreshAudioInputs]);
 
   const initiateOfferTo = useCallback(
     (peerId: string) => {
@@ -314,6 +407,7 @@ export function useVoiceRoom({
       upsertParticipant({
         id: userId,
         nickname,
+        inviteName,
         isSelf: true,
         muted: false,
         characterRowId: null,
@@ -406,6 +500,7 @@ export function useVoiceRoom({
           upsertParticipant({
             id: peerId,
             nickname: presence.nickname,
+            inviteName: presence.inviteName ?? legacyInviteName(presence.nickname),
             isSelf: false,
             muted: false,
             characterRowId: null,
@@ -449,7 +544,7 @@ export function useVoiceRoom({
       channel.subscribe(async (subscribeStatus) => {
         if (subscribeStatus === "SUBSCRIBED") {
           joinedRef.current = true;
-          await channel.track({ userId, nickname } satisfies PresenceState);
+          await channel.track({ userId, nickname, inviteName } satisfies PresenceState);
           const { data: activeParticipant } = await supabase
             .from("room_participants")
             .select("id")
@@ -510,6 +605,7 @@ export function useVoiceRoom({
       audioContainerRef.current?.remove();
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       rawStreamRef.current?.getTracks().forEach((t) => t.stop());
+      micSourceRef.current?.disconnect();
       audioCtxRef.current?.close().catch(() => {});
 
       supabase
@@ -534,7 +630,7 @@ export function useVoiceRoom({
       joinedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode, roomId, userId, nickname]);
+  }, [roomCode, roomId, userId, nickname, inviteName]);
 
   const participantIds = participants.map((p) => p.id).sort().join("|");
 
@@ -685,6 +781,10 @@ export function useVoiceRoom({
     toggleMute,
     micGain,
     setMicGain,
+    audioInputs,
+    selectedMicId,
+    switchingMic,
+    switchMicDevice,
     volumes,
     setParticipantVolume,
     speaking,
