@@ -15,6 +15,7 @@ type RateLimitOptions = {
   limit: number;
   windowSeconds: number;
   identifier?: string;
+  failureMode?: "open" | "closed";
 };
 
 function requestIdentifier(request: NextRequest) {
@@ -59,6 +60,14 @@ export async function enforceRateLimit(
       scope: options.scope,
       message: error instanceof Error ? error.message : String(error),
     }));
-    return null;
+    if (options.failureMode === "open") return null;
+
+    return NextResponse.json(
+      { error: "요청 보호 기능을 확인할 수 없습니다. 잠시 후 다시 시도해주세요." },
+      {
+        status: 503,
+        headers: { "Retry-After": "5" },
+      },
+    );
   }
 }

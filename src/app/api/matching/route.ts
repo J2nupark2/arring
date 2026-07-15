@@ -1561,6 +1561,14 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const limited = await enforceRateLimit(request, {
+    scope: "matching-status",
+    identifier: user.id,
+    limit: 120,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
+
   await expireStaleActiveMatches(admin);
   await expirePendingTemporaryMatches(admin);
   await touchActiveMatchHeartbeat(admin, user.id);

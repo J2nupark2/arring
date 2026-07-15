@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -19,6 +20,14 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
+
+  const limited = await enforceRateLimit(request, {
+    scope: "aion2-primary",
+    identifier: user.id,
+    limit: 20,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
 
   let body: { id?: string };
   try {

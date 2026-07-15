@@ -53,6 +53,14 @@ export async function GET(request: NextRequest) {
 
   if (!user) return jsonError("로그인이 필요합니다.", 401);
 
+  const limited = await enforceRateLimit(request, {
+    scope: "matching-invite-status",
+    identifier: user.id,
+    limit: 120,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
+
   const draftId = request.nextUrl.searchParams.get("draftId");
   if (draftId) {
     const { data, error } = await admin
