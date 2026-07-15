@@ -46,6 +46,17 @@ supabase db push
 
 DB 적용 후 매칭 스모크 테스트를 다시 실행합니다. RLS 변경은 브라우저 클라이언트와 서비스 역할 경로를 각각 확인합니다.
 
+무료 플랜에서는 자동 일일 백업이 제공되지 않으므로 정기적으로 아래 수동 백업을 실행합니다.
+
+```bash
+npm run backup:production
+```
+
+백업은 `.backups`에 생성되고 Git에서 제외됩니다. 서비스가 사용하는 공개 테이블 데이터와
+행 수·SHA-256 검증용 manifest를 포함합니다. 테이블 구조는 `supabase/migrations`로 관리합니다.
+계정 인증 데이터까지 포함하는 완전 복구와 자동 보존이 필요하면 Supabase Pro 이상의 일일
+백업을 사용합니다.
+
 ## Deployment
 
 `main` 푸시가 Vercel 프로덕션 배포를 시작합니다.
