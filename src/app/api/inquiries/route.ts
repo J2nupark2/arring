@@ -12,6 +12,8 @@ const CATEGORIES = new Set([
   "partnership",
 ]);
 const STATUSES = new Set(["open", "answered", "closed"]);
+const INQUIRY_FIELDS =
+  "id, user_id, contact_email, category, subject, message, image_path, status, admin_reply, answered_at, created_at, updated_at";
 
 async function currentUser() {
   const supabase = await createClient();
@@ -40,9 +42,7 @@ export async function GET() {
   const adminAccess = await isAdmin(user.id);
   let query = admin
     .from("support_inquiries")
-    .select(
-      "id, user_id, contact_email, category, subject, message, status, admin_reply, answered_at, created_at, updated_at",
-    )
+    .select(INQUIRY_FIELDS)
     .order("created_at", { ascending: false })
     .limit(adminAccess ? 200 : 50);
   if (!adminAccess) query = query.eq("user_id", user.id);
@@ -73,7 +73,12 @@ export async function POST(request: NextRequest) {
   });
   if (limited) return limited;
 
-  let body: { category?: string; subject?: string; message?: string };
+  let body: {
+    category?: string;
+    subject?: string;
+    message?: string;
+    imagePath?: string | null;
+  };
   try {
     body = await request.json();
   } catch {
@@ -83,6 +88,7 @@ export async function POST(request: NextRequest) {
   const category = body.category?.trim() ?? "";
   const subject = body.subject?.trim() ?? "";
   const message = body.message?.trim() ?? "";
+  const imagePath = body.imagePath?.trim() || null;
   if (!CATEGORIES.has(category)) {
     return NextResponse.json({ error: "문의 유형을 선택해 주세요." }, { status: 400 });
   }
@@ -98,6 +104,9 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+  if (imagePath && !imagePath.startsWith(`inquiries/${user.id}/`)) {
+    return NextResponse.json({ error: "첨부 이미지 정보가 올바르지 않습니다." }, { status: 400 });
+  }
 
   const { data, error } = await createAdminClient()
     .from("support_inquiries")
@@ -107,10 +116,9 @@ export async function POST(request: NextRequest) {
       category,
       subject,
       message,
+      image_path: imagePath,
     })
-    .select(
-      "id, user_id, contact_email, category, subject, message, status, admin_reply, answered_at, created_at, updated_at",
-    )
+    .select(INQUIRY_FIELDS)
     .single();
   if (error) {
     console.error("support_inquiry_create_failed", error);
@@ -178,9 +186,7 @@ export async function PATCH(request: NextRequest) {
     .from("support_inquiries")
     .update(update)
     .eq("id", id)
-    .select(
-      "id, user_id, contact_email, category, subject, message, status, admin_reply, answered_at, created_at, updated_at",
-    )
+    .select(INQUIRY_FIELDS)
     .maybeSingle();
   if (error) {
     console.error("support_inquiry_answer_failed", error);

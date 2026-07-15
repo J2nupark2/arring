@@ -42,6 +42,7 @@ export type RoomChatMessage = {
   userId: string;
   nickname: string;
   body: string;
+  imagePath: string | null;
   createdAt: number;
 };
 
@@ -754,14 +755,15 @@ export function useVoiceRoom({
   );
 
   const sendChatMessage = useCallback(
-    (body: string) => {
+    (body: string, imagePath: string | null = null) => {
       const trimmed = body.trim();
-      if (!trimmed) return;
+      if (!trimmed && !imagePath) return;
       const message: RoomChatMessage = {
         id: crypto.randomUUID(),
         userId,
         nickname,
         body: trimmed,
+        imagePath,
         createdAt: Date.now(),
       };
       // Broadcast doesn't echo back to the sender, so append locally too.

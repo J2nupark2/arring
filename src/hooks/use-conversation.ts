@@ -10,6 +10,7 @@ export type Message = {
   sender_id: string;
   receiver_id: string;
   body: string;
+  image_path: string | null;
   created_at: string;
 };
 
@@ -92,13 +93,17 @@ export function useConversation(friendId: string, onRead?: () => void) {
   }, [friendId]);
 
   const send = useCallback(
-    async (body: string) => {
+    async (body: string, imagePath: string | null = null) => {
       const trimmed = body.trim();
-      if (!trimmed) return false;
+      if (!trimmed && !imagePath) return false;
       setSending(true);
       const supabase = createClient();
       const { data, error } = await supabase
-        .rpc("send_message", { p_receiver_id: friendId, p_body: trimmed })
+        .rpc("send_message", {
+          p_receiver_id: friendId,
+          p_body: trimmed,
+          p_image_path: imagePath,
+        })
         .single();
       setSending(false);
       if (error) {

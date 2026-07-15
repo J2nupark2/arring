@@ -7,8 +7,14 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ImageAttachmentPicker } from "@/components/chat/image-attachment-picker";
+import { PrivateChatImage } from "@/components/chat/private-chat-image";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  removePrivateImage,
+  uploadPrivateImage,
+} from "@/lib/image-attachments";
 
 export type SupportInquiry = {
   id: string;
@@ -17,6 +23,7 @@ export type SupportInquiry = {
   category: string;
   subject: string;
   message: string;
+  image_path: string | null;
   status: "open" | "answered" | "closed";
   admin_reply: string | null;
   answered_at: string | null;
@@ -63,6 +70,7 @@ export function SupportInquiries({ signedIn }: { signedIn: boolean }) {
   const [category, setCategory] = useState("general");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
 
   const load = useCallback(async () => {
     if (!signedIn) return;
@@ -104,19 +112,25 @@ export function SupportInquiries({ signedIn }: { signedIn: boolean }) {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
+    let imagePath: string | null = null;
     try {
+      if (imageFile) {
+        imagePath = await uploadPrivateImage(imageFile, { context: "inquiry" });
+      }
       const data = await responseJson(
         await fetch("/api/inquiries", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ category, subject, message }),
+          body: JSON.stringify({ category, subject, message, imagePath }),
         }),
       );
       if (data.inquiry) setInquiries((current) => [data.inquiry!, ...current]);
       setSubject("");
       setMessage("");
+      setImageFile(null);
       toast.success("문의가 접수되었습니다.");
     } catch (error) {
+      if (imagePath) await removePrivateImage(imagePath);
       toast.error(error instanceof Error ? error.message : "문의를 접수하지 못했습니다.");
     } finally {
       setSaving(false);
@@ -188,6 +202,11 @@ export function SupportInquiries({ signedIn }: { signedIn: boolean }) {
                 required
               />
             </div>
+            <ImageAttachmentPicker
+              file={imageFile}
+              onChange={setImageFile}
+              disabled={saving}
+            />
             <Button type="submit" disabled={saving} className="justify-self-start">
               {saving ? <Loader2 className="animate-spin" /> : <Send />}
               {saving ? "접수 중" : "문의 접수"}
@@ -236,6 +255,12 @@ export function SupportInquiries({ signedIn }: { signedIn: boolean }) {
                   <p className="whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
                     {inquiry.message}
                   </p>
+                  {inquiry.image_path && (
+                    <PrivateChatImage
+                      path={inquiry.image_path}
+                      alt={`${inquiry.subject} 첨부 이미지`}
+                    />
+                  )}
                   {inquiry.admin_reply && (
                     <div className="border-l-2 border-primary pl-4">
                       <p className="text-xs font-semibold text-primary">관리자 답변</p>

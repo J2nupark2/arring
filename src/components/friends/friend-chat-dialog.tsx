@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
+import { toast } from "sonner";
 import { useConversation } from "@/hooks/use-conversation";
+import { ImageAttachmentPicker } from "@/components/chat/image-attachment-picker";
+import { PrivateChatImage } from "@/components/chat/private-chat-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,6 +15,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import {
+  removePrivateImage,
+  uploadPrivateImage,
+} from "@/lib/image-attachments";
 
 export function FriendChatDialog({
   friendId,
@@ -31,6 +38,8 @@ export function FriendChatDialog({
     onRead,
   );
   const [text, setText] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -40,11 +49,31 @@ export function FriendChatDialog({
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     const value = text;
-    if (!value.trim()) return;
+    if (!value.trim() && !imageFile) return;
     // Only clear the input once the send actually succeeds — clearing
     // eagerly makes a failed send look like it silently did nothing.
-    const ok = await send(value);
-    if (ok) setText("");
+    setUploading(true);
+    let imagePath: string | null = null;
+    try {
+      if (imageFile) {
+        imagePath = await uploadPrivateImage(imageFile, {
+          context: "direct-message",
+          otherUserId: friendId,
+        });
+      }
+      const ok = await send(value, imagePath);
+      if (ok) {
+        setText("");
+        setImageFile(null);
+      } else if (imagePath) {
+        await removePrivateImage(imagePath);
+      }
+    } catch (error) {
+      if (imagePath) await removePrivateImage(imagePath);
+      toast.error(error instanceof Error ? error.message : "이미지를 보내지 못했습니다.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
@@ -69,38 +98,52 @@ export function FriendChatDialog({
                 key={m.id}
                 className={cn("flex", isMine ? "justify-end" : "justify-start")}
               >
-                <span
+                <div
                   className={cn(
-                    "max-w-[80%] rounded-lg px-3 py-1.5 text-sm break-words",
+                    "max-w-[80%] space-y-1.5 rounded-lg px-3 py-1.5 text-sm break-words",
                     isMine
                       ? "bg-violet-600 text-white"
                       : "bg-muted text-foreground",
                   )}
                 >
-                  {m.body}
-                </span>
+                  {m.image_path && (
+                    <PrivateChatImage
+                      path={m.image_path}
+                      alt={`${friendNickname} 대화 첨부 이미지`}
+                      className="max-h-56 border-white/20"
+                    />
+                  )}
+                  {m.body && <p>{m.body}</p>}
+                </div>
               </div>
             );
           })}
           <div ref={bottomRef} />
         </div>
-        <form onSubmit={handleSend} className="flex shrink-0 gap-2">
-          <Input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="메시지 입력..."
-            maxLength={2000}
-            aria-label="메시지 입력"
+        <div className="space-y-2">
+          <ImageAttachmentPicker
+            file={imageFile}
+            onChange={setImageFile}
+            disabled={sending || uploading}
           />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={sending || !text.trim()}
-            aria-label="전송"
-          >
-            <Send className="size-4" />
-          </Button>
-        </form>
+          <form onSubmit={handleSend} className="flex shrink-0 gap-2">
+            <Input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="메시지 입력..."
+              maxLength={2000}
+              aria-label="메시지 입력"
+            />
+            <Button
+              type="submit"
+              size="icon"
+              disabled={sending || uploading || (!text.trim() && !imageFile)}
+              aria-label="전송"
+            >
+              <Send className="size-4" />
+            </Button>
+          </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

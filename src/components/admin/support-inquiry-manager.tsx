@@ -10,6 +10,7 @@ import {
 } from "@/components/contact/support-inquiries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PrivateChatImage } from "@/components/chat/private-chat-image";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
@@ -227,6 +228,12 @@ export function SupportInquiryManager() {
               <p className="min-h-20 whitespace-pre-wrap break-words text-sm leading-6">
                 {selected.message}
               </p>
+              {selected.image_path && (
+                <PrivateChatImage
+                  path={selected.image_path}
+                  alt={`${selected.subject} 첨부 이미지`}
+                />
+              )}
               <div className="grid gap-1.5 border-t pt-4">
                 <div className="flex items-center justify-between gap-3">
                   <Label htmlFor="support-reply">관리자 답변</Label>

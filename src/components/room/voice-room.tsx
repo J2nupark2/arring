@@ -8,6 +8,8 @@ import { sendFriendRequest } from "@/hooks/use-friends";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ImageAttachmentPicker } from "@/components/chat/image-attachment-picker";
+import { PrivateChatImage } from "@/components/chat/private-chat-image";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Dialog,
@@ -33,6 +35,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  removePrivateImage,
+  uploadPrivateImage,
+} from "@/lib/image-attachments";
 
 export function VoiceRoom({
   roomCode,
@@ -90,6 +96,8 @@ export function VoiceRoom({
     },
   });
   const [chatText, setChatText] = useState("");
+  const [chatImage, setChatImage] = useState<File | null>(null);
+  const [uploadingChatImage, setUploadingChatImage] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reviewTargetId, setReviewTargetId] = useState<string | null>(null);
@@ -106,11 +114,27 @@ export function VoiceRoom({
     chatBottomRef.current?.scrollIntoView({ block: "end" });
   }, [chatMessages.length]);
 
-  function handleSendChat(e: React.FormEvent) {
+  async function handleSendChat(e: React.FormEvent) {
     e.preventDefault();
-    if (!chatText.trim()) return;
-    sendChatMessage(chatText);
-    setChatText("");
+    if (!chatText.trim() && !chatImage) return;
+    setUploadingChatImage(true);
+    let imagePath: string | null = null;
+    try {
+      if (chatImage) {
+        imagePath = await uploadPrivateImage(chatImage, {
+          context: "room",
+          roomId,
+        });
+      }
+      sendChatMessage(chatText, imagePath);
+      setChatText("");
+      setChatImage(null);
+    } catch (error) {
+      if (imagePath) await removePrivateImage(imagePath);
+      toast.error(error instanceof Error ? error.message : "이미지를 보내지 못했습니다.");
+    } finally {
+      setUploadingChatImage(false);
+    }
   }
 
   async function copyInviteName(value: string) {
@@ -445,30 +469,46 @@ export function VoiceRoom({
                       {m.nickname}
                     </div>
                   )}
-                  {m.body}
+                  {m.imagePath && (
+                    <PrivateChatImage
+                      path={m.imagePath}
+                      alt={`${m.nickname} 채팅 첨부 이미지`}
+                      className="max-h-56 border-white/20"
+                    />
+                  )}
+                  {m.body && <p>{m.body}</p>}
                 </div>
               </div>
             );
           })}
           <div ref={chatBottomRef} />
         </div>
-        <form onSubmit={handleSendChat} className="flex gap-2">
-          <Input
-            value={chatText}
-            onChange={(e) => setChatText(e.target.value)}
-            placeholder="메시지 입력..."
-            maxLength={500}
-            aria-label="통화방 채팅 입력"
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={!chatText.trim()}
-            aria-label="채팅 전송"
-          >
-            <Send className="size-4" />
-          </Button>
-        </form>
+        <div className="space-y-2">
+          {!isGuest && (
+            <ImageAttachmentPicker
+              file={chatImage}
+              onChange={setChatImage}
+              disabled={uploadingChatImage}
+            />
+          )}
+          <form onSubmit={handleSendChat} className="flex gap-2">
+            <Input
+              value={chatText}
+              onChange={(e) => setChatText(e.target.value)}
+              placeholder="메시지 입력..."
+              maxLength={500}
+              aria-label="통화방 채팅 입력"
+            />
+            <Button
+              type="submit"
+              size="icon"
+              disabled={uploadingChatImage || (!chatText.trim() && !chatImage)}
+              aria-label="채팅 전송"
+            >
+              {uploadingChatImage ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            </Button>
+          </form>
+        </div>
       </div>
 
       {/* Only the host publishes audio — listeners have no mic controls. */}
