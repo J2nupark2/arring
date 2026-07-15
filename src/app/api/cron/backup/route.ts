@@ -30,6 +30,7 @@ const TABLES = [
   "room_participants",
   "rooms",
   "score_history",
+  "support_inquiries",
   "temporary_matches",
   "user_gimmick_trust_scores",
 ] as const;

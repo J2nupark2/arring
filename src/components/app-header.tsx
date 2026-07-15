@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { MessageCircle, Users } from "lucide-react";
 import { CharacterSearchDialog } from "@/components/character-search-dialog";
 import { FriendListContent } from "@/components/friends/friend-list-content";
 import { useFriendsContext } from "@/components/friends/friends-provider";
@@ -39,6 +39,11 @@ export function AppHeader({
         </Link>
         <nav aria-label="주 메뉴" className="flex items-center gap-2 sm:gap-3">
           <CharacterSearchDialog />
+          <Button variant="ghost" size="icon" asChild title="문의">
+            <Link href="/contact" aria-label="문의">
+              <MessageCircle className="size-4.5" />
+            </Link>
+          </Button>
           <LinkButton href="/party" variant="ghost">
             파티 구하기
           </LinkButton>

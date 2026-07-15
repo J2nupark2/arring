@@ -1,5 +1,10 @@
-﻿import type { Metadata } from "next";
-import Link from "next/link";
+import type { Metadata } from "next";
+
+import { AppHeader } from "@/components/app-header";
+import { SupportInquiries } from "@/components/contact/support-inquiries";
+import { createClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "문의",
@@ -7,30 +12,39 @@ export const metadata: Metadata = {
   alternates: { canonical: "/contact" },
 };
 
-export default function ContactPage() {
+export default async function ContactPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const signedIn = Boolean(user && !user.is_anonymous);
+
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-12 sm:px-6">
-      <Link href="/" className="text-sm font-medium text-violet-300">Arring</Link>
-      <h1 className="text-3xl font-bold tracking-tight">문의</h1>
-      <p className="leading-7 text-muted-foreground">
-        오류 제보, 계정 및 개인정보 요청, 광고 및 제휴 문의는 아래 이메일로 보내주세요.
-        서비스 개선에 필요한 내용은 확인 후 순차적으로 반영합니다.
-      </p>
-      <div className="rounded-md border p-4">
-        <p className="text-sm text-muted-foreground">운영 문의</p>
-        <a className="mt-1 block font-medium underline" href="mailto:wlsdn1323@naver.com">
-          wlsdn1323@naver.com
-        </a>
-      </div>
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold">문의 때 포함하면 좋은 정보</h2>
-        <ul className="list-disc space-y-2 pl-5 text-muted-foreground">
-          <li>사용 중인 계정 이메일 또는 닉네임</li>
-          <li>문제가 발생한 페이지 주소</li>
-          <li>오류가 발생한 시간과 상황</li>
-          <li>가능하다면 화면 캡처 또는 재현 순서</li>
-        </ul>
-      </section>
-    </main>
+    <>
+      <AppHeader isGuest={!signedIn} />
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-10 px-4 py-8 sm:px-6 sm:py-12">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">문의</h1>
+          <p className="mt-2 leading-7 text-muted-foreground">
+            오류 제보, 계정 및 개인정보 요청, 광고·제휴 문의를 접수할 수 있습니다.
+            관리자가 확인한 뒤 이 페이지에서 답변합니다.
+          </p>
+        </div>
+        <SupportInquiries signedIn={signedIn} />
+        <section className="space-y-2 border-t pt-6 text-sm text-muted-foreground">
+          <h2 className="font-semibold text-foreground">이메일 문의</h2>
+          <p>
+            로그인이 어렵거나 긴급한 개인정보 요청은{" "}
+            <a
+              className="font-medium text-foreground underline underline-offset-4"
+              href="mailto:wlsdn1323@naver.com"
+            >
+              wlsdn1323@naver.com
+            </a>
+            으로 보내주세요.
+          </p>
+        </section>
+      </main>
+    </>
   );
 }
