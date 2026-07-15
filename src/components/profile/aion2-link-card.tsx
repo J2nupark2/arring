@@ -206,7 +206,7 @@ export function Aion2LinkCard({
             {characters.map((character) => (
               <div
                 key={character.id ?? character.characterId}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2"
+                className="flex flex-col gap-3 rounded-md border px-3 py-2"
               >
                 <div className="flex min-w-0 flex-col gap-1">
                   <span className="flex flex-wrap items-center gap-1.5 font-medium">
@@ -235,7 +235,7 @@ export function Aion2LinkCard({
                     </span>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" asChild>
                     <Link href={`/profile/characters/${character.id}`}>
                       <ExternalLink className="size-3.5" />
