@@ -10,6 +10,7 @@
     "test:matching": "node scripts/matching-smoke-test.mjs",
     "test:matching:http": "node scripts/matching-api-e2e.mjs",
     "test:images": "node scripts/image-attachments-e2e.mjs",
+    "test:characters": "node scripts/character-unlink-e2e.mjs",
     "backup:production": "node scripts/backup-production.mjs",
     "backup:verify": "node scripts/verify-latest-backup.mjs"
   },

@@ -4,11 +4,19 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ExternalLink, Loader2, RefreshCw, Search, Star, Swords } from "lucide-react";
+import { ExternalLink, Loader2, RefreshCw, Search, Star, Swords, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatCombatPower } from "@/lib/format";
 import {
   Card,
@@ -57,6 +65,8 @@ export function Aion2LinkCard({
   const [linking, setLinking] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [primarying, setPrimarying] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<LinkedCharacter | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetch("/api/aion2/servers")
@@ -149,6 +159,30 @@ export function Aion2LinkCard({
     }
   }
 
+  async function unlinkCharacter() {
+    if (!deleteTarget?.id) return;
+    setDeleting(true);
+    try {
+      const response = await fetch("/api/aion2/unlink", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: deleteTarget.id }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        toast.error(data.error ?? "캐릭터 연동을 삭제하지 못했습니다.");
+        return;
+      }
+      toast.success(`${deleteTarget.characterName} 캐릭터 연동을 삭제했습니다.`);
+      setDeleteTarget(null);
+      router.refresh();
+    } catch {
+      toast.error("캐릭터 연동을 삭제하지 못했습니다.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {characters.length > 0 && (
@@ -230,6 +264,18 @@ export function Aion2LinkCard({
                     )}
                     동기화
                   </Button>
+                  {character.id && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTarget(character)}
+                      disabled={deleting}
+                    >
+                      <Trash2 className="size-3.5" />
+                      연동 삭제
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -321,6 +367,47 @@ export function Aion2LinkCard({
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>캐릭터 연동을 삭제할까요?</DialogTitle>
+            <DialogDescription>
+              {deleteTarget?.characterName} 캐릭터를 내 프로필과 매칭 선택 목록에서 제거합니다.
+              과거 플레이 기록은 유지되며, 삭제한 캐릭터는 다시 연동할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteTarget?.isPrimary && characters.length > 1 && (
+            <p className="text-sm text-muted-foreground">
+              대표 캐릭터를 삭제하면 다른 연동 캐릭터가 자동으로 대표 캐릭터가 됩니다.
+            </p>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void unlinkCharacter()}
+              disabled={deleting}
+            >
+              {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              {deleting ? "삭제 중" : "연동 삭제"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
