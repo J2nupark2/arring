@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { translateAuthError } from "@/lib/auth-errors";
+import { enforceActionRateLimit } from "@/lib/rate-limit";
 
 export async function signup(formData: FormData) {
   const email = (formData.get("email") as string)?.trim();
@@ -10,6 +11,18 @@ export async function signup(formData: FormData) {
 
   if (!email || !password) {
     redirect("/signup?error=" + encodeURIComponent("이메일과 비밀번호를 입력해주세요."));
+  }
+  if (password.length < 8) {
+    redirect("/signup?error=" + encodeURIComponent("비밀번호는 8자 이상이어야 합니다."));
+  }
+
+  const rateLimitError = await enforceActionRateLimit({
+    scope: "auth-signup",
+    limit: 5,
+    windowSeconds: 3600,
+  });
+  if (rateLimitError) {
+    redirect("/signup?error=" + encodeURIComponent(rateLimitError));
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://a2rring.com";

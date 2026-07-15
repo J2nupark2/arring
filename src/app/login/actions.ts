@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { translateAuthError } from "@/lib/auth-errors";
+import { enforceActionRateLimit } from "@/lib/rate-limit";
 
 function normalizeNext(value: FormDataEntryValue | null) {
   if (typeof value !== "string" || !value.startsWith("/")) return "/party";
@@ -20,6 +21,18 @@ export async function login(formData: FormData) {
       `/login?next=${encodeURIComponent(next)}&error=${encodeURIComponent(
         "이메일과 비밀번호를 입력해주세요.",
       )}`,
+    );
+  }
+
+  const rateLimitError = await enforceActionRateLimit({
+    scope: "auth-login",
+    identifier: email.toLowerCase(),
+    limit: 10,
+    windowSeconds: 600,
+  });
+  if (rateLimitError) {
+    redirect(
+      `/login?next=${encodeURIComponent(next)}&error=${encodeURIComponent(rateLimitError)}`,
     );
   }
 

@@ -23,11 +23,11 @@ export default async function ResetPasswordPage({
           <form action={updatePassword} className="flex flex-col gap-4">
             <div className="grid gap-2">
               <Label htmlFor="password">새 비밀번호</Label>
-              <Input id="password" name="password" type="password" minLength={6} autoComplete="new-password" required />
+              <Input id="password" name="password" type="password" minLength={8} autoComplete="new-password" required />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="confirmation">새 비밀번호 확인</Label>
-              <Input id="confirmation" name="confirmation" type="password" minLength={6} autoComplete="new-password" required />
+              <Input id="confirmation" name="confirmation" type="password" minLength={8} autoComplete="new-password" required />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <SubmitButton pendingText="변경 중..." className="w-full">비밀번호 변경</SubmitButton>

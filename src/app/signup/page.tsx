@@ -51,7 +51,7 @@ export default async function SignupPage({
                 id="password"
                 name="password"
                 type="password"
-                minLength={6}
+                minLength={8}
                 required
               />
             </div>

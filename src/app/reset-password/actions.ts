@@ -8,8 +8,8 @@ export async function updatePassword(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const confirmation = String(formData.get("confirmation") ?? "");
 
-  if (password.length < 6) {
-    redirect(`/reset-password?error=${encodeURIComponent("비밀번호는 6자 이상이어야 합니다.")}`);
+  if (password.length < 8) {
+    redirect(`/reset-password?error=${encodeURIComponent("비밀번호는 8자 이상이어야 합니다.")}`);
   }
   if (password !== confirmation) {
     redirect(`/reset-password?error=${encodeURIComponent("비밀번호 확인이 일치하지 않습니다.")}`);
