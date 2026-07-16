@@ -835,6 +835,7 @@ create table public.dungeons (
   -- Ordered gimmick progress stages, e.g. {'1넴','2넴','막넴 경험','클리어'}.
   -- A user's dungeon_progress.stage is an index into this array (0 = none).
   gimmick_stages text[] not null default '{}',
+  tier integer not null default 1 check (tier between 1 and 99),
   sort_order integer not null default 0,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
