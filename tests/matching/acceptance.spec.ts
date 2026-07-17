@@ -195,10 +195,29 @@ test.describe("복구와 방 수명주기", () => {
         },
       });
       expect(lastResponse.ok()).toBeTruthy();
-      await expect(lastMember.page.getByText("매칭 수락 대기 중")).toBeVisible({
-        timeout: 5_000,
-      });
-      await rejectInUi(lastMember);
+      await Promise.all(
+        harness.users.map((user) =>
+          expect(user.page.getByText("매칭 수락 대기 중")).toBeVisible({
+            timeout: 5_000,
+          }),
+        ),
+      );
+      const statusResponse = await lastMember.context.request.get(
+        `/api/matching?since=${encodeURIComponent(harness.startedAt)}`,
+      );
+      expect(statusResponse.ok()).toBeTruthy();
+      const status = await statusResponse.json();
+      const temporaryMatchId = status.temporaryMatch?.id as string | undefined;
+      expect(temporaryMatchId).toBeTruthy();
+      await Promise.all(harness.users.map(acceptInUi));
+      const room = await assertSingleRoom(harness, temporaryMatchId!);
+      await Promise.all(
+        harness.users.map((user) =>
+          expect(user.page).toHaveURL(new RegExp(`/room/${room.code}$`), {
+            timeout: 15_000,
+          }),
+        ),
+      );
     });
   });
 

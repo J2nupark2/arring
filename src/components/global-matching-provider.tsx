@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -35,6 +35,11 @@ async function respondTemporaryMatch(action: "accept" | "reject") {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "매칭 응답 처리에 실패했습니다.");
   return data as MatchStatus;
+}
+
+function navigateToRoom(roomCode: string) {
+  const target = `/room/${roomCode}`;
+  if (window.location.pathname !== target) window.location.assign(target);
 }
 
 function showBrowserNotification(title: string, body: string) {
@@ -94,7 +99,6 @@ const MATCH_READY_BODY =
   "30\uCD08 \uC548\uC5D0 \uC218\uB77D\uD574\uC57C \uD30C\uD2F0\uAC00 \uD655\uC815\uB429\uB2C8\uB2E4.";
 
 export function GlobalMatchingProvider() {
-  const router = useRouter();
   const pathname = usePathname();
   const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -118,7 +122,7 @@ export function GlobalMatchingProvider() {
       if (status.matched && status.roomCode) {
         setMatchStatus(null);
         if (pathnameRef.current !== `/room/${status.roomCode}`) {
-          router.push(`/room/${status.roomCode}`);
+          navigateToRoom(status.roomCode);
         }
         return;
       }
@@ -129,7 +133,7 @@ export function GlobalMatchingProvider() {
     return () => {
       window.removeEventListener("arring:matching-status", handleImmediateStatus);
     };
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     const supabase = createClient();
@@ -150,7 +154,7 @@ export function GlobalMatchingProvider() {
           toast.success("파티가 매칭됐습니다. 방으로 이동합니다.");
         }
         if (pathnameRef.current !== `/room/${status.roomCode}`) {
-          router.push(`/room/${status.roomCode}`);
+          navigateToRoom(status.roomCode);
         }
         return;
       }
@@ -237,7 +241,7 @@ export function GlobalMatchingProvider() {
         void supabase.removeChannel(channel);
       });
     };
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -247,7 +251,7 @@ export function GlobalMatchingProvider() {
         if (status.matched && status.roomCode) {
           setMatchStatus(null);
           if (pathnameRef.current !== `/room/${status.roomCode}`) {
-            router.push(`/room/${status.roomCode}`);
+            navigateToRoom(status.roomCode);
           }
           return;
         }
@@ -255,7 +259,7 @@ export function GlobalMatchingProvider() {
       });
     }, 2000);
     return () => window.clearInterval(id);
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     if (!matchStatus?.temporaryMatch && !matchStatus?.autoLeadEligibleAt) return;
@@ -277,14 +281,14 @@ export function GlobalMatchingProvider() {
           if (!status) return;
           setMatchStatus(status.active ? status : null);
           if (status.matched && status.roomCode) {
-            router.push(`/room/${status.roomCode}`);
+            navigateToRoom(status.roomCode);
           }
         });
       }, delay);
     });
 
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [matchStatus?.autoLeadEligibleAt, matchStatus?.temporaryMatch?.expiresAt, router]);
+  }, [matchStatus?.autoLeadEligibleAt, matchStatus?.temporaryMatch?.expiresAt]);
 
   useEffect(() => {
     if (!matchStatus?.temporaryMatch) return;
@@ -318,7 +322,7 @@ export function GlobalMatchingProvider() {
         playMatchingSound();
         showBrowserNotification(MATCH_CONFIRMED_TITLE, MATCH_CONFIRMED_BODY);
         toast.success("파티가 확정됐습니다. 방으로 이동합니다.");
-        router.push(`/room/${result.roomCode}`);
+        navigateToRoom(result.roomCode);
         return;
       }
       if (action === "accept") {
