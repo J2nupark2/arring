@@ -121,6 +121,42 @@ test.describe("지연·만료·거절", () => {
   }
 });
 
+test("매칭 방에서 나가면 기존 매칭이 다시 방으로 이동시키지 않는다", async ({ browser }) => {
+  await withParty(browser, 5, async (harness) => {
+    const temporaryMatchId = await queueParty(harness);
+    await Promise.all(harness.users.map(acceptInUi));
+    const room = await assertSingleRoom(harness, temporaryMatchId);
+    const leavingUser = harness.members[0];
+    await expect(leavingUser.page).toHaveURL(new RegExp(`/room/${room.code}$`), {
+      timeout: 15_000,
+    });
+
+    const leaveResponse = await leavingUser.context.request.post("/api/rooms/leave", {
+      data: { roomId: room.id },
+    });
+    expect(leaveResponse.ok()).toBeTruthy();
+    await leavingUser.page.goto("/party");
+    await leavingUser.page.waitForTimeout(3_000);
+    await expect(leavingUser.page).toHaveURL(/\/party$/);
+
+    const statusResponse = await leavingUser.context.request.get(
+      `/api/matching?since=${encodeURIComponent(harness.startedAt)}`,
+    );
+    expect(statusResponse.ok()).toBeTruthy();
+    await expect(statusResponse.json()).resolves.toMatchObject({ matched: false });
+
+    const { data: participant } = await harness.admin
+      .from("room_participants")
+      .select("left_at")
+      .eq("room_id", room.id)
+      .eq("user_id", leavingUser.id)
+      .order("joined_at", { ascending: false })
+      .limit(1)
+      .single();
+    expect(participant?.left_at).not.toBeNull();
+  });
+});
+
 test.describe("복구와 방 수명주기", () => {
   test("파티장이 대기 중일 때 마지막 파티원의 요청으로 즉시 잡힌 팝업도 표시된다", async ({ browser }) => {
     await withParty(browser, 5, async (harness) => {

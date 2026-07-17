@@ -193,6 +193,31 @@ export function VoiceRoom({
     setMannerReview("normal");
   }
 
+  function handleLeaveRoom() {
+    startLeaving(async () => {
+      try {
+        const response = await fetch("/api/rooms/leave", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roomId }),
+        });
+        if (!response.ok) {
+          const result = await response.json().catch(() => null);
+          throw new Error(result?.error ?? "방에서 나가지 못했습니다.");
+        }
+        window.dispatchEvent(
+          new CustomEvent("arring:matching-status", {
+            detail: { active: false, matched: false, state: "idle" },
+          }),
+        );
+        router.replace("/party");
+        router.refresh();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "방에서 나가지 못했습니다.");
+      }
+    });
+  }
+
   async function handleKickAndRefill(targetId: string, targetNickname: string) {
     if (
       !window.confirm(
@@ -650,12 +675,7 @@ export function VoiceRoom({
           variant="destructive"
           size="icon-lg"
           disabled={leaving}
-          onClick={() =>
-            startLeaving(() => {
-              router.push("/party");
-              router.refresh();
-            })
-          }
+          onClick={handleLeaveRoom}
           aria-label="퇴장"
         >
           {leaving ? (
