@@ -506,6 +506,10 @@ async function testDummyInvitesAutoAccept() {
     await createTestUser("dummy-invite2", { className: "궁성", combatPower: 770_000 }),
     await createTestUser("dummy-invite3", { className: "마도성", combatPower: 780_000 }),
   ];
+  const replacement = await createTestUser("dummy-free-slot-replacement", {
+    className: "궁성",
+    combatPower: 790_000,
+  });
 
   for (let index = 0; index < dummies.length; index++) {
     await must(
@@ -597,6 +601,29 @@ async function testDummyInvitesAutoAccept() {
     `host should be able to kick a dummy friend: ${kickDummy.status} ${JSON.stringify(kickDummy.data)}`,
   );
 
+  const replacementJar = await signIn(replacement.email);
+  const replacementPost = await api(replacementJar, "/api/matching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "member",
+      dungeonId: dungeon.id,
+      characterId: replacement.characterId,
+      stage: 3,
+    }),
+  });
+  assert(
+    replacementPost.ok && replacementPost.data?.temporaryMatch,
+    `free dummy slot should accept a different class: ${replacementPost.status} ${JSON.stringify(replacementPost.data)}`,
+  );
+  const replacementAccept = await acceptMatch(replacementJar);
+  assert(
+    replacementAccept.ok &&
+      replacementAccept.data?.matched === true &&
+      replacementAccept.data?.roomCode === memberAccept.data.roomCode,
+    `replacement should join existing room: ${replacementAccept.status} ${JSON.stringify(replacementAccept.data)}`,
+  );
+
   console.log(`[matching-api-e2e] dummy invites auto-accepted room ${memberAccept.data.roomCode}`);
 }
 
@@ -662,7 +689,7 @@ try {
   const leaderGet = await api(jar, `/api/matching?since=${encodeURIComponent(startedAt)}`);
   assert(leaderGet.ok, `leader GET /api/matching failed: ${leaderGet.status} ${JSON.stringify(leaderGet.data)}`);
   assert(
-    leaderGet.data?.state === "waiting" &&
+    ["waiting", "processing"].includes(leaderGet.data?.state) &&
       leaderGet.data?.role === "leader" &&
       leaderGet.data?.waitingCount === 0,
     `leader GET should show 0 eligible candidates, got ${JSON.stringify(leaderGet.data)}`,

@@ -126,23 +126,6 @@ export async function POST(request: NextRequest) {
     return error("기존 매칭 조건을 찾지 못해 재매칭을 시작할 수 없습니다.", 409);
   }
 
-  const { data: targetCharacter } = targetQueue?.character_row_id
-    ? await admin
-        .from("aion2_characters")
-        .select("class_name")
-        .eq("id", targetQueue.character_row_id)
-        .maybeSingle()
-    : await admin
-        .from("aion2_characters")
-        .select("class_name")
-        .eq("user_id", targetUserId)
-        .order("is_primary", { ascending: false })
-        .order("synced_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-  const replacementClasses = targetCharacter?.class_name
-    ? [targetCharacter.class_name]
-    : sourceRequest.required_classes;
   const excludedUserIds = [
     ...new Set([
       ...(activeParticipants ?? []).map((participant) => participant.user_id),
@@ -153,13 +136,30 @@ export async function POST(request: NextRequest) {
   const { data: originalTemporaryMatch } = sourceMatchRequestId
     ? await admin
         .from("temporary_matches")
-        .select("id")
+        .select("id, candidate_user_ids")
         .eq("match_request_id", sourceMatchRequestId)
         .eq("status", "confirmed")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle()
     : { data: null };
+  const fixedSlotCount = (sourceRequest.required_classes ?? []).filter(Boolean).length;
+  const targetCandidateIndex = originalTemporaryMatch?.candidate_user_ids?.indexOf(
+    targetUserId,
+  ) ?? -1;
+  const targetWasFixedClassSlot =
+    targetCandidateIndex >= 0 && targetCandidateIndex < fixedSlotCount;
+  const { data: targetCharacter } =
+    targetWasFixedClassSlot && targetQueue?.character_row_id
+      ? await admin
+          .from("aion2_characters")
+          .select("class_name")
+          .eq("id", targetQueue.character_row_id)
+          .maybeSingle()
+      : { data: null };
+  const inheritedRequiredClasses = targetCharacter?.class_name
+    ? [targetCharacter.class_name]
+    : [];
 
   const { data: refillRequest, error: refillError } = await admin
     .from("match_requests")
@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
       character_row_id: sourceRequest.character_row_id,
       required_stage: targetQueue?.requested_stage ?? sourceRequest.required_stage,
       min_combat_power: sourceRequest.min_combat_power,
-      required_classes: replacementClasses,
+      required_classes: inheritedRequiredClasses,
       max_members: 2,
       invited_friend_ids: [],
       refill_room_id: roomId,
