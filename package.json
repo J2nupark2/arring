@@ -9,6 +9,8 @@
     "lint": "eslint",
     "test:matching": "node scripts/matching-smoke-test.mjs",
     "test:matching:http": "node scripts/matching-api-e2e.mjs",
+    "pretest:matching:playwright": "npm run build",
+    "test:matching:playwright": "playwright test matching",
     "test:images": "node scripts/image-attachments-e2e.mjs",
     "test:characters": "node scripts/character-unlink-e2e.mjs",
     "backup:production": "node scripts/backup-production.mjs",
@@ -35,6 +37,7 @@
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

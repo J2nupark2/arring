@@ -1,0 +1,155 @@
+import { expect, test, type Browser } from "@playwright/test";
+import {
+  acceptInUi,
+  assertSingleRoom,
+  createPartyHarness,
+  queueParty,
+  rejectInUi,
+  setTemporaryExpiry,
+  waitForTemporaryStatus,
+  type PartyHarness,
+} from "./helpers";
+
+async function withParty(
+  browser: Browser,
+  size: 5 | 10,
+  run: (harness: PartyHarness) => Promise<void>,
+) {
+  const harness = await createPartyHarness(browser, size);
+  try {
+    await run(harness);
+  } finally {
+    await harness.dispose();
+  }
+}
+
+for (const size of [5, 10] as const) {
+  test.describe(`${size}인 매칭 수락 순서`, () => {
+    test("방장이 마지막으로 수락해도 전원이 동일한 방으로 이동한다", async ({ browser }) => {
+      await withParty(browser, size, async (harness) => {
+        const temporaryMatchId = await queueParty(harness);
+        await Promise.all(harness.members.map(acceptInUi));
+        await expect(harness.leader.page.getByText(/\d+\/\d+명 수락/)).toBeVisible();
+        await acceptInUi(harness.leader);
+        const room = await assertSingleRoom(harness, temporaryMatchId);
+        await Promise.all(harness.users.map((user) => expect(user.page).toHaveURL(new RegExp(`/room/${room.code}$`), { timeout: 15_000 })));
+        expect(room.max_members).toBe(size);
+        expect(room.host_id).toBe(harness.leader.id);
+      });
+    });
+
+    test("일반 파티원이 마지막으로 수락해도 방이 하나만 생성된다", async ({ browser }) => {
+      await withParty(browser, size, async (harness) => {
+        const temporaryMatchId = await queueParty(harness);
+        const lastMember = harness.members.at(-1)!;
+        await acceptInUi(harness.leader);
+        await Promise.all(harness.members.slice(0, -1).map(acceptInUi));
+        await acceptInUi(lastMember);
+        const room = await assertSingleRoom(harness, temporaryMatchId);
+        await expect(lastMember.page).toHaveURL(new RegExp(`/room/${room.code}$`));
+      });
+    });
+
+    test("전원이 동시에 수락해도 중복 방이 생성되지 않는다", async ({ browser }) => {
+      await withParty(browser, size, async (harness) => {
+        const temporaryMatchId = await queueParty(harness);
+        await Promise.all(harness.users.map(acceptInUi));
+        const room = await assertSingleRoom(harness, temporaryMatchId);
+        await Promise.all(harness.users.map((user) => expect(user.page).toHaveURL(new RegExp(`/room/${room.code}$`), { timeout: 15_000 })));
+      });
+    });
+  });
+}
+
+test.describe("지연·만료·거절", () => {
+  test("방장이 제한시간 직전에 수락하면 5인 방이 확정된다", async ({ browser }) => {
+    await withParty(browser, 5, async (harness) => {
+      const temporaryMatchId = await queueParty(harness);
+      await Promise.all(harness.members.map(acceptInUi));
+      await setTemporaryExpiry(temporaryMatchId, new Date(Date.now() + 8_000).toISOString());
+      await harness.leader.page.waitForTimeout(5_000);
+      await acceptInUi(harness.leader);
+      await assertSingleRoom(harness, temporaryMatchId);
+    });
+  });
+
+  test("일반 파티원이 제한시간 직전에 수락하면 10인 방이 확정된다", async ({ browser }) => {
+    await withParty(browser, 10, async (harness) => {
+      const temporaryMatchId = await queueParty(harness);
+      const lastMember = harness.members.at(-1)!;
+      await acceptInUi(harness.leader);
+      await Promise.all(harness.members.slice(0, -1).map(acceptInUi));
+      await setTemporaryExpiry(temporaryMatchId, new Date(Date.now() + 8_000).toISOString());
+      await lastMember.page.waitForTimeout(5_000);
+      await acceptInUi(lastMember);
+      await assertSingleRoom(harness, temporaryMatchId);
+    });
+  });
+
+  for (const lateRole of ["leader", "member"] as const) {
+    test(`${lateRole === "leader" ? "방장" : "일반 파티원"}이 만료 후 수락하면 방이 생성되지 않는다`, async ({ browser }) => {
+      await withParty(browser, 5, async (harness) => {
+        const temporaryMatchId = await queueParty(harness);
+        const lateUser = lateRole === "leader" ? harness.leader : harness.members.at(-1)!;
+        await Promise.all(harness.users.filter((candidate) => candidate !== lateUser).map(acceptInUi));
+        await setTemporaryExpiry(temporaryMatchId, new Date(Date.now() - 1_000).toISOString());
+        const statusResponse = await lateUser.context.request.get(
+          `/api/matching?since=${encodeURIComponent(harness.startedAt)}`,
+        );
+        expect(statusResponse.ok()).toBeTruthy();
+        await lateUser.page.reload();
+        await expect(lateUser.page.getByText("매칭 수락 대기 중")).not.toBeVisible({ timeout: 10_000 });
+        const temp = await waitForTemporaryStatus(temporaryMatchId, "expired");
+        expect(temp?.status).toBe("expired");
+        expect(temp?.room_id).toBeNull();
+      });
+    });
+  }
+
+  for (const rejectRole of ["leader", "member"] as const) {
+    test(`${rejectRole === "leader" ? "방장" : "일반 파티원"}이 거절하면 전체 임시 매칭이 취소된다`, async ({ browser }) => {
+      await withParty(browser, 5, async (harness) => {
+        const temporaryMatchId = await queueParty(harness);
+        const rejectingUser = rejectRole === "leader" ? harness.leader : harness.members[0];
+        await rejectInUi(rejectingUser);
+        const temp = await waitForTemporaryStatus(temporaryMatchId, "cancelled");
+        expect(temp?.status).toBe("cancelled");
+        expect(temp?.room_id).toBeNull();
+      });
+    });
+  }
+});
+
+test.describe("복구와 방 수명주기", () => {
+  test("Realtime 이벤트를 놓친 사용자가 새로고침 후 확정 방을 복구한다", async ({ browser }) => {
+    await withParty(browser, 5, async (harness) => {
+      const temporaryMatchId = await queueParty(harness);
+      const recoveringUser = harness.members[0];
+      await recoveringUser.page.goto("about:blank");
+      await Promise.all(harness.users.filter((candidate) => candidate !== recoveringUser).map(acceptInUi));
+      const response = await recoveringUser.context.request.patch("/api/matching", { data: { action: "accept" } });
+      expect(response.ok()).toBeTruthy();
+      const room = await assertSingleRoom(harness, temporaryMatchId);
+      const recoveryResponse = await recoveringUser.context.request.get(
+        `/api/matching?since=${encodeURIComponent(new Date().toISOString())}`,
+      );
+      expect(recoveryResponse.ok()).toBeTruthy();
+      const recoveryStatus = await recoveryResponse.json();
+      expect(recoveryStatus).toMatchObject({ matched: true, roomCode: room.code });
+      await recoveringUser.page.goto("/party");
+      await expect(recoveringUser.page).toHaveURL(new RegExp(`/room/${room.code}$`), { timeout: 15_000 });
+    });
+  });
+
+  test("첫 입장자가 혼자 새로고침해도 매칭 방이 종료되지 않는다", async ({ browser }) => {
+    await withParty(browser, 5, async (harness) => {
+      const temporaryMatchId = await queueParty(harness);
+      await Promise.all(harness.users.map(acceptInUi));
+      const room = await assertSingleRoom(harness, temporaryMatchId);
+      await harness.leader.page.reload();
+      await harness.leader.page.waitForTimeout(500);
+      const { data } = await harness.admin.from("rooms").select("status").eq("id", room.id).single();
+      expect(data?.status).toBe("active");
+    });
+  });
+});

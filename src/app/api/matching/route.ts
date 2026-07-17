@@ -184,6 +184,47 @@ async function findExistingMatch(
   );
   if (requestRoomCode) return { matched: true, roomCode: requestRoomCode };
 
+  const recoveryAfter = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { data: recentResponses, error: recentResponseError } = await admin
+    .from("match_responses")
+    .select("temporary_match_id")
+    .eq("user_id", userId)
+    .eq("status", "accepted")
+    .gte("created_at", recoveryAfter)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  if (recentResponseError) {
+    console.error("[matching] recent response recovery failed", {
+      userId,
+      error: recentResponseError.message,
+    });
+  }
+  const temporaryMatchIds = ((recentResponses ?? []) as {
+    temporary_match_id: string;
+  }[]).map((response) => response.temporary_match_id);
+  if (temporaryMatchIds.length > 0) {
+    const { data: confirmedTemp, error: confirmedTempError } = await admin
+      .from("temporary_matches")
+      .select("room_id")
+      .in("id", temporaryMatchIds)
+      .eq("status", "confirmed")
+      .not("room_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (confirmedTempError) {
+      console.error("[matching] confirmed room recovery failed", {
+        userId,
+        error: confirmedTempError.message,
+      });
+    }
+    const confirmedRoomCode = await getRoomCode(
+      admin,
+      (confirmedTemp as { room_id: string | null } | null)?.room_id,
+    );
+    if (confirmedRoomCode) return { matched: true, roomCode: confirmedRoomCode };
+  }
+
   return { matched: false };
 }
 
@@ -289,7 +330,20 @@ async function createRoom(
       .from("room_participants")
       .insert(participants as unknown as never);
 
-    if (participantError) throw new Error(participantError.message);
+    if (participantError) {
+      await admin.from("rooms").delete().eq("id", createdRoom.id);
+      if (
+        participantError.code === "23503" &&
+        participantError.message.includes("room_participants_room_id_fkey")
+      ) {
+        console.warn("[matching] created room disappeared before participants; retrying", {
+          roomId: createdRoom.id,
+          attempt: attempt + 1,
+        });
+        continue;
+      }
+      throw new Error(`participant insert failed: ${participantError.message}`);
+    }
 
     if (invitedFriendIds.length > 0) {
       const { error: inviteError } = await admin.from("room_invites").insert(
@@ -299,7 +353,10 @@ async function createRoom(
           room_code: createdRoom.code,
         })) as unknown as never,
       );
-      if (inviteError) throw new Error(inviteError.message);
+      if (inviteError) {
+        await admin.from("rooms").delete().eq("id", createdRoom.id);
+        throw new Error(`room invite insert failed: ${inviteError.message}`);
+      }
     }
 
     return createdRoom;
@@ -848,12 +905,40 @@ async function confirmTemporaryMatch(admin: AdminClient, temporaryMatchId: strin
     .single();
   if (!leaderProfile) return null;
 
-  const room = await createRoom(
-    admin,
-    leaderProfile as Profile,
-    matchRequest,
-    temp.candidate_user_ids,
-  );
+  const { data: claimedMatch, error: claimError } = await admin
+    .from("temporary_matches")
+    .update({ status: "confirmed" } as unknown as never)
+    .eq("id", temporaryMatchId)
+    .eq("status", "pending_acceptance")
+    .select("id")
+    .maybeSingle();
+  if (claimError) {
+    throw new Error(`temporary match claim failed: ${claimError.message}`);
+  }
+  if (!claimedMatch) return null;
+
+  let room: { id: string; code: string };
+  try {
+    room = await createRoom(
+      admin,
+      leaderProfile as Profile,
+      matchRequest,
+      temp.candidate_user_ids,
+    );
+  } catch (error) {
+    await admin
+      .from("temporary_matches")
+      .update({ status: "pending_acceptance" } as unknown as never)
+      .eq("id", temporaryMatchId)
+      .eq("status", "confirmed")
+      .is("room_id", null);
+    console.error("[matching] room finalization failed", {
+      temporaryMatchId,
+      matchRequestId: temp.match_request_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
   const matchedAt = new Date().toISOString();
   await Promise.all([
     admin

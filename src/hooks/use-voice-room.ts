@@ -118,6 +118,7 @@ export function useVoiceRoom({
   const otherPeerIdsRef = useRef<Set<string>>(new Set());
   const volumesRef = useRef<Record<string, number>>({});
   const analysersRef = useRef<Map<string, AnalyserNode>>(new Map());
+  const pendingIceRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const hostIdRef = useRef(initialHostId);
   const joinedRef = useRef(false);
   const onKickedRef = useRef(onKicked);
@@ -234,19 +235,44 @@ export function useVoiceRoom({
           audioElsRef.current.set(peerId, audioEl);
         }
         audioEl.srcObject = event.streams[0];
-        audioEl.play().catch(() => {});
+        audioEl.play().catch((error) => {
+          console.warn("[voice-room] remote audio autoplay blocked", {
+            roomCode,
+            peerId,
+            error: String(error),
+          });
+        });
         attachAnalyser(peerId, event.streams[0]);
       };
 
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+        if (pc.connectionState === "failed") {
+          console.warn("[voice-room] peer connection failed", { roomCode, peerId });
+          if (hostIdRef.current === userId) {
+            pc.createOffer({ iceRestart: true })
+              .then(async (offer) => {
+                await pc.setLocalDescription(offer);
+                send({ kind: "offer", from: userId, to: peerId, sdp: offer });
+              })
+              .catch((error) => {
+                console.warn("[voice-room] ICE restart failed", {
+                  roomCode,
+                  peerId,
+                  error: String(error),
+                });
+                closePeer(peerId);
+              });
+          } else {
+            closePeer(peerId);
+          }
+        } else if (pc.connectionState === "closed") {
           closePeer(peerId);
         }
       };
 
       return pc;
     },
-    [send, userId, closePeer, attachAnalyser],
+    [send, userId, roomCode, closePeer, attachAnalyser],
   );
 
   const captureMic = useCallback(async () => {
@@ -254,19 +280,47 @@ export function useVoiceRoom({
     try {
       const rawStream = await navigator.mediaDevices.getUserMedia({
         audio: selectedMicIdRef.current
-          ? { deviceId: { exact: selectedMicIdRef.current } }
-          : true,
+          ? {
+              deviceId: { exact: selectedMicIdRef.current },
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            }
+          : {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
       });
       // Route the mic through a GainNode so its level can be adjusted
       // live; peers receive the gain-processed stream.
       const audioCtx = audioCtxRef.current ?? new AudioContext();
       audioCtxRef.current = audioCtx;
+      await audioCtx.resume().catch(() => undefined);
+
+      if (audioCtx.state !== "running") {
+        console.warn("[voice-room] AudioContext suspended; using raw microphone", {
+          roomCode,
+          userId,
+          state: audioCtx.state,
+        });
+        rawStreamRef.current = rawStream;
+        localStreamRef.current = rawStream;
+        const capturedDeviceId = rawStream.getAudioTracks()[0]?.getSettings().deviceId;
+        if (capturedDeviceId) {
+          selectedMicIdRef.current = capturedDeviceId;
+          setSelectedMicId(capturedDeviceId);
+        }
+        void refreshAudioInputs();
+        attachAnalyser(userId, rawStream);
+        return true;
+      }
+
       const source = audioCtx.createMediaStreamSource(rawStream);
       const gainNode = audioCtx.createGain();
       const destination = audioCtx.createMediaStreamDestination();
       source.connect(gainNode);
       gainNode.connect(destination);
-      audioCtx.resume().catch(() => {});
 
       rawStreamRef.current = rawStream;
       micSourceRef.current = source;
@@ -280,10 +334,15 @@ export function useVoiceRoom({
       void refreshAudioInputs();
       attachAnalyser(userId, destination.stream);
       return true;
-    } catch {
+    } catch (error) {
+      console.error("[voice-room] microphone capture failed", {
+        roomCode,
+        userId,
+        error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      });
       return false;
     }
-  }, [userId, attachAnalyser, refreshAudioInputs]);
+  }, [roomCode, userId, attachAnalyser, refreshAudioInputs]);
 
   const releaseMic = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -433,16 +492,34 @@ export function useVoiceRoom({
           if (payload.kind === "offer") {
             const pc = ensurePeer(payload.from);
             await pc.setRemoteDescription(payload.sdp);
+            const queuedCandidates = pendingIceRef.current.get(payload.from) ?? [];
+            pendingIceRef.current.delete(payload.from);
+            await Promise.all(queuedCandidates.map((candidate) => pc.addIceCandidate(candidate)));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             send({ kind: "answer", from: userId, to: payload.from, sdp: answer });
           } else if (payload.kind === "answer") {
-            await peersRef.current.get(payload.from)?.setRemoteDescription(payload.sdp);
+            const pc = ensurePeer(payload.from);
+            await pc.setRemoteDescription(payload.sdp);
+            const queuedCandidates = pendingIceRef.current.get(payload.from) ?? [];
+            pendingIceRef.current.delete(payload.from);
+            await Promise.all(queuedCandidates.map((candidate) => pc.addIceCandidate(candidate)));
           } else if (payload.kind === "ice-candidate") {
             try {
-              await peersRef.current.get(payload.from)?.addIceCandidate(payload.candidate);
-            } catch {
-              // Candidate arrived after the connection closed — safe to ignore.
+              const pc = ensurePeer(payload.from);
+              if (!pc.remoteDescription) {
+                const queued = pendingIceRef.current.get(payload.from) ?? [];
+                queued.push(payload.candidate);
+                pendingIceRef.current.set(payload.from, queued);
+              } else {
+                await pc.addIceCandidate(payload.candidate);
+              }
+            } catch (error) {
+              console.warn("[voice-room] ICE candidate rejected", {
+                roomCode,
+                peerId: payload.from,
+                error: String(error),
+              });
             }
           }
         },
@@ -608,8 +685,6 @@ export function useVoiceRoom({
     const analysers = analysersRef.current;
     const peers = peersRef.current;
     const audioElements = audioElsRef.current;
-    const otherPeerIds = otherPeerIdsRef.current;
-
     return () => {
       cancelled = true;
       clearInterval(speakingInterval);
@@ -634,16 +709,6 @@ export function useVoiceRoom({
         .then(() => {});
       supabase.rpc("set_current_room", { p_room_code: null }).then(() => {});
 
-      // Leaving an empty room closes it. joinedRef guards against React
-      // Strict Mode's dev-only mount/cleanup/mount dry run, where cleanup
-      // fires before the channel ever subscribed.
-      if (joinedRef.current && otherPeerIds.size === 0) {
-        supabase
-          .from("rooms")
-          .update({ status: "ended" })
-          .eq("id", roomId)
-          .then(() => {});
-      }
       joinedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

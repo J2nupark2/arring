@@ -222,10 +222,20 @@ export function GlobalMatchingProvider() {
   useEffect(() => {
     if (!matchStatus?.active) return;
     const id = window.setInterval(() => {
-      void fetchMatchStatus(sessionStartedAt.current);
-    }, 45000);
+      void fetchMatchStatus(sessionStartedAt.current).then((status) => {
+        if (!status) return;
+        if (status.matched && status.roomCode) {
+          setMatchStatus(null);
+          if (pathnameRef.current !== `/room/${status.roomCode}`) {
+            router.push(`/room/${status.roomCode}`);
+          }
+          return;
+        }
+        setMatchStatus(status.active ? status : null);
+      });
+    }, 3000);
     return () => window.clearInterval(id);
-  }, [matchStatus?.active]);
+  }, [matchStatus?.active, router]);
 
   useEffect(() => {
     if (!matchStatus?.temporaryMatch && !matchStatus?.autoLeadEligibleAt) return;
