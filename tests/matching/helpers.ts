@@ -246,7 +246,7 @@ export async function queueParty(harness: PartyHarness, options?: {
       stage,
     });
   }
-  const result = await matchingApi(harness.leader, "POST", {
+  let result = await matchingApi(harness.leader, "POST", {
     role: "leader",
     dungeonId: harness.dungeonId,
     characterId: harness.leader.characterId,
@@ -254,6 +254,10 @@ export async function queueParty(harness: PartyHarness, options?: {
     minCombatPower: options?.minCombatPower ?? 700_000,
     requiredClasses: options?.requiredClasses ?? harness.members.map((member) => member.className),
   });
+  for (let attempt = 0; !(result.temporaryMatch as { id?: string } | undefined)?.id && attempt < 10; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    result = await matchingApi(harness.leader, "GET");
+  }
   const temporaryMatch = result.temporaryMatch as { id?: string } | undefined;
   if (!temporaryMatch?.id) throw new Error(`temporary match was not created: ${JSON.stringify(result)}`);
   await Promise.all(harness.users.map(async (user) => {
