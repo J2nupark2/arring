@@ -86,6 +86,7 @@ export default async function RoomPage({
     { data: ownQueueMatch },
     { data: ownLeaderMatch },
     { data: ownCharacters },
+    { data: ownKick },
   ] = await Promise.all([
     supabase.rpc("room_member_count", { target_room_id: room.id }),
     // A user already counted as active (e.g. rejoining after a refresh or a
@@ -125,7 +126,19 @@ export default async function RoomPage({
       .eq("user_id", user.id)
       .order("is_primary", { ascending: false })
       .order("synced_at", { ascending: false }),
+    supabase
+      .from("room_kicks")
+      .select("target_id")
+      .eq("room_id", room.id)
+      .eq("target_id", user.id)
+      .maybeSingle(),
   ]);
+
+  if (ownKick) {
+    redirect(
+      "/party?error=" + encodeURIComponent("방장에 의해 추방된 방에는 다시 입장할 수 없습니다."),
+    );
+  }
 
   if (
     !ownActiveRow &&

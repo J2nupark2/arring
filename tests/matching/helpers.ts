@@ -155,6 +155,72 @@ export async function createPartyHarness(browser: Browser, size: PartySize): Pro
   };
 }
 
+export async function createReplacementUser(
+  harness: PartyHarness,
+  browser: Browser,
+  className: string,
+) {
+  const role = `replacement-${Date.now()}`;
+  const email = `${harness.runId}-${role}@example.test`;
+  const password = `Arring-${Date.now()}!`;
+  const auth = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { nickname: `${harness.runId}-${role}`, server: "테스트" },
+  });
+  if (auth.error || !auth.data.user) {
+    throw new Error(`create replacement: ${auth.error?.message ?? "missing user"}`);
+  }
+  const userId = auth.data.user.id;
+  await must(
+    "update replacement profile",
+    admin
+      .from("profiles")
+      .update({
+        nickname: `${harness.runId}-${role}`,
+        server: "테스트",
+        manner_temperature: 50,
+        trust_temperature: 50,
+      })
+      .eq("id", userId)
+      .select("id")
+      .single(),
+  );
+  const character = (await must(
+    "create replacement character",
+    admin
+      .from("aion2_characters")
+      .insert({
+        user_id: userId,
+        character_id: `${harness.runId}-${role}`,
+        character_name: `${harness.runId}-${role}`,
+        server_id: 9999,
+        server_name: "테스트",
+        class_name: className,
+        character_level: 55,
+        combat_power: 790_000,
+        is_primary: true,
+      })
+      .select("id")
+      .single(),
+  )) as { id: string };
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await login(page, email, password);
+  const replacement: TestUser = {
+    id: userId,
+    email,
+    password,
+    characterId: character.id,
+    className,
+    context,
+    page,
+  };
+  harness.users.push(replacement);
+  return replacement;
+}
+
 async function matchingApi(user: TestUser, method: string, body?: object) {
   const response = await user.context.request.fetch("/api/matching", {
     method,

@@ -40,6 +40,8 @@ type MatchRequest = {
   required_classes: string[];
   max_members: number;
   invited_friend_ids?: string[];
+  refill_room_id?: string | null;
+  excluded_user_ids?: string[];
   created_at?: string;
 };
 
@@ -370,6 +372,7 @@ async function findCandidates(
   request: MatchRequest,
 ) {
   const invitedFriendIds = new Set(request.invited_friend_ids ?? []);
+  const excludedUserIds = new Set(request.excluded_user_ids ?? []);
   const { data: queueRows, error: queueError } = await admin
     .from("match_queue")
     .select("id, user_id, character_row_id, requested_stage, created_at")
@@ -461,6 +464,7 @@ async function findCandidates(
       if (!profile || !character) return false;
       if (row.user_id === request.leader_id) return false;
       if (invitedFriendIds.has(row.user_id)) return false;
+      if (excludedUserIds.has(row.user_id)) return false;
       if (
         profile.matchmaking_banned_until &&
         new Date(profile.matchmaking_banned_until).getTime() > Date.now()
@@ -814,6 +818,8 @@ async function createTemporaryMatch(
       .filter((profile) => profile.nickname.startsWith("더미친구"))
       .map((profile) => profile.id),
   );
+  const autoAcceptedUserIds = new Set(dummyUserIds);
+  if (request.refill_room_id) autoAcceptedUserIds.add(request.leader_id);
 
   const { data: temp, error } = await admin
     .from("temporary_matches")
@@ -835,8 +841,8 @@ async function createTemporaryMatch(
     responseUserIds.map((user_id) => ({
       temporary_match_id: temporaryMatch.id,
       user_id,
-      status: dummyUserIds.has(user_id) ? "accepted" : "pending",
-      responded_at: dummyUserIds.has(user_id) ? new Date().toISOString() : null,
+      status: autoAcceptedUserIds.has(user_id) ? "accepted" : "pending",
+      responded_at: autoAcceptedUserIds.has(user_id) ? new Date().toISOString() : null,
     })) as unknown as never,
   );
 
@@ -851,7 +857,7 @@ async function createTemporaryMatch(
       role: "leader" as const,
       responses: responseUserIds.map((userId) => ({
         userId,
-        status: dummyUserIds.has(userId)
+        status: autoAcceptedUserIds.has(userId)
           ? ("accepted" satisfies MatchResponseStatus)
           : ("pending" satisfies MatchResponseStatus),
       })),
@@ -879,7 +885,7 @@ async function confirmTemporaryMatch(admin: AdminClient, temporaryMatchId: strin
   const { data: requestRow } = await admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
     )
     .eq("id", temp.match_request_id)
     .maybeSingle();
@@ -919,12 +925,50 @@ async function confirmTemporaryMatch(admin: AdminClient, temporaryMatchId: strin
 
   let room: { id: string; code: string };
   try {
-    room = await createRoom(
-      admin,
-      leaderProfile as Profile,
-      matchRequest,
-      temp.candidate_user_ids,
-    );
+    if (matchRequest.refill_room_id) {
+      const { data: refillRoom, error: refillRoomError } = await admin
+        .from("rooms")
+        .select("id, code, host_id, created_by, status, max_members")
+        .eq("id", matchRequest.refill_room_id)
+        .maybeSingle();
+      if (refillRoomError || !refillRoom || refillRoom.status !== "active") {
+        throw new Error("refill room is no longer active");
+      }
+      if ((refillRoom.host_id ?? refillRoom.created_by) !== matchRequest.leader_id) {
+        throw new Error("refill requester is no longer the room host");
+      }
+      const { count: activeCount, error: countError } = await admin
+        .from("room_participants")
+        .select("id", { count: "exact", head: true })
+        .eq("room_id", refillRoom.id)
+        .is("left_at", null);
+      if (countError || (activeCount ?? refillRoom.max_members) >= refillRoom.max_members) {
+        throw new Error("refill room has no vacancy");
+      }
+      const replacementId = temp.candidate_user_ids[0];
+      if (!replacementId) throw new Error("refill candidate is missing");
+      const { data: kickedReplacement } = await admin
+        .from("room_kicks")
+        .select("target_id")
+        .eq("room_id", refillRoom.id)
+        .eq("target_id", replacementId)
+        .maybeSingle();
+      if (kickedReplacement) throw new Error("refill candidate was kicked from this room");
+      const { error: participantError } = await admin
+        .from("room_participants")
+        .insert({ room_id: refillRoom.id, user_id: replacementId });
+      if (participantError) {
+        throw new Error(`refill participant insert failed: ${participantError.message}`);
+      }
+      room = { id: refillRoom.id, code: refillRoom.code };
+    } else {
+      room = await createRoom(
+        admin,
+        leaderProfile as Profile,
+        matchRequest,
+        temp.candidate_user_ids,
+      );
+    }
   } catch (error) {
     await admin
       .from("temporary_matches")
@@ -1087,7 +1131,7 @@ async function tryCompleteMatch(
     .eq("id", request.id)
     .eq("status", "waiting")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
     )
     .maybeSingle();
 
@@ -1313,7 +1357,7 @@ async function ensureAutoLeadRequest(
   const { data: existingRequest, error: existingError } = await admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at, status",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at, status",
     )
     .eq("leader_id", row.user_id)
     .in("status", ["waiting", "processing"])
@@ -1356,7 +1400,7 @@ async function ensureAutoLeadRequest(
       heartbeat_at: heartbeatAt,
     } as unknown as never)
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
     )
     .maybeSingle();
 
@@ -1364,7 +1408,7 @@ async function ensureAutoLeadRequest(
     const { data: retryRequest } = await admin
       .from("match_requests")
       .select(
-        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
       )
       .eq("leader_id", row.user_id)
       .in("status", ["waiting", "processing"])
@@ -1382,7 +1426,7 @@ async function tryWaitingLeaderMatches(admin: AdminClient, dungeonId?: string) {
   let query = admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
     )
     .eq("status", "waiting")
     .gte("heartbeat_at", activeHeartbeatCutoff())
@@ -1499,7 +1543,7 @@ async function getMatchStatus(
 
   const { data: activeRequestRow } = await admin
     .from("match_requests")
-    .select("id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at, status")
+    .select("id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at, status")
     .eq("leader_id", userId)
     .in("status", ["waiting", "processing"])
     .order("created_at", { ascending: false })
@@ -2005,7 +2049,7 @@ export async function POST(request: NextRequest) {
         heartbeat_at: new Date().toISOString(),
       } as unknown as never)
       .select(
-        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
       )
       .single();
 
@@ -2116,7 +2160,7 @@ export async function POST(request: NextRequest) {
   const { data: requests, error: requestError } = await admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids",
     )
     .eq("status", "waiting")
     .eq("dungeon_id", dungeonId)

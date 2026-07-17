@@ -847,15 +847,29 @@ export function useVoiceRoom({
   );
 
   const kickParticipant = useCallback(
-    (peerId: string) => {
-      if (hostIdRef.current !== userId) return;
+    async (peerId: string) => {
+      if (hostIdRef.current !== userId) {
+        throw new Error("방장만 파티원을 추방할 수 있습니다.");
+      }
+      const response = await fetch("/api/rooms/refill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId, targetUserId: peerId }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error ?? "추방 및 재매칭을 시작하지 못했습니다.");
+      }
       channelRef.current?.send({
         type: "broadcast",
         event: "kick",
         payload: { targetId: peerId, from: userId } satisfies KickPayload,
       });
+      closePeer(peerId);
+      removeParticipant(peerId);
+      return result as { refillRequestId: string; state: string };
     },
-    [userId],
+    [roomId, userId, closePeer, removeParticipant],
   );
 
   const sendChatMessage = useCallback(

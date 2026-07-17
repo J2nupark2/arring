@@ -113,12 +113,28 @@ export function VoiceRoom({
     useState<"good" | "normal" | "bad">("normal");
   const [reportReason, setReportReason] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [kickingId, setKickingId] = useState<string | null>(null);
+  const [refillActive, setRefillActive] = useState(false);
   const selected = participants.find((p) => p.id === selectedId) ?? null;
   const reviewTarget = participants.find((p) => p.id === reviewTargetId) ?? null;
+  const isRefilling = refillActive && participants.length < maxMembers;
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ block: "end" });
   }, [chatMessages.length]);
+
+  useEffect(() => {
+    if (!isHost) return;
+    let cancelled = false;
+    void fetch(`/api/rooms/refill?roomId=${encodeURIComponent(roomId)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => {
+        if (!cancelled && result) setRefillActive(!!result.active);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isHost, roomId]);
 
   async function handleSendChat(e: React.FormEvent) {
     e.preventDefault();
@@ -177,6 +193,27 @@ export function VoiceRoom({
     setMannerReview("normal");
   }
 
+  async function handleKickAndRefill(targetId: string, targetNickname: string) {
+    if (
+      !window.confirm(
+        `${targetNickname}님을 추방하고 같은 조건으로 빈자리 1명을 재매칭할까요?`,
+      )
+    ) {
+      return;
+    }
+    setKickingId(targetId);
+    try {
+      await kickParticipant(targetId);
+      setSelectedId(null);
+      setRefillActive(true);
+      toast.success("파티원을 추방했습니다. 빈자리 1명을 재매칭합니다.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "추방 및 재매칭에 실패했습니다.");
+    } finally {
+      setKickingId(null);
+    }
+  }
+
   return (
     <div className="flex w-full flex-col gap-6">
       {status === "connecting" && (
@@ -195,6 +232,13 @@ export function VoiceRoom({
           {participants.length}/{maxMembers}명
         </span>
       </div>
+
+      {isHost && isRefilling && (
+        <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
+          <Loader2 className="size-4 animate-spin" />
+          빈자리 1명을 같은 조건으로 재매칭하고 있습니다.
+        </div>
+      )}
 
       <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
         {participants.map((p) => (
@@ -317,7 +361,11 @@ export function VoiceRoom({
                 </Button>
                 {selected.characterRowId && (
                   <Button variant="outline" asChild>
-                    <Link href={`/profile/characters/${selected.characterRowId}`}>
+                    <Link
+                      href={`/profile/characters/${selected.characterRowId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       <Eye className="size-4" />
                       상세 프로필
                     </Link>
@@ -365,13 +413,17 @@ export function VoiceRoom({
                     </Button>
                     <Button
                       variant="destructive"
-                      onClick={() => {
-                        kickParticipant(selected.id);
-                        setSelectedId(null);
-                      }}
+                      disabled={kickingId === selected.id || isRefilling}
+                      onClick={() =>
+                        void handleKickAndRefill(selected.id, selected.nickname)
+                      }
                     >
-                      <UserX className="size-4" />
-                      추방
+                      {kickingId === selected.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <UserX className="size-4" />
+                      )}
+                      추방 후 1명 재매칭
                     </Button>
                   </>
                 )}

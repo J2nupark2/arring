@@ -3,6 +3,7 @@ import {
   acceptInUi,
   assertSingleRoom,
   createPartyHarness,
+  createReplacementUser,
   queueParty,
   rejectInUi,
   setTemporaryExpiry,
@@ -150,6 +151,60 @@ test.describe("복구와 방 수명주기", () => {
       await harness.leader.page.waitForTimeout(500);
       const { data } = await harness.admin.from("rooms").select("status").eq("id", room.id).single();
       expect(data?.status).toBe("active");
+    });
+  });
+
+  test("방장이 한 명을 추방하면 같은 조건의 한 자리만 기존 방에 재매칭된다", async ({ browser }) => {
+    await withParty(browser, 5, async (harness) => {
+      const temporaryMatchId = await queueParty(harness);
+      await Promise.all(harness.users.map(acceptInUi));
+      const room = await assertSingleRoom(harness, temporaryMatchId);
+      const target = harness.members[0];
+      const replacement = await createReplacementUser(harness, browser, target.className);
+
+      const kickResponse = await harness.leader.context.request.post("/api/rooms/refill", {
+        data: { roomId: room.id, targetUserId: target.id },
+      });
+      expect(kickResponse.ok()).toBeTruthy();
+
+      const { data: kick } = await harness.admin
+        .from("room_kicks")
+        .select("target_id")
+        .eq("room_id", room.id)
+        .eq("target_id", target.id)
+        .single();
+      expect(kick?.target_id).toBe(target.id);
+
+      const queueResponse = await replacement.context.request.post("/api/matching", {
+        data: {
+          role: "member",
+          dungeonId: harness.dungeonId,
+          characterId: replacement.characterId,
+          stage: 3,
+        },
+      });
+      expect(queueResponse.ok()).toBeTruthy();
+
+      await replacement.page.goto("/party");
+      await replacement.page.getByText("매칭 수락 대기 중").waitFor();
+      await acceptInUi(replacement);
+
+      await expect.poll(async () => {
+        const { data } = await harness.admin
+          .from("room_participants")
+          .select("user_id")
+          .eq("room_id", room.id)
+          .is("left_at", null);
+        return (data ?? []).map((participant) => participant.user_id).sort();
+      }, { timeout: 15_000 }).toEqual(
+        [harness.leader.id, ...harness.members.slice(1).map((member) => member.id), replacement.id].sort(),
+      );
+
+      await expect(replacement.page).toHaveURL(new RegExp(`/room/${room.code}$`), {
+        timeout: 15_000,
+      });
+      await target.page.goto(`/room/${room.code}`);
+      await expect(target.page).toHaveURL(/\/party\?error=/);
     });
   });
 });
