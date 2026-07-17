@@ -112,6 +112,26 @@ export function GlobalMatchingProvider() {
   }, [pathname]);
 
   useEffect(() => {
+    function handleImmediateStatus(event: Event) {
+      const status = (event as CustomEvent<MatchStatus>).detail;
+      if (!status) return;
+      if (status.matched && status.roomCode) {
+        setMatchStatus(null);
+        if (pathnameRef.current !== `/room/${status.roomCode}`) {
+          router.push(`/room/${status.roomCode}`);
+        }
+        return;
+      }
+      setMatchStatus(status.active ? status : null);
+    }
+
+    window.addEventListener("arring:matching-status", handleImmediateStatus);
+    return () => {
+      window.removeEventListener("arring:matching-status", handleImmediateStatus);
+    };
+  }, [router]);
+
+  useEffect(() => {
     const supabase = createClient();
     const channels: RealtimeChannel[] = [];
     let active = true;

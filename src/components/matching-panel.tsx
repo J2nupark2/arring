@@ -416,6 +416,10 @@ export function MatchingPanel({
         allowConditionRelaxation,
       });
 
+      window.dispatchEvent(
+        new CustomEvent("arring:matching-status", { detail: result }),
+      );
+
       if (result.matched && result.roomCode) {
         toast.success("파티가 매칭됐습니다. 방으로 이동합니다.");
         router.push(`/room/${result.roomCode}`);
