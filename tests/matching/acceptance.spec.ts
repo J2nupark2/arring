@@ -261,18 +261,27 @@ test.describe("복구와 방 수명주기", () => {
       const target = harness.members[0];
       const replacement = await createReplacementUser(harness, browser, target.className);
 
-      const kickResponse = await harness.leader.context.request.post("/api/rooms/refill", {
-        data: { roomId: room.id, targetUserId: target.id },
+      await expect(harness.leader.page).toHaveURL(new RegExp(`/room/${room.code}$`), {
+        timeout: 15_000,
       });
-      expect(kickResponse.ok()).toBeTruthy();
+      const targetLabel = target.email.split("@")[0];
+      await harness.leader.page
+        .getByRole("button", { name: new RegExp(`${targetLabel}.*프로필 보기`) })
+        .click();
+      harness.leader.page.once("dialog", (dialog) => dialog.accept());
+      await harness.leader.page
+        .getByRole("button", { name: /추방.*재매칭/ })
+        .click();
 
-      const { data: kick } = await harness.admin
-        .from("room_kicks")
-        .select("target_id")
-        .eq("room_id", room.id)
-        .eq("target_id", target.id)
-        .single();
-      expect(kick?.target_id).toBe(target.id);
+      await expect.poll(async () => {
+        const { data: kick } = await harness.admin
+          .from("room_kicks")
+          .select("target_id")
+          .eq("room_id", room.id)
+          .eq("target_id", target.id)
+          .maybeSingle();
+        return kick?.target_id ?? null;
+      }).toBe(target.id);
 
       const queueResponse = await replacement.context.request.post("/api/matching", {
         data: {
