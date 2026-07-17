@@ -147,6 +147,65 @@ export function useVoiceRoom({
     setParticipants((prev) => prev.filter((x) => x.id !== id));
   }, []);
 
+  // Dummy friends are persisted room members but have no browser presence.
+  // Hydrate the database roster too so the host can inspect and remove them.
+  useEffect(() => {
+    const supabase = supabaseRef.current;
+    let active = true;
+
+    async function refreshPersistedRoster() {
+      const { data: rows } = await supabase
+        .from("room_participants")
+        .select("user_id")
+        .eq("room_id", roomId)
+        .is("left_at", null);
+      const ids = [...new Set((rows ?? []).map((row) => row.user_id))];
+      if (!active || ids.length === 0) return;
+
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, nickname, server")
+        .in("id", ids);
+      if (!active) return;
+
+      for (const profile of profiles ?? []) {
+        const displayName = profile.server
+          ? `${profile.nickname} (${profile.server})`
+          : profile.nickname;
+        upsertParticipant({
+          id: profile.id,
+          nickname: displayName,
+          inviteName: formatAion2InviteName(profile.nickname, profile.server),
+          isSelf: profile.id === userId,
+          muted: true,
+          characterRowId: null,
+          profileImageUrl: null,
+          isFriend: false,
+        });
+      }
+    }
+
+    void refreshPersistedRoster();
+    const rosterChannel = supabase
+      .channel(`room-roster:${roomId}:${crypto.randomUUID()}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "room_participants",
+          filter: `room_id=eq.${roomId}`,
+        },
+        () => void refreshPersistedRoster(),
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(rosterChannel);
+    };
+  }, [roomId, userId, upsertParticipant]);
+
   const closePeer = useCallback((peerId: string) => {
     peersRef.current.get(peerId)?.close();
     peersRef.current.delete(peerId);

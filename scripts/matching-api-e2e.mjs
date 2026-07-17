@@ -568,6 +568,35 @@ async function testDummyInvitesAutoAccept() {
     `leader+member acceptance should confirm dummy invite room, got ${JSON.stringify(memberAccept.data)}`,
   );
 
+  const room = await must(
+    "load dummy invite room",
+    admin.from("rooms").select("id").eq("code", memberAccept.data.roomCode).single(),
+  );
+  const roomParticipants = await must(
+    "load dummy room participants",
+    admin
+      .from("room_participants")
+      .select("user_id")
+      .eq("room_id", room.id)
+      .is("left_at", null),
+  );
+  for (const dummy of dummies) {
+    assert(
+      roomParticipants.some((participant) => participant.user_id === dummy.userId),
+      `dummy ${dummy.userId} should be present in the matched room`,
+    );
+  }
+
+  const kickDummy = await api(leaderJar, "/api/rooms/refill", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roomId: room.id, targetUserId: dummies[0].userId }),
+  });
+  assert(
+    kickDummy.ok && kickDummy.data?.refillRequestId,
+    `host should be able to kick a dummy friend: ${kickDummy.status} ${JSON.stringify(kickDummy.data)}`,
+  );
+
   console.log(`[matching-api-e2e] dummy invites auto-accepted room ${memberAccept.data.roomCode}`);
 }
 

@@ -122,17 +122,24 @@ export async function POST(request: NextRequest) {
         .maybeSingle(),
     ]);
 
-  if (!targetQueue || !sourceRequest) {
+  if (!sourceRequest) {
     return error("기존 매칭 조건을 찾지 못해 재매칭을 시작할 수 없습니다.", 409);
   }
 
-  const { data: targetCharacter } = targetQueue.character_row_id
+  const { data: targetCharacter } = targetQueue?.character_row_id
     ? await admin
         .from("aion2_characters")
         .select("class_name")
         .eq("id", targetQueue.character_row_id)
         .maybeSingle()
-    : { data: null };
+    : await admin
+        .from("aion2_characters")
+        .select("class_name")
+        .eq("user_id", targetUserId)
+        .order("is_primary", { ascending: false })
+        .order("synced_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
   const replacementClasses = targetCharacter?.class_name
     ? [targetCharacter.class_name]
     : sourceRequest.required_classes;
@@ -142,11 +149,12 @@ export async function POST(request: NextRequest) {
       targetUserId,
     ]),
   ];
-  const { data: originalTemporaryMatch } = targetQueue.match_request_id
+  const sourceMatchRequestId = targetQueue?.match_request_id ?? sourceRequest.id;
+  const { data: originalTemporaryMatch } = sourceMatchRequestId
     ? await admin
         .from("temporary_matches")
         .select("id")
-        .eq("match_request_id", targetQueue.match_request_id)
+        .eq("match_request_id", sourceMatchRequestId)
         .eq("status", "confirmed")
         .order("created_at", { ascending: false })
         .limit(1)
@@ -159,7 +167,7 @@ export async function POST(request: NextRequest) {
       leader_id: user.id,
       dungeon_id: sourceRequest.dungeon_id,
       character_row_id: sourceRequest.character_row_id,
-      required_stage: targetQueue.requested_stage ?? sourceRequest.required_stage,
+      required_stage: targetQueue?.requested_stage ?? sourceRequest.required_stage,
       min_combat_power: sourceRequest.min_combat_power,
       required_classes: replacementClasses,
       max_members: 2,
