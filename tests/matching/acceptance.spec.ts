@@ -122,6 +122,50 @@ test.describe("지연·만료·거절", () => {
 });
 
 test.describe("복구와 방 수명주기", () => {
+  test("파티장이 대기 중일 때 마지막 파티원의 요청으로 즉시 잡힌 팝업도 표시된다", async ({ browser }) => {
+    await withParty(browser, 5, async (harness) => {
+      const lastMember = harness.members.at(-1)!;
+      for (const member of harness.members.slice(0, -1)) {
+        const response = await member.context.request.post("/api/matching", {
+          data: {
+            role: "member",
+            dungeonId: harness.dungeonId,
+            characterId: member.characterId,
+            stage: 3,
+          },
+        });
+        expect(response.ok()).toBeTruthy();
+      }
+      const leaderResponse = await harness.leader.context.request.post("/api/matching", {
+        data: {
+          role: "leader",
+          dungeonId: harness.dungeonId,
+          characterId: harness.leader.characterId,
+          stage: 3,
+          minCombatPower: 700_000,
+          requiredClasses: harness.members.map((member) => member.className),
+        },
+      });
+      expect(leaderResponse.ok()).toBeTruthy();
+
+      // APIRequest deliberately bypasses the page's immediate CustomEvent.
+      // The global fallback poll must still surface the acceptance prompt.
+      const lastResponse = await lastMember.context.request.post("/api/matching", {
+        data: {
+          role: "member",
+          dungeonId: harness.dungeonId,
+          characterId: lastMember.characterId,
+          stage: 3,
+        },
+      });
+      expect(lastResponse.ok()).toBeTruthy();
+      await expect(lastMember.page.getByText("매칭 수락 대기 중")).toBeVisible({
+        timeout: 5_000,
+      });
+      await rejectInUi(lastMember);
+    });
+  });
+
   test("Realtime 이벤트를 놓친 사용자가 새로고침 후 확정 방을 복구한다", async ({ browser }) => {
     await withParty(browser, 5, async (harness) => {
       const temporaryMatchId = await queueParty(harness);

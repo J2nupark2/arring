@@ -240,8 +240,8 @@ export function GlobalMatchingProvider() {
   }, [router]);
 
   useEffect(() => {
-    if (!matchStatus?.active) return;
     const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       void fetchMatchStatus(sessionStartedAt.current).then((status) => {
         if (!status) return;
         if (status.matched && status.roomCode) {
@@ -253,9 +253,9 @@ export function GlobalMatchingProvider() {
         }
         setMatchStatus(status.active ? status : null);
       });
-    }, 3000);
+    }, 2000);
     return () => window.clearInterval(id);
-  }, [matchStatus?.active, router]);
+  }, [router]);
 
   useEffect(() => {
     if (!matchStatus?.temporaryMatch && !matchStatus?.autoLeadEligibleAt) return;
