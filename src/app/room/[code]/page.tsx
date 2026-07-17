@@ -4,7 +4,6 @@ import { AppHeader } from "@/components/app-header";
 import { FriendSidebar } from "@/components/friends/friend-sidebar";
 import { FriendsProvider } from "@/components/friends/friends-provider";
 import { LinkButton } from "@/components/link-button";
-import { CopyInvite } from "@/components/room/copy-invite";
 import { PasswordGate } from "@/components/room/password-gate";
 import { VoiceRoom } from "@/components/room/voice-room";
 import { formatAion2InviteName } from "@/lib/aion2-invite";
@@ -201,15 +200,8 @@ export default async function RoomPage({
               <CardHeader>
                 <CardTitle>{room.title}</CardTitle>
                 <CardDescription>
-                  방 코드{" "}
-                  <span className="font-mono font-semibold text-primary">
-                    {room.code}
-                  </span>{" "}
-                  — 코드나 링크를 공유하면 파티원이 바로 들어올 수 있어요.
+                  매칭이 완료된 파티원만 참여하는 통화방입니다.
                 </CardDescription>
-                <div className="pt-2">
-                  <CopyInvite code={room.code} />
-                </div>
               </CardHeader>
               <CardContent>
                 <VoiceRoom
