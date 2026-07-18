@@ -97,6 +97,11 @@ function dungeonDisplayName(dungeon: Dungeon | undefined) {
   return parsed.difficulty ? parsed.baseName : dungeon.name;
 }
 
+function difficultySortValue(difficulty: string | null) {
+  const index = DIFFICULTIES.indexOf(difficulty as (typeof DIFFICULTIES)[number]);
+  return index === -1 ? DIFFICULTIES.length : index;
+}
+
 async function requestMatch(body: {
   role: "leader" | "member";
   dungeonId: string;
@@ -244,12 +249,8 @@ export function MatchingPanel({
           parseDungeonDifficulty(b.name).baseName,
           "ko",
         ) ||
-        DIFFICULTIES.indexOf(
-          parseDungeonDifficulty(a.name).difficulty as (typeof DIFFICULTIES)[number],
-        ) -
-          DIFFICULTIES.indexOf(
-            parseDungeonDifficulty(b.name).difficulty as (typeof DIFFICULTIES)[number],
-          ) ||
+        difficultySortValue(parseDungeonDifficulty(a.name).difficulty) -
+          difficultySortValue(parseDungeonDifficulty(b.name).difficulty) ||
         a.name.localeCompare(b.name, "ko"),
     );
   const categoryDungeonGroups = [
@@ -258,8 +259,23 @@ export function MatchingPanel({
     .sort((a, b) => b - a)
     .map((tier) => ({
       tier,
-      dungeons: categoryDungeons.filter(
-        (dungeon) => (dungeon.tier ?? 1) === tier,
+      dungeonRows: Object.values(
+        categoryDungeons
+          .filter((dungeon) => (dungeon.tier ?? 1) === tier)
+          .reduce<Record<string, Dungeon[]>>((rows, dungeon) => {
+            const parsed = parseDungeonDifficulty(dungeon.name);
+            const key = parsed.baseName || dungeon.name;
+            rows[key] = [...(rows[key] ?? []), dungeon];
+            return rows;
+          }, {}),
+      ).map((row) =>
+        row.sort(
+          (a, b) =>
+            difficultySortValue(parseDungeonDifficulty(a.name).difficulty) -
+              difficultySortValue(parseDungeonDifficulty(b.name).difficulty) ||
+            a.sort_order - b.sort_order ||
+            a.name.localeCompare(b.name, "ko"),
+        ),
       ),
     }));
 
@@ -821,58 +837,65 @@ export function MatchingPanel({
                           ★ x {group.tier}
                         </h3>
                         <span className="text-xs text-muted-foreground">
-                          {group.dungeons.length}개
+                          {group.dungeonRows.reduce((count, row) => count + row.length, 0)}개
                         </span>
                       </div>
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                        {group.dungeons.map((dungeon) => {
-                          const selected = dungeon.id === dungeonId;
-                          const parsedDungeon = parseDungeonDifficulty(dungeon.name);
-                          const savedProgress =
-                            progress.find((item) => item.dungeonId === dungeon.id)
-                              ?.stage ?? 0;
-                          return (
-                            <button
-                              key={dungeon.id}
-                              type="button"
-                              onClick={() => changeDungeon(dungeon.id)}
-                              aria-pressed={selected}
-                              className={`min-h-24 rounded-md border p-3 text-left transition-colors ${
-                                selected
-                                  ? "border-primary bg-primary/15"
-                                  : "bg-background/50 hover:bg-muted/60"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <span className="min-w-0 text-sm font-semibold">
-                                  {parsedDungeon.baseName}
-                                </span>
-                                <div className="flex shrink-0 flex-col items-end gap-1">
-                                  {parsedDungeon.difficulty && (
-                                    <Badge variant={selected ? "default" : "secondary"}>
-                                      {parsedDungeon.difficulty}
-                                    </Badge>
+                      <div className="flex flex-col gap-2">
+                        {group.dungeonRows.map((row) => (
+                          <div
+                            key={row.map((dungeon) => dungeon.id).join(":")}
+                            className="grid gap-2 sm:grid-cols-2"
+                          >
+                            {row.map((dungeon) => {
+                              const selected = dungeon.id === dungeonId;
+                              const parsedDungeon = parseDungeonDifficulty(dungeon.name);
+                              const savedProgress =
+                                progress.find((item) => item.dungeonId === dungeon.id)
+                                  ?.stage ?? 0;
+                              return (
+                                <button
+                                  key={dungeon.id}
+                                  type="button"
+                                  onClick={() => changeDungeon(dungeon.id)}
+                                  aria-pressed={selected}
+                                  className={`min-h-24 rounded-md border p-3 text-left transition-colors ${
+                                    selected
+                                      ? "border-primary bg-primary/15"
+                                      : "bg-background/50 hover:bg-muted/60"
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="min-w-0 text-sm font-semibold">
+                                      {parsedDungeon.baseName}
+                                    </span>
+                                    <div className="flex shrink-0 flex-col items-end gap-1">
+                                      {parsedDungeon.difficulty && (
+                                        <Badge variant={selected ? "default" : "secondary"}>
+                                          {parsedDungeon.difficulty}
+                                        </Badge>
+                                      )}
+                                      <Badge variant="outline">
+                                        {partySizeForDungeon(dungeon)}명
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap gap-1 text-xs text-muted-foreground">
+                                    <span>기믹 {dungeon.gimmick_stages.length}단계</span>
+                                    <span>·</span>
+                                    <span>
+                                      내 진도 {stageLabel(dungeon, savedProgress)}
+                                    </span>
+                                  </div>
+                                  {dungeon.gimmick_stages.length > 0 && (
+                                    <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                                      {dungeon.gimmick_stages.join(" / ")}
+                                    </p>
                                   )}
-                                  <Badge variant="outline">
-                                    {partySizeForDungeon(dungeon)}명
-                                  </Badge>
-                                </div>
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-1 text-xs text-muted-foreground">
-                                <span>기믹 {dungeon.gimmick_stages.length}단계</span>
-                                <span>·</span>
-                                <span>
-                                  내 진도 {stageLabel(dungeon, savedProgress)}
-                                </span>
-                              </div>
-                              {dungeon.gimmick_stages.length > 0 && (
-                                <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
-                                  {dungeon.gimmick_stages.join(" / ")}
-                                </p>
-                              )}
-                            </button>
-                          );
-                        })}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ))}
                       </div>
                     </section>
                   ))}
