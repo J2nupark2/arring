@@ -115,7 +115,6 @@ export async function POST(request: NextRequest) {
           "id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes",
         )
         .eq("room_id", roomId)
-        .eq("leader_id", user.id)
         .eq("status", "matched")
         .order("matched_at", { ascending: false })
         .limit(1)

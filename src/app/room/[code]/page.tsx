@@ -81,6 +81,7 @@ export default async function RoomPage({
   const [
     { data: memberCount },
     { data: ownActiveRow },
+    { data: ownLeftRow },
     { data: profile },
     { data: hasPasswordRaw },
     { data: ownQueueMatch },
@@ -98,6 +99,14 @@ export default async function RoomPage({
       .eq("room_id", room.id)
       .eq("user_id", user.id)
       .is("left_at", null)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("room_participants")
+      .select("id")
+      .eq("room_id", room.id)
+      .eq("user_id", user.id)
+      .not("left_at", "is", null)
       .limit(1)
       .maybeSingle(),
     supabase.from("profiles").select("nickname, server").eq("id", user.id).single(),
@@ -137,6 +146,12 @@ export default async function RoomPage({
   if (ownKick) {
     redirect(
       "/party?error=" + encodeURIComponent("방장에 의해 추방된 방에는 다시 입장할 수 없습니다."),
+    );
+  }
+
+  if (!ownActiveRow && ownLeftRow) {
+    redirect(
+      "/party?error=" + encodeURIComponent("이미 나간 방에는 다시 입장할 수 없습니다."),
     );
   }
 

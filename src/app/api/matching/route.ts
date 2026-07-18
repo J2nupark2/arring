@@ -319,6 +319,13 @@ async function createRoom(
       .single();
 
     if (error?.code === "23505") continue;
+    if (
+      error?.code === "23503" &&
+      error.message.includes("rooms_created_by_fkey")
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      continue;
+    }
     const createdRoom = room as { id: string; code: string } | null;
     if (error || !createdRoom) throw new Error(error?.message ?? "방 생성 실패");
 

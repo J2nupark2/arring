@@ -160,7 +160,10 @@ export function useVoiceRoom({
         .eq("room_id", roomId)
         .is("left_at", null);
       const ids = [...new Set((rows ?? []).map((row) => row.user_id))];
-      if (!active || ids.length === 0) return;
+      if (!active) return;
+
+      setParticipants((prev) => prev.filter((participant) => ids.includes(participant.id)));
+      if (ids.length === 0) return;
 
       const { data: profiles } = await supabase
         .from("profiles")
@@ -186,6 +189,9 @@ export function useVoiceRoom({
     }
 
     void refreshPersistedRoster();
+    const rosterRefreshId = window.setInterval(() => {
+      void refreshPersistedRoster();
+    }, 2000);
     const rosterChannel = supabase
       .channel(`room-roster:${roomId}:${crypto.randomUUID()}`)
       .on(
@@ -202,6 +208,7 @@ export function useVoiceRoom({
 
     return () => {
       active = false;
+      window.clearInterval(rosterRefreshId);
       void supabase.removeChannel(rosterChannel);
     };
   }, [roomId, userId, upsertParticipant]);
