@@ -49,9 +49,6 @@ export function MatchFloatingStatus({
   const waitingCount = status.waitingCount ?? 0;
   const needed = status.needed ?? 0;
   const temporaryMatch = status.temporaryMatch;
-  const acceptedCount =
-    temporaryMatch?.responses.filter((response) => response.status === "accepted").length ?? 0;
-  const totalResponses = temporaryMatch?.responses.length ?? 5;
   const remainingSeconds = temporaryMatch
     ? Math.max(
         0,
@@ -75,8 +72,7 @@ export function MatchFloatingStatus({
               매칭 수락 대기 중
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              전원 수락 시 파티가 확정됩니다. {acceptedCount}/{totalResponses}명
-              수락, {remainingSeconds}초 남음
+              전원 응답이 확인되면 파티가 확정됩니다. {remainingSeconds}초 남음
             </p>
             {temporaryMatch.role === "leader" && (
               <p className="mt-1 text-xs font-medium text-primary">

@@ -30,7 +30,8 @@ for (const size of [5, 10] as const) {
       await withParty(browser, size, async (harness) => {
         const temporaryMatchId = await queueParty(harness);
         await Promise.all(harness.members.map(acceptInUi));
-        await expect(harness.leader.page.getByText(/\d+\/\d+명 수락/)).toBeVisible();
+        await expect(harness.leader.page.getByText(/초 남음/)).toBeVisible();
+        await expect(harness.leader.page.getByText(/\d+\/\d+명 수락/)).not.toBeVisible();
         await acceptInUi(harness.leader);
         const room = await assertSingleRoom(harness, temporaryMatchId);
         await Promise.all(harness.users.map((user) => expect(user.page).toHaveURL(new RegExp(`/room/${room.code}$`), { timeout: 15_000 })));

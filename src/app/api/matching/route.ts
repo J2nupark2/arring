@@ -1124,7 +1124,20 @@ async function handleTemporaryMatchResponse(
 
   const roomCode = await confirmTemporaryMatch(admin, pending.id);
   if (roomCode) {
-    return { matched: true, active: false, state: "matched" satisfies MatchState, roomCode };
+    return {
+      matched: false,
+      active: true,
+      state: "processing" satisfies MatchState,
+      temporaryMatch: {
+        ...pending,
+        responseStatus: "accepted" satisfies MatchResponseStatus,
+        responses: pending.responses.map((response) =>
+          response.userId === userId
+            ? { ...response, status: "accepted" satisfies MatchResponseStatus }
+            : response,
+        ),
+      },
+    };
   }
 
   const nextPending = await findPendingTemporaryMatch(admin, userId);

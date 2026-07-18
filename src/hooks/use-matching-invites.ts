@@ -8,7 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 export type MatchingInvite = {
   inviteId: string;
   senderId: string;
-  matchRequestId: string;
+  matchRequestId: string | null;
+  draftId: string | null;
   nickname: string;
   dungeonName: string;
   stage: number;
@@ -79,7 +80,9 @@ export function useMatchingInvites(isGuest: boolean) {
         return;
       }
       setIncoming((prev) => prev.filter((invite) => invite.inviteId !== inviteId));
+      const result = data as { ok: true; accepted: boolean; draftId?: string | null };
       toast.success(accept ? "파티 매칭 대기에 합류했습니다." : "파티 초대를 거절했습니다.");
+      return result;
     },
     [],
   );

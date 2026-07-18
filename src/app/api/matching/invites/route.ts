@@ -253,11 +253,15 @@ export async function PATCH(request: NextRequest) {
     .eq("id", body.inviteId)
     .eq("receiver_id", user.id)
     .eq("status", "pending")
-    .select("match_request_id, receiver_id")
+    .select("match_request_id, draft_id, receiver_id")
     .maybeSingle();
 
   if (inviteError) return jsonError(inviteError.message, 500);
-  const invite = inviteRow as { match_request_id: string | null; receiver_id: string } | null;
+  const invite = inviteRow as {
+    match_request_id: string | null;
+    draft_id: string | null;
+    receiver_id: string;
+  } | null;
   if (!invite) return jsonError("이미 처리된 초대입니다.", 409);
 
   if (body.accept && invite.match_request_id) {
@@ -299,5 +303,9 @@ export async function PATCH(request: NextRequest) {
     ]);
   }
 
-  return NextResponse.json({ ok: true, accepted: body.accept === true });
+  return NextResponse.json({
+    ok: true,
+    accepted: body.accept === true,
+    draftId: invite.draft_id,
+  });
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { ChevronDown, Loader2, RadioTower, ShieldCheck, Swords, Users } from "lucide-react";
@@ -155,6 +155,8 @@ export function MatchingPanel({
   isGuest: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const matchingDraftParam = searchParams.get("matchingDraft");
   const { friends } = useFriendsContext();
   const [mode, setMode] = useState<"leader" | "member">("member");
   const [dungeonId, setDungeonId] = useState(dungeons[0]?.id ?? "");
@@ -182,7 +184,15 @@ export function MatchingPanel({
   const [allowConditionRelaxation, setAllowConditionRelaxation] = useState(false);
   const [pending, setPending] = useState(false);
   const [localInviteStatuses, setLocalInviteStatuses] = useState<MatchStatus["inviteStatuses"]>([]);
-  const [inviteDraftId, setInviteDraftId] = useState(() => crypto.randomUUID());
+  const [inviteDraftId, setInviteDraftId] = useState(
+    () => matchingDraftParam ?? crypto.randomUUID(),
+  );
+  const [matchingWaitingRoomDraftId, setMatchingWaitingRoomDraftId] = useState<string | null>(
+    () => matchingDraftParam,
+  );
+  const currentInviteDraftId = matchingDraftParam ?? inviteDraftId;
+  const isMatchingWaitingRoom =
+    !!matchingDraftParam || matchingWaitingRoomDraftId === currentInviteDraftId;
 
   const maxMembers = partySizeForDungeon(selectedDungeon);
   const slottedFriendIds = invitedSlots
@@ -232,7 +242,7 @@ export function MatchingPanel({
 
     let active = true;
     async function refreshInviteStatuses() {
-      const statuses = await fetchDraftInviteStatuses(inviteDraftId);
+      const statuses = await fetchDraftInviteStatuses(currentInviteDraftId);
       if (!active || statuses.length === 0) return;
       setLocalInviteStatuses(statuses);
     }
@@ -244,7 +254,7 @@ export function MatchingPanel({
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user || !active) return;
       channel = supabase
-        .channel(`draft-invites:${inviteDraftId}:${crypto.randomUUID()}`)
+        .channel(`draft-invites:${currentInviteDraftId}:${crypto.randomUUID()}`)
         .on(
           "postgres_changes",
           {
@@ -266,14 +276,16 @@ export function MatchingPanel({
         void supabase.removeChannel(channel);
       }
     };
-  }, [inviteDraftId, isGuest, mode, slottedFriendIds.length]);
+  }, [currentInviteDraftId, isGuest, mode, slottedFriendIds.length]);
 
   function changeDungeon(nextDungeonId: string) {
     setDungeonId(nextDungeonId);
     const nextDungeon = dungeons.find((dungeon) => dungeon.id === nextDungeonId);
     if (nextDungeon?.category) setContentCategory(nextDungeon.category);
     setContentPickerOpen(false);
-    setInviteDraftId(crypto.randomUUID());
+    const nextDraftId = crypto.randomUUID();
+    setInviteDraftId(nextDraftId);
+    setMatchingWaitingRoomDraftId(null);
     setLocalInviteStatuses([]);
     const nextStage = progress.find((item) => item.dungeonId === nextDungeonId)?.stage ?? 0;
     setStage(nextStage);
@@ -337,7 +349,7 @@ export function MatchingPanel({
 
     try {
       const result = await sendMatchingInvite({
-        draftId: inviteDraftId,
+        draftId: currentInviteDraftId,
         receiverId: friend.user_id,
         dungeonId,
         characterId,
@@ -388,6 +400,12 @@ export function MatchingPanel({
       return;
     }
     if (!dungeonId || pending) return;
+    if (mode === "leader" && !isMatchingWaitingRoom) {
+      setMatchingWaitingRoomDraftId(currentInviteDraftId);
+      router.push(`/party?matchingDraft=${encodeURIComponent(currentInviteDraftId)}`);
+      toast.success("매칭 대기룸을 만들었습니다. 여기서 친구를 초대할 수 있습니다.");
+      return;
+    }
     setPending(true);
     try {
       requestNotificationPermission();
@@ -410,7 +428,7 @@ export function MatchingPanel({
         requiredClasses: requiredClassesForMatching,
         maxMembers,
         invitedFriendIds,
-        draftId: inviteDraftId,
+        draftId: currentInviteDraftId,
         canAutoLead: mode === "member" && canAutoLead,
         autoLeadAfterSeconds,
         allowConditionRelaxation,
@@ -481,6 +499,17 @@ export function MatchingPanel({
           </div>
         )}
 
+        {isMatchingWaitingRoom && (
+          <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-3 text-sm">
+            <div className="font-medium">매칭 대기룸</div>
+            <p className="mt-1 text-muted-foreground">
+              {mode === "leader"
+                ? "친구를 초대하고 준비 완료 상태를 확인한 뒤 매칭을 시작하세요."
+                : "초대한 파티장이 매칭을 시작할 때까지 이 화면에서 기다려주세요."}
+            </p>
+          </div>
+        )}
+
         <div className="grid gap-3 sm:grid-cols-3">
           <button
             type="button"
@@ -490,7 +519,7 @@ export function MatchingPanel({
               mode === "member" ? "border-primary bg-primary/10" : "hover:bg-muted/50"
             }`}
           >
-            <HeadsetLabel icon={<Users className="size-4" />} title="파티원" body="내 진도를 기준으로 자동 대기" />
+            <HeadsetLabel icon={<Users className="size-4" />} title="매칭" body="내 진도를 기준으로 자동 대기" />
           </button>
           <button
             type="button"
@@ -500,7 +529,7 @@ export function MatchingPanel({
               mode === "leader" ? "border-primary bg-primary/10" : "hover:bg-muted/50"
             }`}
           >
-            <HeadsetLabel icon={<ShieldCheck className="size-4" />} title="파티장" body="리딩 가능, 조합과 투력 조건 설정" />
+            <HeadsetLabel icon={<ShieldCheck className="size-4" />} title="매칭 생성" body="대기룸 생성, 친구 초대와 조건 설정" />
           </button>
         </div>
 
@@ -819,11 +848,15 @@ export function MatchingPanel({
                   !hasLinkedCharacter ||
                   !characterId ||
                   dungeons.length === 0 ||
-                  hasUnreadyInvitedFriends
+                  (mode === "leader" && isMatchingWaitingRoom && hasUnreadyInvitedFriends)
                 }
               >
                 {pending && <Loader2 className="size-4 animate-spin" />}
-                {mode === "leader" ? "매칭 열기" : "자동매칭 대기"}
+                {mode === "leader"
+                  ? isMatchingWaitingRoom
+                    ? "매칭 시작"
+                    : "매칭 생성"
+                  : "매칭"}
               </Button>
             )}
           </div>

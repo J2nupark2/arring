@@ -53,7 +53,8 @@ test.describe("보이는 기준 10가지", () => {
       const temporaryMatchId = await queueParty(harness);
       await Promise.all(harness.users.map(expectPrompt));
       await Promise.all(harness.members.map(acceptInUi));
-      await expect(harness.leader.page.getByText("4/5명 수락")).toBeVisible();
+      await expect(harness.leader.page.getByText(/초 남음/)).toBeVisible();
+      await expect(harness.leader.page.getByText(/\d+\/\d+명 수락/)).not.toBeVisible();
       await acceptInUi(harness.leader);
       const room = await assertSingleRoom(harness, temporaryMatchId);
       await Promise.all(harness.users.map((user) => expectRoomScreen(user.page, room.code)));
@@ -65,7 +66,8 @@ test.describe("보이는 기준 10가지", () => {
       const temporaryMatchId = await queueParty(harness);
       await Promise.all(harness.users.map(expectPrompt));
       await Promise.all(harness.members.map(acceptInUi));
-      await expect(harness.leader.page.getByText("9/10명 수락")).toBeVisible();
+      await expect(harness.leader.page.getByText(/초 남음/)).toBeVisible();
+      await expect(harness.leader.page.getByText(/\d+\/\d+명 수락/)).not.toBeVisible();
       await acceptInUi(harness.leader);
       const room = await assertSingleRoom(harness, temporaryMatchId);
       await Promise.all(harness.users.map((user) => expectRoomScreen(user.page, room.code)));
@@ -79,7 +81,8 @@ test.describe("보이는 기준 10가지", () => {
       await Promise.all(harness.users.map(expectPrompt));
       await Promise.all(harness.users.filter((user) => user !== last).map(acceptInUi));
       await setTemporaryExpiry(temporaryMatchId, new Date(Date.now() + 8_000).toISOString());
-      await expect(last.page.getByText("4/5명 수락")).toBeVisible();
+      await expect(last.page.getByText(/초 남음/)).toBeVisible();
+      await expect(last.page.getByText(/\d+\/\d+명 수락/)).not.toBeVisible();
       await last.page.waitForTimeout(5_000);
       await acceptInUi(last);
       const room = await assertSingleRoom(harness, temporaryMatchId);
@@ -94,7 +97,8 @@ test.describe("보이는 기준 10가지", () => {
       await Promise.all(harness.users.map(expectPrompt));
       await Promise.all(harness.users.filter((user) => user !== last).map(acceptInUi));
       await setTemporaryExpiry(temporaryMatchId, new Date(Date.now() + 8_000).toISOString());
-      await expect(last.page.getByText("9/10명 수락")).toBeVisible();
+      await expect(last.page.getByText(/초 남음/)).toBeVisible();
+      await expect(last.page.getByText(/\d+\/\d+명 수락/)).not.toBeVisible();
       await last.page.waitForTimeout(5_000);
       await acceptInUi(last);
       const room = await assertSingleRoom(harness, temporaryMatchId);
