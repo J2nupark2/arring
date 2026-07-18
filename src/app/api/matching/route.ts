@@ -1572,9 +1572,6 @@ async function getMatchStatus(
     };
   }
 
-  const existing = await findExistingMatch(admin, userId, matchedAfter);
-  if (existing.matched) return { ...existing, state: "matched" satisfies MatchState, active: false };
-
   await tryWaitingLeaderMatches(admin);
   await promoteEligibleAutoLeads(admin);
 
@@ -1587,11 +1584,6 @@ async function getMatchStatus(
       temporaryMatch: nextPendingTemporaryMatch,
       role: nextPendingTemporaryMatch.role,
     };
-  }
-
-  const nextExisting = await findExistingMatch(admin, userId, matchedAfter);
-  if (nextExisting.matched) {
-    return { ...nextExisting, state: "matched" satisfies MatchState, active: false };
   }
 
   const { data: activeRequestRow } = await admin
@@ -1676,6 +1668,11 @@ async function getMatchStatus(
       autoLeadEligibleAt: activeQueue.auto_lead_eligible_at,
       autoLeadAfterSeconds: activeQueue.auto_lead_after_seconds,
     };
+  }
+
+  const existing = await findExistingMatch(admin, userId, matchedAfter);
+  if (existing.matched) {
+    return { ...existing, state: "matched" satisfies MatchState, active: false };
   }
 
   const [{ data: cancelledRequest }, { data: cancelledQueue }] = await Promise.all([
