@@ -47,8 +47,14 @@ type MatchCharacter = {
 };
 
 function stageLabel(dungeon: Dungeon | undefined, stage: number) {
-  if (!dungeon || stage <= 0) return "처음";
-  return dungeon.gimmick_stages[stage - 1] ?? "클리어";
+  if (!dungeon) return "-";
+  return dungeon.gimmick_stages[stage - 1] ?? dungeon.gimmick_stages[0] ?? "-";
+}
+
+function normalizeSelectableStage(dungeon: Dungeon | undefined, stage: number) {
+  if (!dungeon?.gimmick_stages.length) return 0;
+  const maxStage = dungeon.gimmick_stages.length;
+  return Math.min(maxStage, Math.max(1, Math.trunc(Number(stage) || 0)));
 }
 
 function partySizeForDungeon(dungeon: Dungeon | undefined) {
@@ -210,7 +216,10 @@ export function MatchingPanel({
   const [contentCategory, setContentCategory] = useState(
     selectedDungeon?.category ?? CONTENT_CATEGORIES[0],
   );
-  const savedStage = progress.find((item) => item.dungeonId === dungeonId)?.stage ?? 0;
+  const savedStage = normalizeSelectableStage(
+    selectedDungeon,
+    progress.find((item) => item.dungeonId === dungeonId)?.stage ?? 0,
+  );
   const primaryCharacter = characters.find((character) => character.isPrimary) ?? characters[0];
   const [characterId, setCharacterId] = useState(primaryCharacter?.id ?? "");
   const selectedCharacter = characters.find((character) => character.id === characterId);
@@ -252,7 +261,8 @@ export function MatchingPanel({
       (userId) => currentInviteStatusByUser.get(userId) !== "accepted",
     );
   const hasLinkedCharacter = characters.length > 0 || (!!profile?.charClass && !!profile.combatPower);
-  const stages = ["처음", ...(selectedDungeon?.gimmick_stages ?? []), "클리어"];
+  const stages = selectedDungeon?.gimmick_stages ?? [];
+  const selectedStage = normalizeSelectableStage(selectedDungeon, stage);
   const contentCategories = [
     ...CONTENT_CATEGORIES,
     ...dungeons
@@ -354,7 +364,7 @@ export function MatchingPanel({
     setMatchingWaitingRoomDraftId(null);
     setLocalInviteStatuses([]);
     const nextStage = progress.find((item) => item.dungeonId === nextDungeonId)?.stage ?? 0;
-    setStage(nextStage);
+    setStage(normalizeSelectableStage(nextDungeon, nextStage));
     setRequiredClasses((current) => {
       const nextCount = memberSlotCountForDungeon(nextDungeon);
       return Array.from(
@@ -419,7 +429,7 @@ export function MatchingPanel({
         receiverId: friend.user_id,
         dungeonId,
         characterId,
-        stage,
+        stage: selectedStage,
         minCombatPower: combatPowerFromK(minCombatPowerK),
         maxMembers,
         requiredClasses: requiredClasses.filter(Boolean),
@@ -489,7 +499,7 @@ export function MatchingPanel({
         role: mode,
         dungeonId,
         characterId,
-        stage,
+        stage: selectedStage,
         minCombatPower: combatPowerFromK(minCombatPowerK),
         requiredClasses: requiredClassesForMatching,
         maxMembers,
@@ -588,7 +598,7 @@ export function MatchingPanel({
             <div className="rounded-lg border bg-card px-4 py-3">
               <div className="text-xs text-muted-foreground">요구 진도</div>
               <div className="mt-1 text-sm font-semibold">
-                {stageLabel(selectedDungeon, stage)}
+                {stageLabel(selectedDungeon, selectedStage)}
               </div>
             </div>
             <div className="rounded-lg border bg-card px-4 py-3">
@@ -777,15 +787,23 @@ export function MatchingPanel({
               </Label>
               <select
                 id="match-stage"
-                value={stage}
-                onChange={(e) => setStage(Number(e.target.value))}
+                value={selectedStage}
+                onChange={(e) =>
+                  setStage(normalizeSelectableStage(selectedDungeon, Number(e.target.value)))
+                }
                 className="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                {stages.map((label, index) => (
-                  <option key={label + index} value={index} className="bg-popover">
-                    {label}
+                {stages.length === 0 ? (
+                  <option value={0} className="bg-popover">
+                    진도 없음
                   </option>
-                ))}
+                ) : (
+                  stages.map((label, index) => (
+                    <option key={label + index} value={index + 1} className="bg-popover">
+                      {label}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
@@ -911,7 +929,7 @@ export function MatchingPanel({
                                     <span>기믹 {dungeon.gimmick_stages.length}단계</span>
                                     <span>·</span>
                                     <span>
-                                      내 진도 {stageLabel(dungeon, savedProgress)}
+                                  내 진도 {stageLabel(dungeon, savedProgress)}
                                     </span>
                                   </div>
                                   {dungeon.gimmick_stages.length > 0 && (
@@ -1070,7 +1088,7 @@ export function MatchingPanel({
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm text-muted-foreground">
             <span>
-              선택 진도: {stageLabel(selectedDungeon, stage)}
+              선택 진도: {stageLabel(selectedDungeon, selectedStage)}
               {selectedCharacter?.className && ` · ${selectedCharacter.name} ${selectedCharacter.className}`}
               {selectedCharacter?.combatPower && ` · 투력 ${formatCombatPower(selectedCharacter.combatPower)}`}
               {mode === "leader" && ` · 최소 ${minCombatPowerK.toLocaleString()}k · ${maxMembers}명 고정`}
