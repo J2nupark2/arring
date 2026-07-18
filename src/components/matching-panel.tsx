@@ -102,6 +102,30 @@ function difficultySortValue(difficulty: string | null) {
   return index === -1 ? DIFFICULTIES.length : index;
 }
 
+function difficultyCardClass(difficulty: string | null, selected: boolean) {
+  if (difficulty === "보통") {
+    return selected
+      ? "border-sky-400 bg-sky-500/15 shadow-[0_0_0_1px_rgba(56,189,248,0.35)]"
+      : "border-sky-500/55 bg-sky-500/5 hover:bg-sky-500/10 hover:border-sky-400";
+  }
+  if (difficulty === "어려움") {
+    return selected
+      ? "border-violet-400 bg-violet-500/15 shadow-[0_0_0_1px_rgba(167,139,250,0.4)]"
+      : "border-violet-500/60 bg-violet-500/5 hover:bg-violet-500/10 hover:border-violet-400";
+  }
+  return selected
+    ? "border-primary bg-primary/15"
+    : "bg-background/50 hover:bg-muted/60";
+}
+
+function difficultyBadgeClass(difficulty: string | null) {
+  if (difficulty === "보통") return "border-sky-400/70 bg-sky-500/15 text-sky-200";
+  if (difficulty === "어려움") {
+    return "border-violet-400/70 bg-violet-500/15 text-violet-200";
+  }
+  return "";
+}
+
 async function requestMatch(body: {
   role: "leader" | "member";
   dungeonId: string;
@@ -858,11 +882,10 @@ export function MatchingPanel({
                                   type="button"
                                   onClick={() => changeDungeon(dungeon.id)}
                                   aria-pressed={selected}
-                                  className={`min-h-24 rounded-md border p-3 text-left transition-colors ${
-                                    selected
-                                      ? "border-primary bg-primary/15"
-                                      : "bg-background/50 hover:bg-muted/60"
-                                  }`}
+                                  className={`min-h-24 rounded-md border p-3 text-left transition-colors ${difficultyCardClass(
+                                    parsedDungeon.difficulty,
+                                    selected,
+                                  )}`}
                                 >
                                   <div className="flex items-start justify-between gap-2">
                                     <span className="min-w-0 text-sm font-semibold">
@@ -870,7 +893,12 @@ export function MatchingPanel({
                                     </span>
                                     <div className="flex shrink-0 flex-col items-end gap-1">
                                       {parsedDungeon.difficulty && (
-                                        <Badge variant={selected ? "default" : "secondary"}>
+                                        <Badge
+                                          variant="outline"
+                                          className={difficultyBadgeClass(
+                                            parsedDungeon.difficulty,
+                                          )}
+                                        >
                                           {parsedDungeon.difficulty}
                                         </Badge>
                                       )}
