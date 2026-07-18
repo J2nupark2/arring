@@ -26,6 +26,7 @@ type PresenceState = {
   nickname: string;
   inviteName?: string;
   characterRowId?: string | null;
+  className?: string | null;
   profileImageUrl?: string | null;
 };
 
@@ -41,6 +42,7 @@ export type Participant = {
   isSelf: boolean;
   muted: boolean;
   characterRowId: string | null;
+  className: string | null;
   profileImageUrl: string | null;
   isFriend: boolean;
 };
@@ -77,6 +79,7 @@ export function useVoiceRoom({
   inviteName,
   initialHostId,
   initialCharacterRowId,
+  initialClassName,
   initialProfileImageUrl,
   onKicked,
 }: {
@@ -87,6 +90,7 @@ export function useVoiceRoom({
   inviteName: string;
   initialHostId: string;
   initialCharacterRowId: string | null;
+  initialClassName: string | null;
   initialProfileImageUrl: string | null;
   onKicked?: () => void;
 }) {
@@ -134,6 +138,7 @@ export function useVoiceRoom({
       const next = {
         ...p,
         characterRowId: p.characterRowId ?? existing?.characterRowId ?? null,
+        className: p.className ?? existing?.className ?? null,
         profileImageUrl: p.profileImageUrl ?? existing?.profileImageUrl ?? null,
         isFriend: p.isFriend || existing?.isFriend || false,
       };
@@ -167,7 +172,7 @@ export function useVoiceRoom({
 
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("id, nickname, server")
+        .select("id, nickname, server, char_class")
         .in("id", ids);
       if (!active) return;
 
@@ -182,6 +187,7 @@ export function useVoiceRoom({
           isSelf: profile.id === userId,
           muted: true,
           characterRowId: null,
+          className: profile.char_class ?? null,
           profileImageUrl: null,
           isFriend: false,
         });
@@ -540,6 +546,7 @@ export function useVoiceRoom({
         isSelf: true,
         muted: false,
         characterRowId: initialCharacterRowId,
+        className: initialClassName,
         profileImageUrl: initialProfileImageUrl,
         isFriend: false,
       });
@@ -652,6 +659,7 @@ export function useVoiceRoom({
             isSelf: false,
             muted: false,
             characterRowId: presence.characterRowId ?? null,
+            className: presence.className ?? null,
             profileImageUrl: presence.profileImageUrl ?? null,
             isFriend: false,
           });
@@ -691,6 +699,7 @@ export function useVoiceRoom({
             nickname,
             inviteName,
             characterRowId: initialCharacterRowId,
+            className: initialClassName,
             profileImageUrl: initialProfileImageUrl,
           } satisfies PresenceState);
           const { data: activeParticipant } = await supabase
@@ -795,6 +804,7 @@ export function useVoiceRoom({
     nickname,
     inviteName,
     initialCharacterRowId,
+    initialClassName,
     initialProfileImageUrl,
   ]);
 
@@ -811,7 +821,7 @@ export function useVoiceRoom({
       const [characterResult, friendResult] = await Promise.all([
         supabase
           .from("aion2_characters")
-          .select("id, user_id, detail_data")
+          .select("id, user_id, class_name, detail_data")
           .in("user_id", ids)
           .order("is_primary", { ascending: false })
           .order("synced_at", { ascending: false }),
@@ -822,16 +832,18 @@ export function useVoiceRoom({
 
       const characterByUser = new Map<
         string,
-        { id: string; profileImageUrl: string | null }
+        { id: string; className: string | null; profileImageUrl: string | null }
       >();
       for (const character of (characterResult.data ?? []) as {
         id: string;
         user_id: string;
+        class_name: string | null;
         detail_data: unknown;
       }[]) {
         if (!characterByUser.has(character.user_id)) {
           characterByUser.set(character.user_id, {
             id: character.id,
+            className: character.class_name ?? null,
             profileImageUrl: getAion2ProfileImage(character.detail_data),
           });
         }
@@ -850,6 +862,7 @@ export function useVoiceRoom({
             ...participant,
             characterRowId:
               participant.characterRowId ?? fallbackCharacter?.id ?? null,
+            className: participant.className ?? fallbackCharacter?.className ?? null,
             profileImageUrl:
               participant.profileImageUrl ??
               fallbackCharacter?.profileImageUrl ??

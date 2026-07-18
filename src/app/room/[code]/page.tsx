@@ -131,7 +131,7 @@ export default async function RoomPage({
       .maybeSingle(),
     supabase
       .from("aion2_characters")
-      .select("id, detail_data")
+      .select("id, class_name, detail_data")
       .eq("user_id", user.id)
       .order("is_primary", { ascending: false })
       .order("synced_at", { ascending: false }),
@@ -194,6 +194,7 @@ export default async function RoomPage({
   );
   const characterRows = (ownCharacters ?? []) as {
     id: string;
+    class_name: string | null;
     detail_data: unknown;
   }[];
   const matchedCharacterRowId =
@@ -241,6 +242,7 @@ export default async function RoomPage({
                   maxMembers={room.max_members}
                   initialHostId={room.host_id ?? room.created_by}
                   initialCharacterRowId={roomCharacter?.id ?? null}
+                  initialClassName={roomCharacter?.class_name ?? null}
                   initialProfileImageUrl={getAion2ProfileImage(
                     roomCharacter?.detail_data,
                   )}

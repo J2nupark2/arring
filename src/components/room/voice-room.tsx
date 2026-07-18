@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useVoiceRoom } from "@/hooks/use-voice-room";
 import { sendFriendRequest } from "@/hooks/use-friends";
+import { getAion2ClassIconUrl } from "@/lib/aion2-class-icons";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,7 @@ export function VoiceRoom({
   maxMembers,
   initialHostId,
   initialCharacterRowId,
+  initialClassName,
   initialProfileImageUrl,
   isGuest = false,
 }: {
@@ -60,6 +62,7 @@ export function VoiceRoom({
   maxMembers: number;
   initialHostId: string;
   initialCharacterRowId: string | null;
+  initialClassName: string | null;
   initialProfileImageUrl: string | null;
   isGuest?: boolean;
 }) {
@@ -93,6 +96,7 @@ export function VoiceRoom({
     inviteName,
     initialHostId,
     initialCharacterRowId,
+    initialClassName,
     initialProfileImageUrl,
     onKicked: () => {
       router.push(
@@ -270,7 +274,9 @@ export function VoiceRoom({
       )}
 
       <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
-        {participants.map((p) => (
+        {participants.map((p) => {
+          const classIconUrl = getAion2ClassIconUrl(p.className);
+          return (
           <div
             key={p.id}
             className="flex min-w-0 flex-col rounded-md border bg-card p-1.5"
@@ -314,6 +320,22 @@ export function VoiceRoom({
                 {p.nickname}
                 {p.isSelf && " (나)"}
               </span>
+              {p.className && (
+                <span className="flex max-w-full items-center gap-1 rounded-full border bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  {classIconUrl ? (
+                    <span
+                      aria-hidden
+                      className="size-4 rounded-full bg-contain bg-center bg-no-repeat"
+                      style={{ backgroundImage: `url(${classIconUrl})` }}
+                    />
+                  ) : (
+                    <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[9px] font-semibold">
+                      {p.className.slice(0, 1)}
+                    </span>
+                  )}
+                  <span className="truncate">{p.className}</span>
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -325,7 +347,8 @@ export function VoiceRoom({
               <span className="whitespace-nowrap">닉네임 복사</span>
             </button>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <Dialog
@@ -357,6 +380,24 @@ export function VoiceRoom({
                 </DialogTitle>
               </DialogHeader>
               <div className="flex flex-col gap-3">
+                {selected.className && (
+                  <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm">
+                    {getAion2ClassIconUrl(selected.className) ? (
+                      <span
+                        aria-hidden
+                        className="size-6 rounded-full bg-contain bg-center bg-no-repeat"
+                        style={{
+                          backgroundImage: `url(${getAion2ClassIconUrl(selected.className)})`,
+                        }}
+                      />
+                    ) : (
+                      <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                        {selected.className.slice(0, 1)}
+                      </span>
+                    )}
+                    <span className="font-medium">{selected.className}</span>
+                  </div>
+                )}
                 {/* Only the host publishes audio, so a volume slider only
                     makes sense on the host's tile. */}
                 {!selected.isSelf && selected.id === hostId && (
