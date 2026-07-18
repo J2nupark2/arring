@@ -215,8 +215,7 @@ export function VoiceRoom({
             detail: { active: false, matched: false, state: "idle" },
           }),
         );
-        router.replace("/party");
-        router.refresh();
+        window.location.assign("/party");
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "방에서 나가지 못했습니다.");
       }

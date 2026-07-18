@@ -64,7 +64,13 @@ async function acceptAllAndSeeRoom(harness: PartyHarness, temporaryMatchId: stri
 }
 
 async function leaveRoom(user: TestUser) {
-  await user.page.getByRole("button", { name: "퇴장" }).click();
+  const leaveResponse = user.page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/rooms/leave") &&
+      response.request().method() === "POST",
+  );
+  await user.page.getByRole("button", { name: "퇴장" }).click({ force: true });
+  expect((await leaveResponse).ok()).toBeTruthy();
   await expect(user.page).toHaveURL(/\/party$/, { timeout: 10_000 });
   await expect(user.page.getByText("매칭 수락 대기 중")).not.toBeVisible();
 }

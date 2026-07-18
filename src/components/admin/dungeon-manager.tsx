@@ -25,6 +25,16 @@ const EMPTY_FORM = {
   sortOrder: 0,
 };
 
+const DIFFICULTIES = ["보통", "어려움"] as const;
+
+function stripDifficultySuffix(name: string) {
+  return name.replace(/\s*(?:\(|\[)?(?:보통|어려움)(?:\)|\])?\s*$/u, "").trim();
+}
+
+function dungeonNameWithDifficulty(name: string, difficulty: (typeof DIFFICULTIES)[number]) {
+  return `${stripDifficultySuffix(name)} ${difficulty}`;
+}
+
 function loadDungeons() {
   return createClient()
     .from("dungeons")
@@ -149,6 +159,43 @@ export function DungeonManager() {
       toast.error("변경에 실패했습니다: " + error.message);
       return;
     }
+    refresh();
+  }
+
+  async function cloneDifficulties(d: Dungeon) {
+    const baseName = stripDifficultySuffix(d.name);
+    const existingNames = new Set(
+      dungeons
+        .filter((dungeon) => dungeon.category === d.category)
+        .map((dungeon) => dungeon.name.trim()),
+    );
+    const rows = DIFFICULTIES
+      .map((difficulty, index) => ({
+        category: d.category,
+        name: dungeonNameWithDifficulty(baseName, difficulty),
+        gimmick_stages: d.gimmick_stages,
+        tier: d.tier ?? 1,
+        sort_order: d.sort_order * 10 + index,
+        is_active: d.is_active,
+      }))
+      .filter((row) => !existingNames.has(row.name));
+
+    if (rows.length === 0) {
+      toast.info("이미 보통/어려움 콘텐츠가 모두 있습니다.");
+      return;
+    }
+
+    const supabase = createClient();
+    const { error } = await supabase.from("dungeons").insert(rows);
+    if (error) {
+      toast.error("난이도 복제에 실패했습니다: " + error.message);
+      return;
+    }
+    toast.success(
+      rows.length === 2
+        ? `${baseName} 보통/어려움을 추가했습니다.`
+        : `${rows.map((row) => row.name).join(", ")}을 추가했습니다.`,
+    );
     refresh();
   }
 
@@ -349,6 +396,15 @@ export function DungeonManager() {
                       )}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
+                      {(d.category === "원정" || d.category === "성역") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => cloneDifficulties(d)}
+                        >
+                          보통/어려움 복제
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"

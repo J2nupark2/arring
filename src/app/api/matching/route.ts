@@ -148,6 +148,27 @@ async function getRoomCode(admin: AdminClient, roomId: string | null | undefined
   return room.code;
 }
 
+async function getActiveParticipantRoomCode(
+  admin: AdminClient,
+  roomId: string | null | undefined,
+  userId: string,
+) {
+  if (!roomId) return undefined;
+  const roomCode = await getRoomCode(admin, roomId);
+  if (!roomCode) return undefined;
+
+  const { data: participant } = await admin
+    .from("room_participants")
+    .select("id")
+    .eq("room_id", roomId)
+    .eq("user_id", userId)
+    .is("left_at", null)
+    .limit(1)
+    .maybeSingle();
+
+  return participant ? roomCode : undefined;
+}
+
 async function findExistingMatch(
   admin: AdminClient,
   userId: string,
@@ -164,9 +185,10 @@ async function findExistingMatch(
     .limit(1)
     .maybeSingle();
 
-  const queueRoomCode = await getRoomCode(
+  const queueRoomCode = await getActiveParticipantRoomCode(
     admin,
     (queueRow as { room_id: string | null } | null)?.room_id,
+    userId,
   );
   if (queueRoomCode) return { matched: true, roomCode: queueRoomCode };
 
@@ -180,9 +202,10 @@ async function findExistingMatch(
     .limit(1)
     .maybeSingle();
 
-  const requestRoomCode = await getRoomCode(
+  const requestRoomCode = await getActiveParticipantRoomCode(
     admin,
     (requestRow as { room_id: string | null } | null)?.room_id,
+    userId,
   );
   if (requestRoomCode) return { matched: true, roomCode: requestRoomCode };
 
@@ -220,9 +243,10 @@ async function findExistingMatch(
         error: confirmedTempError.message,
       });
     }
-    const confirmedRoomCode = await getRoomCode(
+    const confirmedRoomCode = await getActiveParticipantRoomCode(
       admin,
       (confirmedTemp as { room_id: string | null } | null)?.room_id,
+      userId,
     );
     if (confirmedRoomCode) return { matched: true, roomCode: confirmedRoomCode };
   }

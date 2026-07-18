@@ -80,6 +80,22 @@ function createInviteSlots(count: number) {
 }
 
 const CONTENT_CATEGORIES = ["원정", "초월", "성역"] as const;
+const DIFFICULTIES = ["보통", "어려움"] as const;
+
+function parseDungeonDifficulty(name: string) {
+  const match = name.match(/\s*(?:\(|\[)?(보통|어려움)(?:\)|\])?\s*$/u);
+  if (!match) return { baseName: name, difficulty: null as string | null };
+  return {
+    baseName: name.slice(0, match.index).trim(),
+    difficulty: match[1],
+  };
+}
+
+function dungeonDisplayName(dungeon: Dungeon | undefined) {
+  if (!dungeon) return "선택 없음";
+  const parsed = parseDungeonDifficulty(dungeon.name);
+  return parsed.difficulty ? parsed.baseName : dungeon.name;
+}
 
 async function requestMatch(body: {
   role: "leader" | "member";
@@ -224,6 +240,16 @@ export function MatchingPanel({
       (a, b) =>
         (b.tier ?? 1) - (a.tier ?? 1) ||
         a.sort_order - b.sort_order ||
+        parseDungeonDifficulty(a.name).baseName.localeCompare(
+          parseDungeonDifficulty(b.name).baseName,
+          "ko",
+        ) ||
+        DIFFICULTIES.indexOf(
+          parseDungeonDifficulty(a.name).difficulty as (typeof DIFFICULTIES)[number],
+        ) -
+          DIFFICULTIES.indexOf(
+            parseDungeonDifficulty(b.name).difficulty as (typeof DIFFICULTIES)[number],
+          ) ||
         a.name.localeCompare(b.name, "ko"),
     );
   const categoryDungeonGroups = [
@@ -463,6 +489,156 @@ export function MatchingPanel({
     }
   }
 
+  function leaveMatchingWaitingRoom() {
+    setMatchingWaitingRoomDraftId(null);
+    setLocalInviteStatuses([]);
+    router.push("/party");
+  }
+
+  if (isMatchingWaitingRoom) {
+    const readyInvitedCount =
+      localInviteStatuses?.filter((status) => status.status === "accepted").length ?? 0;
+    const invitedCount = slottedFriendIds.length;
+    const requiredClassSummary = requiredClasses.filter(Boolean);
+
+    return (
+      <Card className="overflow-hidden border-primary/30">
+        <div className="border-b bg-primary/10 px-5 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="mb-2 flex flex-wrap gap-2">
+                <Badge>매칭 대기룸</Badge>
+                <Badge variant="outline">
+                  {mode === "leader" ? "방장" : "초대받은 파티원"}
+                </Badge>
+              </div>
+              <CardTitle className="flex items-center gap-2 text-2xl">
+                <RadioTower className="size-6 text-primary" />
+                {mode === "leader"
+                  ? "친구를 초대하고 매칭을 시작하세요"
+                  : "파티장의 매칭 시작을 기다리는 중"}
+              </CardTitle>
+              <CardDescription className="mt-2">
+                {mode === "leader"
+                  ? "이 화면은 매칭 설정 화면이 아니라 초대와 준비 상태를 확인하는 전용 대기룸입니다."
+                  : "초대 수락이 완료되었습니다. 파티장이 조건을 확정하고 매칭을 시작하면 수락 대기 팝업이 표시됩니다."}
+              </CardDescription>
+            </div>
+            <Button type="button" variant="outline" onClick={leaveMatchingWaitingRoom}>
+              대기룸 나가기
+            </Button>
+          </div>
+        </div>
+
+        <CardContent className="grid gap-5 p-5">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-lg border bg-card px-4 py-3">
+              <div className="text-xs text-muted-foreground">콘텐츠</div>
+              <div className="mt-1 text-sm font-semibold">
+                {dungeonDisplayName(selectedDungeon)}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {selectedDungeon?.category ?? "-"}
+                {selectedDungeon && parseDungeonDifficulty(selectedDungeon.name).difficulty
+                  ? ` · ${parseDungeonDifficulty(selectedDungeon.name).difficulty}`
+                  : ""}
+                · {maxMembers}명
+              </div>
+            </div>
+            <div className="rounded-lg border bg-card px-4 py-3">
+              <div className="text-xs text-muted-foreground">요구 진도</div>
+              <div className="mt-1 text-sm font-semibold">
+                {stageLabel(selectedDungeon, stage)}
+              </div>
+            </div>
+            <div className="rounded-lg border bg-card px-4 py-3">
+              <div className="text-xs text-muted-foreground">최소 투력</div>
+              <div className="mt-1 text-sm font-semibold">
+                {minCombatPowerK.toLocaleString()}k
+              </div>
+            </div>
+            <div className="rounded-lg border bg-card px-4 py-3">
+              <div className="text-xs text-muted-foreground">친구 준비</div>
+              <div className="mt-1 text-sm font-semibold">
+                {readyInvitedCount}/{invitedCount}명 준비
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                초대 슬롯 {Math.max(0, maxMembers - 1)}개
+              </div>
+            </div>
+          </div>
+
+          {mode === "leader" ? (
+            <form onSubmit={onSubmit} className="grid gap-5">
+              <div className="rounded-lg border bg-muted/10 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-base font-semibold">초대 슬롯과 클래스 조건</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      여기서 친구를 초대하면 친구 화면도 이 매칭 대기룸으로 이동합니다.
+                    </p>
+                  </div>
+                  {requiredClassSummary.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {requiredClassSummary.map((className, index) => (
+                        <Badge key={`${className}-${index}`} variant="outline">
+                          {className}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <ClassSlotBoard
+                  dungeon={selectedDungeon}
+                  leaderClass={selectedCharacter?.className}
+                  slots={requiredClasses}
+                  invitedSlots={invitedSlots}
+                  inviteStatuses={localInviteStatuses}
+                  inviteStarted={slottedFriendIds.length > 0}
+                  friends={friends}
+                  minCombatPower={combatPowerFromK(minCombatPowerK)}
+                  onChange={changeClassSlot}
+                  onAssignFriend={assignFriendToSlot}
+                  onMoveFriend={moveFriendSlot}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
+                <div className="text-sm text-muted-foreground">
+                  {hasUnreadyInvitedFriends
+                    ? "아직 준비되지 않은 초대 친구가 있습니다."
+                    : "초대한 친구 준비 상태가 확인되면 매칭을 시작할 수 있습니다."}
+                </div>
+                <Button
+                  type="submit"
+                  disabled={
+                    pending ||
+                    !hasLinkedCharacter ||
+                    !characterId ||
+                    dungeons.length === 0 ||
+                    hasUnreadyInvitedFriends
+                  }
+                >
+                  {pending && <Loader2 className="size-4 animate-spin" />}
+                  매칭 시작
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="rounded-lg border bg-muted/10 p-6 text-center">
+              <Users className="mx-auto size-10 text-primary" />
+              <h3 className="mt-3 text-lg font-semibold">대기룸 입장 완료</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                파티장이 매칭을 시작하면 매칭 수락 대기 팝업이 표시됩니다.
+                이 화면을 유지한 채 기다려주세요.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
         <CardHeader>
@@ -585,7 +761,11 @@ export function MatchingPanel({
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-sm font-medium">
                   {selectedDungeon
-                    ? `[${selectedDungeon.category}] ${selectedDungeon.name}`
+                    ? `[${selectedDungeon.category}] ${dungeonDisplayName(selectedDungeon)}${
+                        parseDungeonDifficulty(selectedDungeon.name).difficulty
+                          ? ` · ${parseDungeonDifficulty(selectedDungeon.name).difficulty}`
+                          : ""
+                      }`
                     : "콘텐츠를 선택해주세요"}
                 </span>
                 <span className="text-xs text-muted-foreground">
@@ -647,6 +827,7 @@ export function MatchingPanel({
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         {group.dungeons.map((dungeon) => {
                           const selected = dungeon.id === dungeonId;
+                          const parsedDungeon = parseDungeonDifficulty(dungeon.name);
                           const savedProgress =
                             progress.find((item) => item.dungeonId === dungeon.id)
                               ?.stage ?? 0;
@@ -663,12 +844,19 @@ export function MatchingPanel({
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <span className="text-sm font-semibold">
-                                  {dungeon.name}
+                                <span className="min-w-0 text-sm font-semibold">
+                                  {parsedDungeon.baseName}
                                 </span>
-                                <Badge variant={selected ? "default" : "outline"}>
-                                  {partySizeForDungeon(dungeon)}명
-                                </Badge>
+                                <div className="flex shrink-0 flex-col items-end gap-1">
+                                  {parsedDungeon.difficulty && (
+                                    <Badge variant={selected ? "default" : "secondary"}>
+                                      {parsedDungeon.difficulty}
+                                    </Badge>
+                                  )}
+                                  <Badge variant="outline">
+                                    {partySizeForDungeon(dungeon)}명
+                                  </Badge>
+                                </div>
                               </div>
                               <div className="mt-2 flex flex-wrap gap-1 text-xs text-muted-foreground">
                                 <span>기믹 {dungeon.gimmick_stages.length}단계</span>

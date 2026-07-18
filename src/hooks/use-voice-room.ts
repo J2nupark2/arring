@@ -672,21 +672,14 @@ export function useVoiceRoom({
         closePeer(key);
         removeParticipant(key);
 
-        // The host left (gracefully or by closing the tab). Every remaining
-        // client deterministically picks the same successor — the smallest
-        // user id — and only the successor writes it to the DB, so no
-        // coordination is needed.
+        // The host left from this client's presence view. Keep the local UI
+        // usable, but do not write host_id from presence: the server-side
+        // leave/delegate/kick flows are the authority for room ownership.
+        // Presence order can differ from the server's selected successor and
+        // would otherwise clobber refill ownership.
         if (key === hostIdRef.current) {
           const candidates = [userId, ...otherPeerIdsRef.current].sort();
-          const newHost = candidates[0];
-          applyHostChange(newHost);
-          if (newHost === userId) {
-            supabase
-              .from("rooms")
-              .update({ host_id: userId })
-              .eq("id", roomId)
-              .then(() => {});
-          }
+          applyHostChange(candidates[0]);
         }
       });
 
@@ -710,6 +703,23 @@ export function useVoiceRoom({
             .maybeSingle();
 
           if (!activeParticipant) {
+            const { data: latestParticipant } = await supabase
+              .from("room_participants")
+              .select("left_at")
+              .eq("room_id", roomId)
+              .eq("user_id", userId)
+              .order("joined_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (latestParticipant?.left_at) {
+              await supabase.rpc("set_current_room", { p_room_code: null });
+              if (window.location.pathname === `/room/${roomCode}`) {
+                window.location.assign("/party");
+              }
+              return;
+            }
+
             const { error: participantError } = await supabase
               .from("room_participants")
               .insert({ room_id: roomId, user_id: userId });
