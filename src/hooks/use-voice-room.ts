@@ -785,15 +785,9 @@ export function useVoiceRoom({
       micSourceRef.current?.disconnect();
       audioCtxRef.current?.close().catch(() => {});
 
-      supabase
-        .from("room_participants")
-        .update({ left_at: new Date().toISOString() })
-        .eq("room_id", roomId)
-        .eq("user_id", userId)
-        .is("left_at", null)
-        .then(() => {});
-      supabase.rpc("set_current_room", { p_room_code: null }).then(() => {});
-
+      // A route change inside the app (for example opening "내 프로필") also
+      // unmounts this hook. Persisted room membership is therefore cleared only
+      // by explicit leave/kick flows, not by component cleanup.
       joinedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
