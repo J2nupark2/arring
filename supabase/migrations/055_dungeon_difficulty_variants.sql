@@ -17,6 +17,7 @@ source_dungeons as (
   from public.dungeons d
   cross join sanctuary_anchor anchor
   where d.name !~ '[[:space:]]*(\(|\[)?(보통|어려움)(\)|\])?[[:space:]]*$'
+    and d.name !~ '^pw-'
     and (
       d.category = '원정'
       or (
