@@ -30,8 +30,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "node node_modules/next/dist/bin/next start",
-    url: "http://127.0.0.1:3000/api/health",
+    command: `"${process.execPath}" node_modules/next/dist/bin/next start`,
+    url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

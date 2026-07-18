@@ -126,13 +126,18 @@ export function VoiceRoom({
   useEffect(() => {
     if (!isHost) return;
     let cancelled = false;
-    void fetch(`/api/rooms/refill?roomId=${encodeURIComponent(roomId)}`)
+    const refreshRefillStatus = () => fetch(`/api/rooms/refill?roomId=${encodeURIComponent(roomId)}`)
       .then((response) => (response.ok ? response.json() : null))
       .then((result) => {
         if (!cancelled && result) setRefillActive(!!result.active);
       });
+    void refreshRefillStatus();
+    const id = window.setInterval(() => {
+      void refreshRefillStatus();
+    }, 2000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
   }, [isHost, roomId]);
 

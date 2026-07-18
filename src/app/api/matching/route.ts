@@ -716,6 +716,27 @@ async function resetMatchLocks(
   await Promise.all(jobs);
 }
 
+async function cancelMatchLocks(
+  admin: AdminClient,
+  temp: {
+    match_request_id: string;
+    queue_ids: string[];
+  },
+) {
+  await Promise.all([
+    admin
+      .from("match_requests")
+      .update({ status: "cancelled" } as unknown as never)
+      .eq("id", temp.match_request_id),
+    temp.queue_ids.length > 0
+      ? admin
+          .from("match_queue")
+          .update({ status: "cancelled", match_request_id: null } as unknown as never)
+          .in("id", temp.queue_ids)
+      : Promise.resolve({ error: null }),
+  ]);
+}
+
 async function penalizeFailedResponses(admin: AdminClient, userIds: string[]) {
   const uniqueUserIds = [...new Set(userIds)];
   for (const userId of uniqueUserIds) {
@@ -1085,19 +1106,7 @@ async function handleTemporaryMatchResponse(
         .eq("id", pending.id)
         .eq("status", "pending_acceptance");
       await penalizeFailedResponses(admin, [userId]);
-      const { data: profile } = await admin
-        .from("profiles")
-        .select("consecutive_failed_response_count")
-        .eq("id", userId)
-        .maybeSingle();
-      const banSet = new Set<string>();
-      if (
-        ((profile as { consecutive_failed_response_count: number } | null)
-          ?.consecutive_failed_response_count ?? 0) >= 2
-      ) {
-        banSet.add(userId);
-      }
-      await resetMatchLocks(admin, temp, banSet);
+      await cancelMatchLocks(admin, temp);
     }
     return {
       matched: false,
