@@ -268,4 +268,44 @@ test.describe("보이는 기준 룸 이탈 재매칭 10가지", () => {
       await expect(harness.leader.page).toHaveURL(/\/party\?error=/);
     });
   });
+  test("방식 21 - 10명 매칭 후 추방 재매칭 중 프로필로 이동해도 강제 복귀하지 않고 후보자는 수락 팝업을 본다", async ({ browser }) => {
+    await withParty(browser, 10, async (harness) => {
+      const room = await acceptAllAndSeeRoom(harness, await queueParty(harness));
+      const kickedUser = harness.members[4];
+      const kickedLabel = kickedUser.email.split("@")[0];
+
+      await harness.leader.page
+        .getByRole("button", { name: new RegExp(`${kickedLabel}.*프로필 보기`) })
+        .click();
+      harness.leader.page.once("dialog", (dialog) => dialog.accept());
+      await harness.leader.page.getByRole("button", { name: /추방.*재매칭/ }).click();
+      await expect(
+        harness.leader.page.getByText("빈자리 1명을 같은 조건으로 재매칭하고 있습니다."),
+      ).toBeVisible({ timeout: 10_000 });
+
+      await harness.leader.page.goto("/profile");
+      await expect(harness.leader.page).toHaveURL(/\/profile$/, { timeout: 10_000 });
+      await expect(
+        harness.leader.page.getByRole("link", { name: /통화방 복귀/ }),
+      ).toBeVisible({ timeout: 10_000 });
+      await harness.leader.page.waitForTimeout(4_500);
+      await expect(harness.leader.page).toHaveURL(/\/profile$/);
+
+      const replacement = await createReplacementUser(harness, browser, kickedUser.className);
+      const response = await replacement.context.request.post("/api/matching", {
+        data: {
+          role: "member",
+          dungeonId: harness.dungeonId,
+          characterId: replacement.characterId,
+          stage: 3,
+        },
+      });
+      expect(response.ok()).toBeTruthy();
+      await waitForPrompt(replacement);
+      await acceptInUi(replacement);
+      await expectRoomScreen(replacement.page, room.code);
+      await expect(harness.leader.page).toHaveURL(/\/profile$/);
+      await expect(await activeParticipantCount(room.id)).toBe(10);
+    });
+  });
 });

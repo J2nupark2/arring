@@ -26,6 +26,8 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
+const VISITED_ROOM_STORAGE_KEY = "arring:visited-room-code";
+
 // Shared navigation for public and authenticated pages.
 export function AppHeader({
   showFriends = false,
@@ -76,6 +78,9 @@ export function AppHeader({
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     void (async () => {
+      const storedRoomCode = window.sessionStorage.getItem(VISITED_ROOM_STORAGE_KEY);
+      if (active && storedRoomCode) setActiveRoomCode(storedRoomCode);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -88,7 +93,9 @@ export function AppHeader({
         .eq("id", user.id)
         .maybeSingle();
 
-      if (active) setActiveRoomCode(data?.current_room_code ?? null);
+      if (active) {
+        setActiveRoomCode(data?.current_room_code ?? storedRoomCode ?? null);
+      }
 
       channel = supabase
         .channel(`profile-current-room-${user.id}`)
