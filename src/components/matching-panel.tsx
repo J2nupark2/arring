@@ -979,22 +979,6 @@ export function MatchingPanel({
                   />
                 </div>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label>받을 클래스</Label>
-                <ClassSlotBoard
-                  dungeon={selectedDungeon}
-                  leaderClass={selectedCharacter?.className}
-                  slots={requiredClasses}
-                  invitedSlots={invitedSlots}
-                  inviteStatuses={localInviteStatuses}
-                  inviteStarted={slottedFriendIds.length > 0}
-                  friends={friends}
-                  minCombatPower={combatPowerFromK(minCombatPowerK)}
-                  onChange={changeClassSlot}
-                  onAssignFriend={assignFriendToSlot}
-                  onMoveFriend={moveFriendSlot}
-                />
-              </div>
             </>
           )}
 
