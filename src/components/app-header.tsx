@@ -28,6 +28,46 @@ import {
 
 const VISITED_ROOM_STORAGE_KEY = "arring:visited-room-code";
 
+async function findReturnableRoomCode(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  candidates: (string | null | undefined)[],
+) {
+  const seen = new Set<string>();
+  for (const rawCode of candidates) {
+    const code = rawCode?.trim().toUpperCase();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+
+    const { data: room } = await supabase
+      .from("rooms")
+      .select("id, code, status, expires_at")
+      .eq("code", code)
+      .maybeSingle();
+
+    if (
+      !room ||
+      room.status === "ended" ||
+      new Date(room.expires_at).getTime() < Date.now()
+    ) {
+      continue;
+    }
+
+    const { data: participant } = await supabase
+      .from("room_participants")
+      .select("id")
+      .eq("room_id", room.id)
+      .eq("user_id", userId)
+      .is("left_at", null)
+      .limit(1)
+      .maybeSingle();
+
+    if (participant) return room.code;
+  }
+
+  return null;
+}
+
 // Shared navigation for public and authenticated pages.
 export function AppHeader({
   showFriends = false,
@@ -79,7 +119,6 @@ export function AppHeader({
 
     void (async () => {
       const storedRoomCode = window.sessionStorage.getItem(VISITED_ROOM_STORAGE_KEY);
-      if (active && storedRoomCode) setActiveRoomCode(storedRoomCode);
 
       const {
         data: { user },
@@ -93,9 +132,16 @@ export function AppHeader({
         .eq("id", user.id)
         .maybeSingle();
 
-      if (active) {
-        setActiveRoomCode(data?.current_room_code ?? storedRoomCode ?? null);
+      const returnableRoomCode = await findReturnableRoomCode(supabase, user.id, [
+        data?.current_room_code,
+        storedRoomCode,
+      ]);
+
+      if (!returnableRoomCode) {
+        window.sessionStorage.removeItem(VISITED_ROOM_STORAGE_KEY);
       }
+
+      if (active) setActiveRoomCode(returnableRoomCode);
 
       channel = supabase
         .channel(`profile-current-room-${user.id}`)
@@ -109,7 +155,14 @@ export function AppHeader({
           },
           (payload) => {
             const next = payload.new as { current_room_code?: string | null };
-            setActiveRoomCode(next.current_room_code ?? null);
+            void findReturnableRoomCode(supabase, user.id, [
+              next.current_room_code,
+            ]).then((returnableRoomCode) => {
+              if (!returnableRoomCode) {
+                window.sessionStorage.removeItem(VISITED_ROOM_STORAGE_KEY);
+              }
+              setActiveRoomCode(returnableRoomCode);
+            });
           },
         )
         .subscribe();

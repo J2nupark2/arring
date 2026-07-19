@@ -308,4 +308,17 @@ test.describe("보이는 기준 룸 이탈 재매칭 10가지", () => {
       await expect(await activeParticipantCount(room.id)).toBe(10);
     });
   });
+
+  test("방식 22 - 이미 나간 통화방 코드는 프로필에서 복귀 버튼으로 남지 않는다", async ({ browser }) => {
+    await withParty(browser, 5, async (harness) => {
+      await acceptAllAndSeeRoom(harness, await queueParty(harness));
+      await leaveRoom(harness.leader);
+
+      await harness.leader.page.goto("/profile");
+      await expect(harness.leader.page).toHaveURL(/\/profile$/, { timeout: 10_000 });
+      await expect(
+        harness.leader.page.getByRole("link", { name: /통화방 복귀/ }),
+      ).not.toBeVisible({ timeout: 10_000 });
+    });
+  });
 });
