@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useVoiceRoom } from "@/hooks/use-voice-room";
@@ -67,7 +67,7 @@ export function VoiceRoom({
   isGuest?: boolean;
 }) {
   const router = useRouter();
-  const [leaving, startLeaving] = useTransition();
+  const [leaving, setLeaving] = useState(false);
   const {
     participants,
     muted,
@@ -98,6 +98,7 @@ export function VoiceRoom({
     initialCharacterRowId,
     initialClassName,
     initialProfileImageUrl,
+    disconnectRequested: leaving,
     onKicked: () => {
       router.push(
         "/party?error=" + encodeURIComponent("방장에 의해 추방되었습니다."),
@@ -147,6 +148,7 @@ export function VoiceRoom({
 
   async function handleSendChat(e: React.FormEvent) {
     e.preventDefault();
+    if (leaving) return;
     if (!chatText.trim() && !chatImage) return;
     setUploadingChatImage(true);
     let imagePath: string | null = null;
@@ -202,28 +204,29 @@ export function VoiceRoom({
     setMannerReview("normal");
   }
 
-  function handleLeaveRoom() {
-    startLeaving(async () => {
-      try {
-        const response = await fetch("/api/rooms/leave", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ roomId }),
-        });
-        if (!response.ok) {
-          const result = await response.json().catch(() => null);
-          throw new Error(result?.error ?? "방에서 나가지 못했습니다.");
-        }
-        window.dispatchEvent(
-          new CustomEvent("arring:matching-status", {
-            detail: { active: false, matched: false, state: "idle" },
-          }),
-        );
-        window.location.assign("/party");
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "방에서 나가지 못했습니다.");
+  async function handleLeaveRoom() {
+    if (leaving) return;
+    setLeaving(true);
+    window.dispatchEvent(
+      new CustomEvent("arring:matching-status", {
+        detail: { active: false, matched: false, state: "idle" },
+      }),
+    );
+    try {
+      const response = await fetch("/api/rooms/leave", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error ?? "방에서 나가지 못했습니다.");
       }
-    });
+      window.location.replace("/party");
+    } catch (error) {
+      setLeaving(false);
+      toast.error(error instanceof Error ? error.message : "방에서 나가지 못했습니다.");
+    }
   }
 
   async function handleKickAndRefill(targetId: string, targetNickname: string) {
@@ -636,7 +639,7 @@ export function VoiceRoom({
             <ImageAttachmentPicker
               file={chatImage}
               onChange={setChatImage}
-              disabled={uploadingChatImage}
+              disabled={uploadingChatImage || leaving}
             />
           )}
           <form onSubmit={handleSendChat} className="flex gap-2">
@@ -646,11 +649,12 @@ export function VoiceRoom({
               placeholder="메시지 입력..."
               maxLength={500}
               aria-label="통화방 채팅 입력"
+              disabled={leaving}
             />
             <Button
               type="submit"
               size="icon"
-              disabled={uploadingChatImage || (!chatText.trim() && !chatImage)}
+              disabled={leaving || uploadingChatImage || (!chatText.trim() && !chatImage)}
               aria-label="채팅 전송"
             >
               {uploadingChatImage ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
@@ -711,6 +715,7 @@ export function VoiceRoom({
             variant={muted ? "default" : "outline"}
             size="icon-lg"
             onClick={toggleMute}
+            disabled={leaving}
             aria-label={muted ? "음소거 해제" : "음소거"}
           >
             {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}

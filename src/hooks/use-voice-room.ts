@@ -81,6 +81,7 @@ export function useVoiceRoom({
   initialCharacterRowId,
   initialClassName,
   initialProfileImageUrl,
+  disconnectRequested = false,
   onKicked,
 }: {
   roomCode: string;
@@ -92,6 +93,7 @@ export function useVoiceRoom({
   initialCharacterRowId: string | null;
   initialClassName: string | null;
   initialProfileImageUrl: string | null;
+  disconnectRequested?: boolean;
   onKicked?: () => void;
 }) {
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -155,6 +157,9 @@ export function useVoiceRoom({
   // Dummy friends are persisted room members but have no browser presence.
   // Hydrate the database roster too so the host can inspect and remove them.
   useEffect(() => {
+    if (disconnectRequested) {
+      return;
+    }
     const supabase = supabaseRef.current;
     let active = true;
 
@@ -217,7 +222,7 @@ export function useVoiceRoom({
       window.clearInterval(rosterRefreshId);
       void supabase.removeChannel(rosterChannel);
     };
-  }, [roomId, userId, upsertParticipant]);
+  }, [roomId, userId, upsertParticipant, disconnectRequested]);
 
   const closePeer = useCallback((peerId: string) => {
     peersRef.current.get(peerId)?.close();
@@ -517,6 +522,9 @@ export function useVoiceRoom({
   );
 
   useEffect(() => {
+    if (disconnectRequested) {
+      return;
+    }
     audioContainerRef.current = document.createElement("div");
     audioContainerRef.current.style.display = "none";
     document.body.appendChild(audioContainerRef.current);
@@ -800,6 +808,7 @@ export function useVoiceRoom({
     initialCharacterRowId,
     initialClassName,
     initialProfileImageUrl,
+    disconnectRequested,
   ]);
 
   const participantIds = participants.map((p) => p.id).sort().join("|");

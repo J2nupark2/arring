@@ -70,6 +70,7 @@ async function leaveRoom(user: TestUser) {
       response.request().method() === "POST",
   );
   await user.page.getByRole("button", { name: "퇴장" }).click({ force: true });
+  await expect(user.page.getByRole("textbox", { name: "통화방 채팅 입력" })).toBeDisabled();
   expect((await leaveResponse).ok()).toBeTruthy();
   await expect(user.page).toHaveURL(/\/party$/, { timeout: 10_000 });
   await expect(user.page.getByText("매칭 수락 대기 중")).not.toBeVisible();
