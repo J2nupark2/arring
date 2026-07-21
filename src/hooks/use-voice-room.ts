@@ -26,6 +26,7 @@ type PresenceState = {
   nickname: string;
   inviteName?: string;
   characterRowId?: string | null;
+  className?: string | null;
   profileImageUrl?: string | null;
 };
 
@@ -41,6 +42,7 @@ export type Participant = {
   isSelf: boolean;
   muted: boolean;
   characterRowId: string | null;
+  className: string | null;
   profileImageUrl: string | null;
   isFriend: boolean;
 };
@@ -77,7 +79,9 @@ export function useVoiceRoom({
   inviteName,
   initialHostId,
   initialCharacterRowId,
+  initialClassName,
   initialProfileImageUrl,
+  disconnectRequested = false,
   onKicked,
 }: {
   roomCode: string;
@@ -87,7 +91,9 @@ export function useVoiceRoom({
   inviteName: string;
   initialHostId: string;
   initialCharacterRowId: string | null;
+  initialClassName: string | null;
   initialProfileImageUrl: string | null;
+  disconnectRequested?: boolean;
   onKicked?: () => void;
 }) {
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -118,6 +124,7 @@ export function useVoiceRoom({
   const otherPeerIdsRef = useRef<Set<string>>(new Set());
   const volumesRef = useRef<Record<string, number>>({});
   const analysersRef = useRef<Map<string, AnalyserNode>>(new Map());
+  const pendingIceRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const hostIdRef = useRef(initialHostId);
   const joinedRef = useRef(false);
   const onKickedRef = useRef(onKicked);
@@ -133,6 +140,7 @@ export function useVoiceRoom({
       const next = {
         ...p,
         characterRowId: p.characterRowId ?? existing?.characterRowId ?? null,
+        className: p.className ?? existing?.className ?? null,
         profileImageUrl: p.profileImageUrl ?? existing?.profileImageUrl ?? null,
         isFriend: p.isFriend || existing?.isFriend || false,
       };
@@ -145,6 +153,76 @@ export function useVoiceRoom({
   const removeParticipant = useCallback((id: string) => {
     setParticipants((prev) => prev.filter((x) => x.id !== id));
   }, []);
+
+  // Dummy friends are persisted room members but have no browser presence.
+  // Hydrate the database roster too so the host can inspect and remove them.
+  useEffect(() => {
+    if (disconnectRequested) {
+      return;
+    }
+    const supabase = supabaseRef.current;
+    let active = true;
+
+    async function refreshPersistedRoster() {
+      const { data: rows } = await supabase
+        .from("room_participants")
+        .select("user_id")
+        .eq("room_id", roomId)
+        .is("left_at", null);
+      const ids = [...new Set((rows ?? []).map((row) => row.user_id))];
+      if (!active) return;
+
+      setParticipants((prev) => prev.filter((participant) => ids.includes(participant.id)));
+      if (ids.length === 0) return;
+
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, nickname, server, char_class")
+        .in("id", ids);
+      if (!active) return;
+
+      for (const profile of profiles ?? []) {
+        const displayName = profile.server
+          ? `${profile.nickname} (${profile.server})`
+          : profile.nickname;
+        upsertParticipant({
+          id: profile.id,
+          nickname: displayName,
+          inviteName: formatAion2InviteName(profile.nickname, profile.server),
+          isSelf: profile.id === userId,
+          muted: true,
+          characterRowId: null,
+          className: profile.char_class ?? null,
+          profileImageUrl: null,
+          isFriend: false,
+        });
+      }
+    }
+
+    void refreshPersistedRoster();
+    const rosterRefreshId = window.setInterval(() => {
+      void refreshPersistedRoster();
+    }, 2000);
+    const rosterChannel = supabase
+      .channel(`room-roster:${roomId}:${crypto.randomUUID()}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "room_participants",
+          filter: `room_id=eq.${roomId}`,
+        },
+        () => void refreshPersistedRoster(),
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      window.clearInterval(rosterRefreshId);
+      void supabase.removeChannel(rosterChannel);
+    };
+  }, [roomId, userId, upsertParticipant, disconnectRequested]);
 
   const closePeer = useCallback((peerId: string) => {
     peersRef.current.get(peerId)?.close();
@@ -234,19 +312,44 @@ export function useVoiceRoom({
           audioElsRef.current.set(peerId, audioEl);
         }
         audioEl.srcObject = event.streams[0];
-        audioEl.play().catch(() => {});
+        audioEl.play().catch((error) => {
+          console.warn("[voice-room] remote audio autoplay blocked", {
+            roomCode,
+            peerId,
+            error: String(error),
+          });
+        });
         attachAnalyser(peerId, event.streams[0]);
       };
 
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+        if (pc.connectionState === "failed") {
+          console.warn("[voice-room] peer connection failed", { roomCode, peerId });
+          if (hostIdRef.current === userId) {
+            pc.createOffer({ iceRestart: true })
+              .then(async (offer) => {
+                await pc.setLocalDescription(offer);
+                send({ kind: "offer", from: userId, to: peerId, sdp: offer });
+              })
+              .catch((error) => {
+                console.warn("[voice-room] ICE restart failed", {
+                  roomCode,
+                  peerId,
+                  error: String(error),
+                });
+                closePeer(peerId);
+              });
+          } else {
+            closePeer(peerId);
+          }
+        } else if (pc.connectionState === "closed") {
           closePeer(peerId);
         }
       };
 
       return pc;
     },
-    [send, userId, closePeer, attachAnalyser],
+    [send, userId, roomCode, closePeer, attachAnalyser],
   );
 
   const captureMic = useCallback(async () => {
@@ -254,19 +357,47 @@ export function useVoiceRoom({
     try {
       const rawStream = await navigator.mediaDevices.getUserMedia({
         audio: selectedMicIdRef.current
-          ? { deviceId: { exact: selectedMicIdRef.current } }
-          : true,
+          ? {
+              deviceId: { exact: selectedMicIdRef.current },
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            }
+          : {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
       });
       // Route the mic through a GainNode so its level can be adjusted
       // live; peers receive the gain-processed stream.
       const audioCtx = audioCtxRef.current ?? new AudioContext();
       audioCtxRef.current = audioCtx;
+      await audioCtx.resume().catch(() => undefined);
+
+      if (audioCtx.state !== "running") {
+        console.warn("[voice-room] AudioContext suspended; using raw microphone", {
+          roomCode,
+          userId,
+          state: audioCtx.state,
+        });
+        rawStreamRef.current = rawStream;
+        localStreamRef.current = rawStream;
+        const capturedDeviceId = rawStream.getAudioTracks()[0]?.getSettings().deviceId;
+        if (capturedDeviceId) {
+          selectedMicIdRef.current = capturedDeviceId;
+          setSelectedMicId(capturedDeviceId);
+        }
+        void refreshAudioInputs();
+        attachAnalyser(userId, rawStream);
+        return true;
+      }
+
       const source = audioCtx.createMediaStreamSource(rawStream);
       const gainNode = audioCtx.createGain();
       const destination = audioCtx.createMediaStreamDestination();
       source.connect(gainNode);
       gainNode.connect(destination);
-      audioCtx.resume().catch(() => {});
 
       rawStreamRef.current = rawStream;
       micSourceRef.current = source;
@@ -280,10 +411,15 @@ export function useVoiceRoom({
       void refreshAudioInputs();
       attachAnalyser(userId, destination.stream);
       return true;
-    } catch {
+    } catch (error) {
+      console.error("[voice-room] microphone capture failed", {
+        roomCode,
+        userId,
+        error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      });
       return false;
     }
-  }, [userId, attachAnalyser, refreshAudioInputs]);
+  }, [roomCode, userId, attachAnalyser, refreshAudioInputs]);
 
   const releaseMic = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -386,6 +522,9 @@ export function useVoiceRoom({
   );
 
   useEffect(() => {
+    if (disconnectRequested) {
+      return;
+    }
     audioContainerRef.current = document.createElement("div");
     audioContainerRef.current.style.display = "none";
     document.body.appendChild(audioContainerRef.current);
@@ -415,6 +554,7 @@ export function useVoiceRoom({
         isSelf: true,
         muted: false,
         characterRowId: initialCharacterRowId,
+        className: initialClassName,
         profileImageUrl: initialProfileImageUrl,
         isFriend: false,
       });
@@ -433,16 +573,34 @@ export function useVoiceRoom({
           if (payload.kind === "offer") {
             const pc = ensurePeer(payload.from);
             await pc.setRemoteDescription(payload.sdp);
+            const queuedCandidates = pendingIceRef.current.get(payload.from) ?? [];
+            pendingIceRef.current.delete(payload.from);
+            await Promise.all(queuedCandidates.map((candidate) => pc.addIceCandidate(candidate)));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             send({ kind: "answer", from: userId, to: payload.from, sdp: answer });
           } else if (payload.kind === "answer") {
-            await peersRef.current.get(payload.from)?.setRemoteDescription(payload.sdp);
+            const pc = ensurePeer(payload.from);
+            await pc.setRemoteDescription(payload.sdp);
+            const queuedCandidates = pendingIceRef.current.get(payload.from) ?? [];
+            pendingIceRef.current.delete(payload.from);
+            await Promise.all(queuedCandidates.map((candidate) => pc.addIceCandidate(candidate)));
           } else if (payload.kind === "ice-candidate") {
             try {
-              await peersRef.current.get(payload.from)?.addIceCandidate(payload.candidate);
-            } catch {
-              // Candidate arrived after the connection closed — safe to ignore.
+              const pc = ensurePeer(payload.from);
+              if (!pc.remoteDescription) {
+                const queued = pendingIceRef.current.get(payload.from) ?? [];
+                queued.push(payload.candidate);
+                pendingIceRef.current.set(payload.from, queued);
+              } else {
+                await pc.addIceCandidate(payload.candidate);
+              }
+            } catch (error) {
+              console.warn("[voice-room] ICE candidate rejected", {
+                roomCode,
+                peerId: payload.from,
+                error: String(error),
+              });
             }
           }
         },
@@ -509,6 +667,7 @@ export function useVoiceRoom({
             isSelf: false,
             muted: false,
             characterRowId: presence.characterRowId ?? null,
+            className: presence.className ?? null,
             profileImageUrl: presence.profileImageUrl ?? null,
             isFriend: false,
           });
@@ -529,21 +688,14 @@ export function useVoiceRoom({
         closePeer(key);
         removeParticipant(key);
 
-        // The host left (gracefully or by closing the tab). Every remaining
-        // client deterministically picks the same successor — the smallest
-        // user id — and only the successor writes it to the DB, so no
-        // coordination is needed.
+        // The host left from this client's presence view. Keep the local UI
+        // usable, but do not write host_id from presence: the server-side
+        // leave/delegate/kick flows are the authority for room ownership.
+        // Presence order can differ from the server's selected successor and
+        // would otherwise clobber refill ownership.
         if (key === hostIdRef.current) {
           const candidates = [userId, ...otherPeerIdsRef.current].sort();
-          const newHost = candidates[0];
-          applyHostChange(newHost);
-          if (newHost === userId) {
-            supabase
-              .from("rooms")
-              .update({ host_id: userId })
-              .eq("id", roomId)
-              .then(() => {});
-          }
+          applyHostChange(candidates[0]);
         }
       });
 
@@ -555,6 +707,7 @@ export function useVoiceRoom({
             nickname,
             inviteName,
             characterRowId: initialCharacterRowId,
+            className: initialClassName,
             profileImageUrl: initialProfileImageUrl,
           } satisfies PresenceState);
           const { data: activeParticipant } = await supabase
@@ -567,6 +720,23 @@ export function useVoiceRoom({
             .maybeSingle();
 
           if (!activeParticipant) {
+            const { data: latestParticipant } = await supabase
+              .from("room_participants")
+              .select("left_at")
+              .eq("room_id", roomId)
+              .eq("user_id", userId)
+              .order("joined_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (latestParticipant?.left_at) {
+              await supabase.rpc("set_current_room", { p_room_code: null });
+              if (window.location.pathname === `/room/${roomCode}`) {
+                window.location.assign("/party");
+              }
+              return;
+            }
+
             const { error: participantError } = await supabase
               .from("room_participants")
               .insert({ room_id: roomId, user_id: userId });
@@ -608,8 +778,6 @@ export function useVoiceRoom({
     const analysers = analysersRef.current;
     const peers = peersRef.current;
     const audioElements = audioElsRef.current;
-    const otherPeerIds = otherPeerIdsRef.current;
-
     return () => {
       cancelled = true;
       clearInterval(speakingInterval);
@@ -625,25 +793,9 @@ export function useVoiceRoom({
       micSourceRef.current?.disconnect();
       audioCtxRef.current?.close().catch(() => {});
 
-      supabase
-        .from("room_participants")
-        .update({ left_at: new Date().toISOString() })
-        .eq("room_id", roomId)
-        .eq("user_id", userId)
-        .is("left_at", null)
-        .then(() => {});
-      supabase.rpc("set_current_room", { p_room_code: null }).then(() => {});
-
-      // Leaving an empty room closes it. joinedRef guards against React
-      // Strict Mode's dev-only mount/cleanup/mount dry run, where cleanup
-      // fires before the channel ever subscribed.
-      if (joinedRef.current && otherPeerIds.size === 0) {
-        supabase
-          .from("rooms")
-          .update({ status: "ended" })
-          .eq("id", roomId)
-          .then(() => {});
-      }
+      // A route change inside the app (for example opening "내 프로필") also
+      // unmounts this hook. Persisted room membership is therefore cleared only
+      // by explicit leave/kick flows, not by component cleanup.
       joinedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -654,7 +806,9 @@ export function useVoiceRoom({
     nickname,
     inviteName,
     initialCharacterRowId,
+    initialClassName,
     initialProfileImageUrl,
+    disconnectRequested,
   ]);
 
   const participantIds = participants.map((p) => p.id).sort().join("|");
@@ -670,7 +824,7 @@ export function useVoiceRoom({
       const [characterResult, friendResult] = await Promise.all([
         supabase
           .from("aion2_characters")
-          .select("id, user_id, detail_data")
+          .select("id, user_id, class_name, detail_data")
           .in("user_id", ids)
           .order("is_primary", { ascending: false })
           .order("synced_at", { ascending: false }),
@@ -681,16 +835,18 @@ export function useVoiceRoom({
 
       const characterByUser = new Map<
         string,
-        { id: string; profileImageUrl: string | null }
+        { id: string; className: string | null; profileImageUrl: string | null }
       >();
       for (const character of (characterResult.data ?? []) as {
         id: string;
         user_id: string;
+        class_name: string | null;
         detail_data: unknown;
       }[]) {
         if (!characterByUser.has(character.user_id)) {
           characterByUser.set(character.user_id, {
             id: character.id,
+            className: character.class_name ?? null,
             profileImageUrl: getAion2ProfileImage(character.detail_data),
           });
         }
@@ -709,6 +865,7 @@ export function useVoiceRoom({
             ...participant,
             characterRowId:
               participant.characterRowId ?? fallbackCharacter?.id ?? null,
+            className: participant.className ?? fallbackCharacter?.className ?? null,
             profileImageUrl:
               participant.profileImageUrl ??
               fallbackCharacter?.profileImageUrl ??
@@ -782,15 +939,29 @@ export function useVoiceRoom({
   );
 
   const kickParticipant = useCallback(
-    (peerId: string) => {
-      if (hostIdRef.current !== userId) return;
+    async (peerId: string) => {
+      if (hostIdRef.current !== userId) {
+        throw new Error("방장만 파티원을 추방할 수 있습니다.");
+      }
+      const response = await fetch("/api/rooms/refill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId, targetUserId: peerId }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error ?? "추방 및 재매칭을 시작하지 못했습니다.");
+      }
       channelRef.current?.send({
         type: "broadcast",
         event: "kick",
         payload: { targetId: peerId, from: userId } satisfies KickPayload,
       });
+      closePeer(peerId);
+      removeParticipant(peerId);
+      return result as { refillRequestId: string; state: string };
     },
-    [userId],
+    [roomId, userId, closePeer, removeParticipant],
   );
 
   const sendChatMessage = useCallback(

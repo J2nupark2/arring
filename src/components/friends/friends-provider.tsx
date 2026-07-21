@@ -14,7 +14,10 @@ type FriendsValue = ReturnType<typeof useFriends> & {
   incomingInvites: RoomInvite[];
   respondInvite: (inviteId: string, accept: boolean) => Promise<void>;
   incomingMatchingInvites: MatchingInvite[];
-  respondMatchingInvite: (inviteId: string, accept: boolean) => Promise<void>;
+  respondMatchingInvite: (
+    inviteId: string,
+    accept: boolean,
+  ) => Promise<{ ok: true; accepted: boolean; draftId?: string | null } | undefined>;
 };
 
 // Inert fallback for the rare AppHeader usages with no wrapping provider
@@ -31,7 +34,7 @@ const inertValue: FriendsValue = {
   incomingInvites: [],
   respondInvite: async () => {},
   incomingMatchingInvites: [],
-  respondMatchingInvite: async () => {},
+  respondMatchingInvite: async () => undefined,
 };
 
 const FriendsContext = createContext<FriendsValue>(inertValue);
@@ -149,7 +152,11 @@ export function FriendsProvider({
             action: {
               label: "수락",
               onClick: async () => {
-                await respondMatchingInvite(invite.inviteId, true);
+                const result = await respondMatchingInvite(invite.inviteId, true);
+                const draftId = result?.draftId ?? invite.draftId;
+                if (draftId) {
+                  router.push(`/party?matchingDraft=${encodeURIComponent(draftId)}`);
+                }
               },
             },
           });
@@ -159,7 +166,7 @@ export function FriendsProvider({
     seenMatchingInviteIds.current = new Set(
       incomingMatchingInvites.map((invite) => invite.inviteId),
     );
-  }, [incomingMatchingInvites, isGuest, respondMatchingInvite]);
+  }, [incomingMatchingInvites, isGuest, respondMatchingInvite, router]);
 
   return (
     <FriendsContext.Provider

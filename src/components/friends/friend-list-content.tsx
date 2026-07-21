@@ -316,7 +316,13 @@ export function FriendListContent({
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => respondMatchingInvite(invite.inviteId, true)}
+                  onClick={async () => {
+                    const result = await respondMatchingInvite(invite.inviteId, true);
+                    const draftId = result?.draftId ?? invite.draftId;
+                    if (draftId) {
+                      router.push(`/party?matchingDraft=${encodeURIComponent(draftId)}`);
+                    }
+                  }}
                 >
                   <Check className="size-3.5" />
                   수락

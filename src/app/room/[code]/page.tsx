@@ -81,11 +81,13 @@ export default async function RoomPage({
   const [
     { data: memberCount },
     { data: ownActiveRow },
+    { data: ownLeftRow },
     { data: profile },
     { data: hasPasswordRaw },
     { data: ownQueueMatch },
     { data: ownLeaderMatch },
     { data: ownCharacters },
+    { data: ownKick },
   ] = await Promise.all([
     supabase.rpc("room_member_count", { target_room_id: room.id }),
     // A user already counted as active (e.g. rejoining after a refresh or a
@@ -97,6 +99,14 @@ export default async function RoomPage({
       .eq("room_id", room.id)
       .eq("user_id", user.id)
       .is("left_at", null)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("room_participants")
+      .select("id")
+      .eq("room_id", room.id)
+      .eq("user_id", user.id)
+      .not("left_at", "is", null)
       .limit(1)
       .maybeSingle(),
     supabase.from("profiles").select("nickname, server").eq("id", user.id).single(),
@@ -121,11 +131,29 @@ export default async function RoomPage({
       .maybeSingle(),
     supabase
       .from("aion2_characters")
-      .select("id, detail_data")
+      .select("id, class_name, detail_data")
       .eq("user_id", user.id)
       .order("is_primary", { ascending: false })
       .order("synced_at", { ascending: false }),
+    supabase
+      .from("room_kicks")
+      .select("target_id")
+      .eq("room_id", room.id)
+      .eq("target_id", user.id)
+      .maybeSingle(),
   ]);
+
+  if (ownKick) {
+    redirect(
+      "/party?error=" + encodeURIComponent("방장에 의해 추방된 방에는 다시 입장할 수 없습니다."),
+    );
+  }
+
+  if (!ownActiveRow && ownLeftRow) {
+    redirect(
+      "/party?error=" + encodeURIComponent("이미 나간 방에는 다시 입장할 수 없습니다."),
+    );
+  }
 
   if (
     !ownActiveRow &&
@@ -166,6 +194,7 @@ export default async function RoomPage({
   );
   const characterRows = (ownCharacters ?? []) as {
     id: string;
+    class_name: string | null;
     detail_data: unknown;
   }[];
   const matchedCharacterRowId =
@@ -213,6 +242,7 @@ export default async function RoomPage({
                   maxMembers={room.max_members}
                   initialHostId={room.host_id ?? room.created_by}
                   initialCharacterRowId={roomCharacter?.id ?? null}
+                  initialClassName={roomCharacter?.class_name ?? null}
                   initialProfileImageUrl={getAion2ProfileImage(
                     roomCharacter?.detail_data,
                   )}

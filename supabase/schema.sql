@@ -4,6 +4,7 @@
 
 drop table if exists public.dungeon_progress cascade;
 drop table if exists public.kick_votes cascade;
+drop table if exists public.room_kicks cascade;
 drop table if exists public.party_reviews cascade;
 drop trigger if exists on_party_review_created on public.party_reviews;
 drop function if exists public.apply_party_review_temperature cascade;
@@ -258,6 +259,28 @@ create policy "participants can update room status"
     auth.uid() = created_by
     or public.is_room_participant(id)
   );
+
+-- room_kicks -------------------------------------------------------------
+
+create table public.room_kicks (
+  room_id uuid not null references public.rooms (id) on delete cascade,
+  target_id uuid not null references public.profiles (id) on delete cascade,
+  kicked_by uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (room_id, target_id)
+);
+
+create index room_kicks_target_idx
+  on public.room_kicks (target_id, created_at desc);
+
+alter table public.room_kicks enable row level security;
+
+create policy "kicks visible to involved room users"
+  on public.room_kicks for select
+  to authenticated
+  using (target_id = auth.uid() or kicked_by = auth.uid());
+
+revoke insert, update, delete on public.room_kicks from authenticated;
 
 -- Member counts are needed by non-participants (party finder list), but
 -- room_participants RLS only lets participants see each other — so expose
@@ -964,6 +987,8 @@ create table public.match_requests (
   leader_id uuid not null references public.profiles (id) on delete cascade,
   dungeon_id uuid not null references public.dungeons (id) on delete cascade,
   room_id uuid references public.rooms (id) on delete set null,
+  refill_room_id uuid references public.rooms (id) on delete cascade,
+  excluded_user_ids uuid[] not null default '{}',
   character_row_id uuid references public.aion2_characters (id) on delete set null,
   required_stage integer not null default 0 check (required_stage >= 0),
   min_combat_power integer not null default 0 check (min_combat_power >= 0),
@@ -1020,6 +1045,10 @@ create unique index match_queue_active_unique_idx
 create unique index match_requests_active_leader_unique_idx
   on public.match_requests (leader_id)
   where status in ('waiting', 'processing');
+
+create unique index match_requests_active_refill_room_unique_idx
+  on public.match_requests (refill_room_id)
+  where refill_room_id is not null and status in ('waiting', 'processing');
 
 create index match_requests_active_heartbeat_idx
   on public.match_requests (status, heartbeat_at)

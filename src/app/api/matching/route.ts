@@ -40,6 +40,8 @@ type MatchRequest = {
   required_classes: string[];
   max_members: number;
   invited_friend_ids?: string[];
+  refill_room_id?: string | null;
+  excluded_user_ids?: string[];
   created_at?: string;
 };
 
@@ -146,6 +148,27 @@ async function getRoomCode(admin: AdminClient, roomId: string | null | undefined
   return room.code;
 }
 
+async function getActiveParticipantRoomCode(
+  admin: AdminClient,
+  roomId: string | null | undefined,
+  userId: string,
+) {
+  if (!roomId) return undefined;
+  const roomCode = await getRoomCode(admin, roomId);
+  if (!roomCode) return undefined;
+
+  const { data: participant } = await admin
+    .from("room_participants")
+    .select("id")
+    .eq("room_id", roomId)
+    .eq("user_id", userId)
+    .is("left_at", null)
+    .limit(1)
+    .maybeSingle();
+
+  return participant ? roomCode : undefined;
+}
+
 async function findExistingMatch(
   admin: AdminClient,
   userId: string,
@@ -162,9 +185,10 @@ async function findExistingMatch(
     .limit(1)
     .maybeSingle();
 
-  const queueRoomCode = await getRoomCode(
+  const queueRoomCode = await getActiveParticipantRoomCode(
     admin,
     (queueRow as { room_id: string | null } | null)?.room_id,
+    userId,
   );
   if (queueRoomCode) return { matched: true, roomCode: queueRoomCode };
 
@@ -178,11 +202,54 @@ async function findExistingMatch(
     .limit(1)
     .maybeSingle();
 
-  const requestRoomCode = await getRoomCode(
+  const requestRoomCode = await getActiveParticipantRoomCode(
     admin,
     (requestRow as { room_id: string | null } | null)?.room_id,
+    userId,
   );
   if (requestRoomCode) return { matched: true, roomCode: requestRoomCode };
+
+  const recoveryAfter = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { data: recentResponses, error: recentResponseError } = await admin
+    .from("match_responses")
+    .select("temporary_match_id")
+    .eq("user_id", userId)
+    .eq("status", "accepted")
+    .gte("created_at", recoveryAfter)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  if (recentResponseError) {
+    console.error("[matching] recent response recovery failed", {
+      userId,
+      error: recentResponseError.message,
+    });
+  }
+  const temporaryMatchIds = ((recentResponses ?? []) as {
+    temporary_match_id: string;
+  }[]).map((response) => response.temporary_match_id);
+  if (temporaryMatchIds.length > 0) {
+    const { data: confirmedTemp, error: confirmedTempError } = await admin
+      .from("temporary_matches")
+      .select("room_id")
+      .in("id", temporaryMatchIds)
+      .eq("status", "confirmed")
+      .not("room_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (confirmedTempError) {
+      console.error("[matching] confirmed room recovery failed", {
+        userId,
+        error: confirmedTempError.message,
+      });
+    }
+    const confirmedRoomCode = await getActiveParticipantRoomCode(
+      admin,
+      (confirmedTemp as { room_id: string | null } | null)?.room_id,
+      userId,
+    );
+    if (confirmedRoomCode) return { matched: true, roomCode: confirmedRoomCode };
+  }
 
   return { matched: false };
 }
@@ -276,6 +343,13 @@ async function createRoom(
       .single();
 
     if (error?.code === "23505") continue;
+    if (
+      error?.code === "23503" &&
+      error.message.includes("rooms_created_by_fkey")
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      continue;
+    }
     const createdRoom = room as { id: string; code: string } | null;
     if (error || !createdRoom) throw new Error(error?.message ?? "방 생성 실패");
 
@@ -289,7 +363,20 @@ async function createRoom(
       .from("room_participants")
       .insert(participants as unknown as never);
 
-    if (participantError) throw new Error(participantError.message);
+    if (participantError) {
+      await admin.from("rooms").delete().eq("id", createdRoom.id);
+      if (
+        participantError.code === "23503" &&
+        participantError.message.includes("room_participants_room_id_fkey")
+      ) {
+        console.warn("[matching] created room disappeared before participants; retrying", {
+          roomId: createdRoom.id,
+          attempt: attempt + 1,
+        });
+        continue;
+      }
+      throw new Error(`participant insert failed: ${participantError.message}`);
+    }
 
     if (invitedFriendIds.length > 0) {
       const { error: inviteError } = await admin.from("room_invites").insert(
@@ -299,7 +386,10 @@ async function createRoom(
           room_code: createdRoom.code,
         })) as unknown as never,
       );
-      if (inviteError) throw new Error(inviteError.message);
+      if (inviteError) {
+        await admin.from("rooms").delete().eq("id", createdRoom.id);
+        throw new Error(`room invite insert failed: ${inviteError.message}`);
+      }
     }
 
     return createdRoom;
@@ -313,6 +403,7 @@ async function findCandidates(
   request: MatchRequest,
 ) {
   const invitedFriendIds = new Set(request.invited_friend_ids ?? []);
+  const excludedUserIds = new Set(request.excluded_user_ids ?? []);
   const { data: queueRows, error: queueError } = await admin
     .from("match_queue")
     .select("id, user_id, character_row_id, requested_stage, created_at")
@@ -404,6 +495,7 @@ async function findCandidates(
       if (!profile || !character) return false;
       if (row.user_id === request.leader_id) return false;
       if (invitedFriendIds.has(row.user_id)) return false;
+      if (excludedUserIds.has(row.user_id)) return false;
       if (
         profile.matchmaking_banned_until &&
         new Date(profile.matchmaking_banned_until).getTime() > Date.now()
@@ -655,6 +747,27 @@ async function resetMatchLocks(
   await Promise.all(jobs);
 }
 
+async function cancelMatchLocks(
+  admin: AdminClient,
+  temp: {
+    match_request_id: string;
+    queue_ids: string[];
+  },
+) {
+  await Promise.all([
+    admin
+      .from("match_requests")
+      .update({ status: "cancelled" } as unknown as never)
+      .eq("id", temp.match_request_id),
+    temp.queue_ids.length > 0
+      ? admin
+          .from("match_queue")
+          .update({ status: "cancelled", match_request_id: null } as unknown as never)
+          .in("id", temp.queue_ids)
+      : Promise.resolve({ error: null }),
+  ]);
+}
+
 async function penalizeFailedResponses(admin: AdminClient, userIds: string[]) {
   const uniqueUserIds = [...new Set(userIds)];
   for (const userId of uniqueUserIds) {
@@ -757,6 +870,8 @@ async function createTemporaryMatch(
       .filter((profile) => profile.nickname.startsWith("더미친구"))
       .map((profile) => profile.id),
   );
+  const autoAcceptedUserIds = new Set(dummyUserIds);
+  if (request.refill_room_id) autoAcceptedUserIds.add(request.leader_id);
 
   const { data: temp, error } = await admin
     .from("temporary_matches")
@@ -778,8 +893,8 @@ async function createTemporaryMatch(
     responseUserIds.map((user_id) => ({
       temporary_match_id: temporaryMatch.id,
       user_id,
-      status: dummyUserIds.has(user_id) ? "accepted" : "pending",
-      responded_at: dummyUserIds.has(user_id) ? new Date().toISOString() : null,
+      status: autoAcceptedUserIds.has(user_id) ? "accepted" : "pending",
+      responded_at: autoAcceptedUserIds.has(user_id) ? new Date().toISOString() : null,
     })) as unknown as never,
   );
 
@@ -794,7 +909,7 @@ async function createTemporaryMatch(
       role: "leader" as const,
       responses: responseUserIds.map((userId) => ({
         userId,
-        status: dummyUserIds.has(userId)
+        status: autoAcceptedUserIds.has(userId)
           ? ("accepted" satisfies MatchResponseStatus)
           : ("pending" satisfies MatchResponseStatus),
       })),
@@ -822,7 +937,7 @@ async function confirmTemporaryMatch(admin: AdminClient, temporaryMatchId: strin
   const { data: requestRow } = await admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
     )
     .eq("id", temp.match_request_id)
     .maybeSingle();
@@ -848,12 +963,78 @@ async function confirmTemporaryMatch(admin: AdminClient, temporaryMatchId: strin
     .single();
   if (!leaderProfile) return null;
 
-  const room = await createRoom(
-    admin,
-    leaderProfile as Profile,
-    matchRequest,
-    temp.candidate_user_ids,
-  );
+  const { data: claimedMatch, error: claimError } = await admin
+    .from("temporary_matches")
+    .update({ status: "confirmed" } as unknown as never)
+    .eq("id", temporaryMatchId)
+    .eq("status", "pending_acceptance")
+    .select("id")
+    .maybeSingle();
+  if (claimError) {
+    throw new Error(`temporary match claim failed: ${claimError.message}`);
+  }
+  if (!claimedMatch) return null;
+
+  let room: { id: string; code: string };
+  try {
+    if (matchRequest.refill_room_id) {
+      const { data: refillRoom, error: refillRoomError } = await admin
+        .from("rooms")
+        .select("id, code, host_id, created_by, status, max_members")
+        .eq("id", matchRequest.refill_room_id)
+        .maybeSingle();
+      if (refillRoomError || !refillRoom || refillRoom.status !== "active") {
+        throw new Error("refill room is no longer active");
+      }
+      if ((refillRoom.host_id ?? refillRoom.created_by) !== matchRequest.leader_id) {
+        throw new Error("refill requester is no longer the room host");
+      }
+      const { count: activeCount, error: countError } = await admin
+        .from("room_participants")
+        .select("id", { count: "exact", head: true })
+        .eq("room_id", refillRoom.id)
+        .is("left_at", null);
+      if (countError || (activeCount ?? refillRoom.max_members) >= refillRoom.max_members) {
+        throw new Error("refill room has no vacancy");
+      }
+      const replacementId = temp.candidate_user_ids[0];
+      if (!replacementId) throw new Error("refill candidate is missing");
+      const { data: kickedReplacement } = await admin
+        .from("room_kicks")
+        .select("target_id")
+        .eq("room_id", refillRoom.id)
+        .eq("target_id", replacementId)
+        .maybeSingle();
+      if (kickedReplacement) throw new Error("refill candidate was kicked from this room");
+      const { error: participantError } = await admin
+        .from("room_participants")
+        .insert({ room_id: refillRoom.id, user_id: replacementId });
+      if (participantError) {
+        throw new Error(`refill participant insert failed: ${participantError.message}`);
+      }
+      room = { id: refillRoom.id, code: refillRoom.code };
+    } else {
+      room = await createRoom(
+        admin,
+        leaderProfile as Profile,
+        matchRequest,
+        temp.candidate_user_ids,
+      );
+    }
+  } catch (error) {
+    await admin
+      .from("temporary_matches")
+      .update({ status: "pending_acceptance" } as unknown as never)
+      .eq("id", temporaryMatchId)
+      .eq("status", "confirmed")
+      .is("room_id", null);
+    console.error("[matching] room finalization failed", {
+      temporaryMatchId,
+      matchRequestId: temp.match_request_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
   const matchedAt = new Date().toISOString();
   await Promise.all([
     admin
@@ -956,19 +1137,7 @@ async function handleTemporaryMatchResponse(
         .eq("id", pending.id)
         .eq("status", "pending_acceptance");
       await penalizeFailedResponses(admin, [userId]);
-      const { data: profile } = await admin
-        .from("profiles")
-        .select("consecutive_failed_response_count")
-        .eq("id", userId)
-        .maybeSingle();
-      const banSet = new Set<string>();
-      if (
-        ((profile as { consecutive_failed_response_count: number } | null)
-          ?.consecutive_failed_response_count ?? 0) >= 2
-      ) {
-        banSet.add(userId);
-      }
-      await resetMatchLocks(admin, temp, banSet);
+      await cancelMatchLocks(admin, temp);
     }
     return {
       matched: false,
@@ -979,7 +1148,20 @@ async function handleTemporaryMatchResponse(
 
   const roomCode = await confirmTemporaryMatch(admin, pending.id);
   if (roomCode) {
-    return { matched: true, active: false, state: "matched" satisfies MatchState, roomCode };
+    return {
+      matched: false,
+      active: true,
+      state: "processing" satisfies MatchState,
+      temporaryMatch: {
+        ...pending,
+        responseStatus: "accepted" satisfies MatchResponseStatus,
+        responses: pending.responses.map((response) =>
+          response.userId === userId
+            ? { ...response, status: "accepted" satisfies MatchResponseStatus }
+            : response,
+        ),
+      },
+    };
   }
 
   const nextPending = await findPendingTemporaryMatch(admin, userId);
@@ -1002,7 +1184,7 @@ async function tryCompleteMatch(
     .eq("id", request.id)
     .eq("status", "waiting")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
     )
     .maybeSingle();
 
@@ -1228,7 +1410,7 @@ async function ensureAutoLeadRequest(
   const { data: existingRequest, error: existingError } = await admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at, status",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at, status",
     )
     .eq("leader_id", row.user_id)
     .in("status", ["waiting", "processing"])
@@ -1271,7 +1453,7 @@ async function ensureAutoLeadRequest(
       heartbeat_at: heartbeatAt,
     } as unknown as never)
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
     )
     .maybeSingle();
 
@@ -1279,7 +1461,7 @@ async function ensureAutoLeadRequest(
     const { data: retryRequest } = await admin
       .from("match_requests")
       .select(
-        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
       )
       .eq("leader_id", row.user_id)
       .in("status", ["waiting", "processing"])
@@ -1297,7 +1479,7 @@ async function tryWaitingLeaderMatches(admin: AdminClient, dungeonId?: string) {
   let query = admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
     )
     .eq("status", "waiting")
     .gte("heartbeat_at", activeHeartbeatCutoff())
@@ -1390,9 +1572,6 @@ async function getMatchStatus(
     };
   }
 
-  const existing = await findExistingMatch(admin, userId, matchedAfter);
-  if (existing.matched) return { ...existing, state: "matched" satisfies MatchState, active: false };
-
   await tryWaitingLeaderMatches(admin);
   await promoteEligibleAutoLeads(admin);
 
@@ -1407,14 +1586,9 @@ async function getMatchStatus(
     };
   }
 
-  const nextExisting = await findExistingMatch(admin, userId, matchedAfter);
-  if (nextExisting.matched) {
-    return { ...nextExisting, state: "matched" satisfies MatchState, active: false };
-  }
-
   const { data: activeRequestRow } = await admin
     .from("match_requests")
-    .select("id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at, status")
+    .select("id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at, status")
     .eq("leader_id", userId)
     .in("status", ["waiting", "processing"])
     .order("created_at", { ascending: false })
@@ -1494,6 +1668,11 @@ async function getMatchStatus(
       autoLeadEligibleAt: activeQueue.auto_lead_eligible_at,
       autoLeadAfterSeconds: activeQueue.auto_lead_after_seconds,
     };
+  }
+
+  const existing = await findExistingMatch(admin, userId, matchedAfter);
+  if (existing.matched) {
+    return { ...existing, state: "matched" satisfies MatchState, active: false };
   }
 
   const [{ data: cancelledRequest }, { data: cancelledQueue }] = await Promise.all([
@@ -1920,7 +2099,7 @@ export async function POST(request: NextRequest) {
         heartbeat_at: new Date().toISOString(),
       } as unknown as never)
       .select(
-        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, created_at",
+        "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids, created_at",
       )
       .single();
 
@@ -2031,7 +2210,7 @@ export async function POST(request: NextRequest) {
   const { data: requests, error: requestError } = await admin
     .from("match_requests")
     .select(
-      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids",
+      "id, leader_id, dungeon_id, character_row_id, required_stage, min_combat_power, required_classes, max_members, invited_friend_ids, refill_room_id, excluded_user_ids",
     )
     .eq("status", "waiting")
     .eq("dungeon_id", dungeonId)

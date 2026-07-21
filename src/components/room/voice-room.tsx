@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useVoiceRoom } from "@/hooks/use-voice-room";
 import { sendFriendRequest } from "@/hooks/use-friends";
+import { getAion2ClassIconUrl } from "@/lib/aion2-class-icons";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,7 @@ export function VoiceRoom({
   maxMembers,
   initialHostId,
   initialCharacterRowId,
+  initialClassName,
   initialProfileImageUrl,
   isGuest = false,
 }: {
@@ -60,11 +62,12 @@ export function VoiceRoom({
   maxMembers: number;
   initialHostId: string;
   initialCharacterRowId: string | null;
+  initialClassName: string | null;
   initialProfileImageUrl: string | null;
   isGuest?: boolean;
 }) {
   const router = useRouter();
-  const [leaving, startLeaving] = useTransition();
+  const [leaving, setLeaving] = useState(false);
   const {
     participants,
     muted,
@@ -93,7 +96,9 @@ export function VoiceRoom({
     inviteName,
     initialHostId,
     initialCharacterRowId,
+    initialClassName,
     initialProfileImageUrl,
+    disconnectRequested: leaving,
     onKicked: () => {
       router.push(
         "/party?error=" + encodeURIComponent("방장에 의해 추방되었습니다."),
@@ -113,15 +118,37 @@ export function VoiceRoom({
     useState<"good" | "normal" | "bad">("normal");
   const [reportReason, setReportReason] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [kickingId, setKickingId] = useState<string | null>(null);
+  const [refillActive, setRefillActive] = useState(false);
   const selected = participants.find((p) => p.id === selectedId) ?? null;
   const reviewTarget = participants.find((p) => p.id === reviewTargetId) ?? null;
+  const isRefilling = refillActive && participants.length < maxMembers;
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ block: "end" });
   }, [chatMessages.length]);
 
+  useEffect(() => {
+    if (!isHost) return;
+    let cancelled = false;
+    const refreshRefillStatus = () => fetch(`/api/rooms/refill?roomId=${encodeURIComponent(roomId)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => {
+        if (!cancelled && result) setRefillActive(!!result.active);
+      });
+    void refreshRefillStatus();
+    const id = window.setInterval(() => {
+      void refreshRefillStatus();
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [isHost, roomId]);
+
   async function handleSendChat(e: React.FormEvent) {
     e.preventDefault();
+    if (leaving) return;
     if (!chatText.trim() && !chatImage) return;
     setUploadingChatImage(true);
     let imagePath: string | null = null;
@@ -177,6 +204,52 @@ export function VoiceRoom({
     setMannerReview("normal");
   }
 
+  async function handleLeaveRoom() {
+    if (leaving) return;
+    setLeaving(true);
+    window.dispatchEvent(
+      new CustomEvent("arring:matching-status", {
+        detail: { active: false, matched: false, state: "idle" },
+      }),
+    );
+    try {
+      const response = await fetch("/api/rooms/leave", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error ?? "방에서 나가지 못했습니다.");
+      }
+      window.location.replace("/party");
+    } catch (error) {
+      setLeaving(false);
+      toast.error(error instanceof Error ? error.message : "방에서 나가지 못했습니다.");
+    }
+  }
+
+  async function handleKickAndRefill(targetId: string, targetNickname: string) {
+    if (
+      !window.confirm(
+        `${targetNickname}님을 추방하고 같은 조건으로 빈자리 1명을 재매칭할까요?`,
+      )
+    ) {
+      return;
+    }
+    setKickingId(targetId);
+    try {
+      await kickParticipant(targetId);
+      setSelectedId(null);
+      setRefillActive(true);
+      toast.success("파티원을 추방했습니다. 빈자리 1명을 재매칭합니다.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "추방 및 재매칭에 실패했습니다.");
+    } finally {
+      setKickingId(null);
+    }
+  }
+
   return (
     <div className="flex w-full flex-col gap-6">
       {status === "connecting" && (
@@ -196,8 +269,17 @@ export function VoiceRoom({
         </span>
       </div>
 
+      {isHost && isRefilling && (
+        <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
+          <Loader2 className="size-4 animate-spin" />
+          빈자리 1명을 같은 조건으로 재매칭하고 있습니다.
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
-        {participants.map((p) => (
+        {participants.map((p) => {
+          const classIconUrl = getAion2ClassIconUrl(p.className);
+          return (
           <div
             key={p.id}
             className="flex min-w-0 flex-col rounded-md border bg-card p-1.5"
@@ -241,6 +323,22 @@ export function VoiceRoom({
                 {p.nickname}
                 {p.isSelf && " (나)"}
               </span>
+              {p.className && (
+                <span className="flex max-w-full items-center gap-1 rounded-full border bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  {classIconUrl ? (
+                    <span
+                      aria-hidden
+                      className="size-4 rounded-full bg-contain bg-center bg-no-repeat"
+                      style={{ backgroundImage: `url(${classIconUrl})` }}
+                    />
+                  ) : (
+                    <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[9px] font-semibold">
+                      {p.className.slice(0, 1)}
+                    </span>
+                  )}
+                  <span className="truncate">{p.className}</span>
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -252,7 +350,8 @@ export function VoiceRoom({
               <span className="whitespace-nowrap">닉네임 복사</span>
             </button>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <Dialog
@@ -284,6 +383,24 @@ export function VoiceRoom({
                 </DialogTitle>
               </DialogHeader>
               <div className="flex flex-col gap-3">
+                {selected.className && (
+                  <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm">
+                    {getAion2ClassIconUrl(selected.className) ? (
+                      <span
+                        aria-hidden
+                        className="size-6 rounded-full bg-contain bg-center bg-no-repeat"
+                        style={{
+                          backgroundImage: `url(${getAion2ClassIconUrl(selected.className)})`,
+                        }}
+                      />
+                    ) : (
+                      <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                        {selected.className.slice(0, 1)}
+                      </span>
+                    )}
+                    <span className="font-medium">{selected.className}</span>
+                  </div>
+                )}
                 {/* Only the host publishes audio, so a volume slider only
                     makes sense on the host's tile. */}
                 {!selected.isSelf && selected.id === hostId && (
@@ -317,7 +434,11 @@ export function VoiceRoom({
                 </Button>
                 {selected.characterRowId && (
                   <Button variant="outline" asChild>
-                    <Link href={`/profile/characters/${selected.characterRowId}`}>
+                    <Link
+                      href={`/profile/characters/${selected.characterRowId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       <Eye className="size-4" />
                       상세 프로필
                     </Link>
@@ -365,13 +486,17 @@ export function VoiceRoom({
                     </Button>
                     <Button
                       variant="destructive"
-                      onClick={() => {
-                        kickParticipant(selected.id);
-                        setSelectedId(null);
-                      }}
+                      disabled={kickingId === selected.id || isRefilling}
+                      onClick={() =>
+                        void handleKickAndRefill(selected.id, selected.nickname)
+                      }
                     >
-                      <UserX className="size-4" />
-                      추방
+                      {kickingId === selected.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <UserX className="size-4" />
+                      )}
+                      추방 후 1명 재매칭
                     </Button>
                   </>
                 )}
@@ -514,7 +639,7 @@ export function VoiceRoom({
             <ImageAttachmentPicker
               file={chatImage}
               onChange={setChatImage}
-              disabled={uploadingChatImage}
+              disabled={uploadingChatImage || leaving}
             />
           )}
           <form onSubmit={handleSendChat} className="flex gap-2">
@@ -524,11 +649,12 @@ export function VoiceRoom({
               placeholder="메시지 입력..."
               maxLength={500}
               aria-label="통화방 채팅 입력"
+              disabled={leaving}
             />
             <Button
               type="submit"
               size="icon"
-              disabled={uploadingChatImage || (!chatText.trim() && !chatImage)}
+              disabled={leaving || uploadingChatImage || (!chatText.trim() && !chatImage)}
               aria-label="채팅 전송"
             >
               {uploadingChatImage ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
@@ -589,6 +715,7 @@ export function VoiceRoom({
             variant={muted ? "default" : "outline"}
             size="icon-lg"
             onClick={toggleMute}
+            disabled={leaving}
             aria-label={muted ? "음소거 해제" : "음소거"}
           >
             {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
@@ -598,12 +725,7 @@ export function VoiceRoom({
           variant="destructive"
           size="icon-lg"
           disabled={leaving}
-          onClick={() =>
-            startLeaving(() => {
-              router.push("/party");
-              router.refresh();
-            })
-          }
+          onClick={handleLeaveRoom}
           aria-label="퇴장"
         >
           {leaving ? (

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -35,6 +35,11 @@ async function respondTemporaryMatch(action: "accept" | "reject") {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "매칭 응답 처리에 실패했습니다.");
   return data as MatchStatus;
+}
+
+function navigateToRoom(roomCode: string) {
+  const target = `/room/${roomCode}`;
+  if (window.location.pathname !== target) window.location.assign(target);
 }
 
 function showBrowserNotification(title: string, body: string) {
@@ -92,9 +97,11 @@ const MATCH_READY_TITLE =
   "\uB9E4\uCE6D \uD6C4\uBCF4\uAC00 \uC7A1\uD614\uC2B5\uB2C8\uB2E4";
 const MATCH_READY_BODY =
   "30\uCD08 \uC548\uC5D0 \uC218\uB77D\uD574\uC57C \uD30C\uD2F0\uAC00 \uD655\uC815\uB429\uB2C8\uB2E4.";
+const VISITED_ROOM_STORAGE_KEY = "arring:visited-room-code";
+const SUPPRESSED_AUTO_RETURN_STORAGE_KEY =
+  "arring:suppressed-auto-return-room-code";
 
 export function GlobalMatchingProvider() {
-  const router = useRouter();
   const pathname = usePathname();
   const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -104,12 +111,81 @@ export function GlobalMatchingProvider() {
   const refreshTimer = useRef<number | null>(null);
   const suppressRealtimeRefreshUntil = useRef(0);
   const lastNavigatedRoomCode = useRef<string | null>(null);
+  const visitedNavigatedRoomCode = useRef<string | null>(null);
+  const suppressedAutoReturnRoomCode = useRef<string | null>(null);
   const lastNotifiedKey = useRef<string | null>(null);
   const pathnameRef = useRef(pathname);
+  const pendingAcceptanceRef = useRef(false);
 
   useEffect(() => {
     pathnameRef.current = pathname;
+    const currentRoomCode = pathname.match(/^\/room\/([^/?#]+)/)?.[1] ?? null;
+
+    if (currentRoomCode) {
+      sessionStartedAt.current = new Date().toISOString();
+      pendingAcceptanceRef.current = false;
+      lastNavigatedRoomCode.current = currentRoomCode;
+      visitedNavigatedRoomCode.current = currentRoomCode;
+      suppressedAutoReturnRoomCode.current = null;
+      window.sessionStorage.setItem(VISITED_ROOM_STORAGE_KEY, currentRoomCode);
+      window.sessionStorage.removeItem(SUPPRESSED_AUTO_RETURN_STORAGE_KEY);
+      return;
+    }
+
+    const visitedRoomCode =
+      visitedNavigatedRoomCode.current ??
+      window.sessionStorage.getItem(VISITED_ROOM_STORAGE_KEY);
+    if (visitedRoomCode) {
+      suppressedAutoReturnRoomCode.current = visitedRoomCode;
+      window.sessionStorage.setItem(
+        SUPPRESSED_AUTO_RETURN_STORAGE_KEY,
+        visitedRoomCode,
+      );
+    }
   }, [pathname]);
+
+  const canAutoNavigateToRoom = useCallback((roomCode: string) => {
+    return (
+      suppressedAutoReturnRoomCode.current !== roomCode &&
+      window.sessionStorage.getItem(SUPPRESSED_AUTO_RETURN_STORAGE_KEY) !==
+        roomCode
+    );
+  }, []);
+
+  const navigateMatchedRoom = useCallback((roomCode: string) => {
+    if (!canAutoNavigateToRoom(roomCode)) return;
+    lastNavigatedRoomCode.current = roomCode;
+    window.sessionStorage.setItem(VISITED_ROOM_STORAGE_KEY, roomCode);
+    navigateToRoom(roomCode);
+  }, [canAutoNavigateToRoom]);
+
+  useEffect(() => {
+    function handleImmediateStatus(event: Event) {
+      const status = (event as CustomEvent<MatchStatus>).detail;
+      if (!status) return;
+      if (status.matched && status.roomCode) {
+        setMatchStatus(null);
+        if (
+          pathnameRef.current !== `/room/${status.roomCode}` &&
+          canAutoNavigateToRoom(status.roomCode)
+        ) {
+          navigateMatchedRoom(status.roomCode);
+        }
+        return;
+      }
+      if (!status.active && !status.matched) {
+        pendingAcceptanceRef.current = false;
+        window.sessionStorage.removeItem(VISITED_ROOM_STORAGE_KEY);
+        window.sessionStorage.removeItem(SUPPRESSED_AUTO_RETURN_STORAGE_KEY);
+      }
+      setMatchStatus(status.active ? status : null);
+    }
+
+    window.addEventListener("arring:matching-status", handleImmediateStatus);
+    return () => {
+      window.removeEventListener("arring:matching-status", handleImmediateStatus);
+    };
+  }, [canAutoNavigateToRoom, navigateMatchedRoom]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -123,23 +199,31 @@ export function GlobalMatchingProvider() {
 
       if (status.matched && status.roomCode) {
         setMatchStatus(null);
+        const shouldAutoEnter =
+          pendingAcceptanceRef.current || canAutoNavigateToRoom(status.roomCode);
+        pendingAcceptanceRef.current = false;
         if (lastNavigatedRoomCode.current !== status.roomCode) {
           lastNavigatedRoomCode.current = status.roomCode;
           playMatchingSound();
           showBrowserNotification(MATCH_CONFIRMED_TITLE, MATCH_CONFIRMED_BODY);
           toast.success("파티가 매칭됐습니다. 방으로 이동합니다.");
         }
-        if (pathnameRef.current !== `/room/${status.roomCode}`) {
-          router.push(`/room/${status.roomCode}`);
+        if (
+          shouldAutoEnter &&
+          pathnameRef.current !== `/room/${status.roomCode}` &&
+          canAutoNavigateToRoom(status.roomCode)
+        ) {
+          navigateMatchedRoom(status.roomCode);
         }
         return;
       }
 
-      setMatchStatus(
+      const nextStatus =
         status.state === "waiting" || status.state === "processing" || status.active
           ? status
-          : null,
-      );
+          : null;
+      pendingAcceptanceRef.current = !!nextStatus?.temporaryMatch;
+      setMatchStatus(nextStatus);
     }
 
     function scheduleRefresh(delay = 80) {
@@ -217,15 +301,37 @@ export function GlobalMatchingProvider() {
         void supabase.removeChannel(channel);
       });
     };
-  }, [router]);
+  }, [canAutoNavigateToRoom, navigateMatchedRoom]);
 
   useEffect(() => {
-    if (!matchStatus?.active) return;
+    let active = true;
     const id = window.setInterval(() => {
-      void fetchMatchStatus(sessionStartedAt.current);
-    }, 45000);
-    return () => window.clearInterval(id);
-  }, [matchStatus?.active]);
+      if (document.visibilityState !== "visible") return;
+      void fetchMatchStatus(sessionStartedAt.current).then((status) => {
+        if (!active || !status) return;
+        if (status.matched && status.roomCode) {
+          setMatchStatus(null);
+          const shouldAutoEnter =
+            pendingAcceptanceRef.current || canAutoNavigateToRoom(status.roomCode);
+          pendingAcceptanceRef.current = false;
+          if (
+            shouldAutoEnter &&
+            pathnameRef.current !== `/room/${status.roomCode}` &&
+            canAutoNavigateToRoom(status.roomCode)
+          ) {
+            navigateMatchedRoom(status.roomCode);
+          }
+          return;
+        }
+        pendingAcceptanceRef.current = !!status.temporaryMatch;
+        setMatchStatus(status.active ? status : null);
+      });
+    }, 2000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [canAutoNavigateToRoom, navigateMatchedRoom]);
 
   useEffect(() => {
     if (!matchStatus?.temporaryMatch && !matchStatus?.autoLeadEligibleAt) return;
@@ -240,21 +346,36 @@ export function GlobalMatchingProvider() {
     ].filter((value): value is string => !!value);
     if (timestamps.length === 0) return;
 
+    let active = true;
     const timers = timestamps.map((timestamp) => {
       const delay = Math.max(0, new Date(timestamp).getTime() - Date.now() + 150);
       return window.setTimeout(() => {
         void fetchMatchStatus(sessionStartedAt.current).then((status) => {
-          if (!status) return;
-          setMatchStatus(status.active ? status : null);
+          if (!active || !status) return;
           if (status.matched && status.roomCode) {
-            router.push(`/room/${status.roomCode}`);
+            const shouldAutoEnter =
+              pendingAcceptanceRef.current || canAutoNavigateToRoom(status.roomCode);
+            pendingAcceptanceRef.current = false;
+            if (shouldAutoEnter) navigateMatchedRoom(status.roomCode);
+            setMatchStatus(null);
+            return;
           }
+          pendingAcceptanceRef.current = !!status.temporaryMatch;
+          setMatchStatus(status.active ? status : null);
         });
       }, delay);
     });
 
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [matchStatus?.autoLeadEligibleAt, matchStatus?.temporaryMatch?.expiresAt, router]);
+    return () => {
+      active = false;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [
+    matchStatus?.autoLeadEligibleAt,
+    matchStatus?.temporaryMatch?.expiresAt,
+    canAutoNavigateToRoom,
+    navigateMatchedRoom,
+  ]);
 
   useEffect(() => {
     if (!matchStatus?.temporaryMatch) return;
@@ -270,6 +391,7 @@ export function GlobalMatchingProvider() {
     try {
       await cancelMatch();
       sessionStartedAt.current = new Date().toISOString();
+      pendingAcceptanceRef.current = false;
       setMatchStatus(null);
       toast.success("매칭 대기를 취소했습니다.");
     } catch (error) {
@@ -288,11 +410,16 @@ export function GlobalMatchingProvider() {
         playMatchingSound();
         showBrowserNotification(MATCH_CONFIRMED_TITLE, MATCH_CONFIRMED_BODY);
         toast.success("파티가 확정됐습니다. 방으로 이동합니다.");
-        router.push(`/room/${result.roomCode}`);
+        suppressedAutoReturnRoomCode.current = null;
+        window.sessionStorage.removeItem(SUPPRESSED_AUTO_RETURN_STORAGE_KEY);
+        lastNavigatedRoomCode.current = result.roomCode;
+        window.sessionStorage.setItem(VISITED_ROOM_STORAGE_KEY, result.roomCode);
+        navigateToRoom(result.roomCode);
         return;
       }
       if (action === "accept") {
         toast.success("수락했습니다. 다른 파티원의 응답을 기다립니다.");
+        pendingAcceptanceRef.current = true;
         setMatchStatus(result.active ? result : null);
       } else {
         toast.success("매칭을 거절했습니다.");
