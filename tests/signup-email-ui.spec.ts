@@ -4,11 +4,19 @@ test("signup email confirmation UI and check-email resend UI", async ({ page }) 
   await page.goto("/signup");
   const emailInput = page.getByRole("textbox", { name: "이메일", exact: true });
   const emailConfirmationInput = page.getByRole("textbox", { name: "이메일 확인" });
+  const evaluationConsent = page.getByRole("checkbox", {
+    name: /평가 정보는.*다른 사람에게도\s*표시될 수 있음/,
+  });
+
   await expect(emailInput).toBeVisible();
   await expect(emailConfirmationInput).toBeVisible();
+  await expect(evaluationConsent).toBeVisible();
+  await expect(evaluationConsent).toHaveAttribute("required", "");
+
   await emailInput.fill("wlsdn132323@gmail.com");
   await emailConfirmationInput.fill("wlsdn132323@naver.com");
   await page.getByLabel("비밀번호").fill("password1234");
+  await evaluationConsent.check();
   await page.getByRole("button", { name: "회원가입" }).click();
   await expect(page.getByText("이메일과 이메일 확인이 일치하지 않습니다.")).toBeVisible();
 

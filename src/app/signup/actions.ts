@@ -80,6 +80,7 @@ export async function signup(formData: FormData) {
   const email = (formData.get("email") as string)?.trim();
   const emailConfirmation = (formData.get("emailConfirmation") as string)?.trim();
   const password = formData.get("password") as string;
+  const evaluationConsent = formData.get("evaluationConsent");
 
   if (!email || !password) {
     redirect("/signup?error=" + encodeURIComponent("이메일과 비밀번호를 입력해주세요."));
@@ -89,6 +90,12 @@ export async function signup(formData: FormData) {
   }
   if (password.length < 8) {
     redirect("/signup?error=" + encodeURIComponent("비밀번호는 8자 이상이어야 합니다."));
+  }
+  if (evaluationConsent !== "accepted") {
+    redirect(
+      "/signup?error=" +
+        encodeURIComponent("매칭 후 평가 정보가 다른 이용자에게 표시될 수 있음에 동의해주세요."),
+    );
   }
 
   const rateLimitError = await enforceActionRateLimit({
@@ -151,9 +158,6 @@ export async function signup(formData: FormData) {
   });
 
   if (error) {
-    // A duplicate submit (double click) can land here after the first
-    // request already created the account and signed the user in; if we
-    // have a session, treat it as success instead of showing an error.
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -164,8 +168,6 @@ export async function signup(formData: FormData) {
     redirect("/signup?error=" + encodeURIComponent(translateAuthError(error.message)));
   }
 
-  // If email confirmation is disabled, signUp already returns an active
-  // session, skip the "check your email" step and go straight in.
   if (data.session) redirect("/party?welcome=1");
 
   redirect("/signup/check-email?email=" + encodeURIComponent(email));
