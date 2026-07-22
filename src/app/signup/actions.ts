@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { translateAuthError } from "@/lib/auth-errors";
 import { enforceActionRateLimit } from "@/lib/rate-limit";
 
@@ -11,6 +12,64 @@ function getSiteUrl() {
 
 function getEmailRedirectTo() {
   return `${getSiteUrl()}/auth/callback?next=/party`;
+}
+
+function getResendFrom() {
+  return process.env.RESEND_FROM_EMAIL ?? "Arring <noreply@a2rring.com>";
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+async function sendSignupEmail(email: string, actionLink: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY가 설정되어 있지 않습니다.");
+  }
+
+  const safeEmail = escapeHtml(email);
+  const safeActionLink = escapeHtml(actionLink);
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: getResendFrom(),
+      to: email,
+      subject: "Arring 이메일 인증",
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827">
+          <h1 style="font-size:20px;margin:0 0 16px">Arring 이메일 인증</h1>
+          <p>${safeEmail} 계정으로 Arring 가입을 완료하려면 아래 버튼을 눌러주세요.</p>
+          <p style="margin:24px 0">
+            <a href="${safeActionLink}" style="display:inline-block;border-radius:8px;background:#8b5cf6;color:white;padding:12px 18px;text-decoration:none;font-weight:700">
+              이메일 인증하기
+            </a>
+          </p>
+          <p style="font-size:13px;color:#6b7280">버튼이 열리지 않으면 아래 링크를 브라우저에 붙여넣어주세요.</p>
+          <p style="font-size:13px;word-break:break-all;color:#6b7280">${safeActionLink}</p>
+        </div>
+      `,
+      text: `Arring 가입을 완료하려면 아래 링크를 열어주세요.\n\n${actionLink}`,
+    }),
+  });
+
+  if (!response.ok) {
+    const result = await response.json().catch(() => null);
+    const message =
+      typeof result?.message === "string"
+        ? result.message
+        : "Resend 인증 메일 발송에 실패했습니다.";
+    throw new Error(message);
+  }
 }
 
 export async function signup(formData: FormData) {
@@ -35,6 +94,38 @@ export async function signup(formData: FormData) {
   });
   if (rateLimitError) {
     redirect("/signup?error=" + encodeURIComponent(rateLimitError));
+  }
+
+  if (process.env.RESEND_API_KEY) {
+    const admin = createAdminClient();
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: "signup",
+      email,
+      password,
+      options: {
+        redirectTo: getEmailRedirectTo(),
+      },
+    });
+
+    if (error) {
+      redirect("/signup?error=" + encodeURIComponent(translateAuthError(error.message)));
+    }
+
+    const actionLink = data.properties?.action_link;
+    if (!actionLink) {
+      redirect("/signup?error=" + encodeURIComponent("인증 링크를 만들지 못했습니다."));
+    }
+
+    try {
+      await sendSignupEmail(email, actionLink);
+    } catch (error) {
+      redirect(
+        "/signup?error=" +
+          encodeURIComponent(error instanceof Error ? error.message : "인증 메일 발송에 실패했습니다."),
+      );
+    }
+
+    redirect("/signup/check-email?email=" + encodeURIComponent(email));
   }
 
   const supabase = await createClient();
@@ -62,9 +153,7 @@ export async function signup(formData: FormData) {
 
   // If email confirmation is disabled, signUp already returns an active
   // session, skip the "check your email" step and go straight in.
-  if (data.session) {
-    redirect("/party?welcome=1");
-  }
+  if (data.session) redirect("/party?welcome=1");
 
   redirect("/signup/check-email?email=" + encodeURIComponent(email));
 }
@@ -88,6 +177,46 @@ export async function resendSignupEmail(formData: FormData) {
   }
 
   const supabase = await createClient();
+  if (process.env.RESEND_API_KEY) {
+    const admin = createAdminClient();
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+      options: {
+        redirectTo: getEmailRedirectTo(),
+      },
+    });
+
+    if (error) {
+      redirect(
+        `/signup/check-email?email=${encodeURIComponent(email)}&error=${encodeURIComponent(
+          translateAuthError(error.message),
+        )}`,
+      );
+    }
+
+    const actionLink = data.properties?.action_link;
+    if (!actionLink) {
+      redirect(
+        `/signup/check-email?email=${encodeURIComponent(email)}&error=${encodeURIComponent(
+          "인증 링크를 만들지 못했습니다.",
+        )}`,
+      );
+    }
+
+    try {
+      await sendSignupEmail(email, actionLink);
+    } catch (error) {
+      redirect(
+        `/signup/check-email?email=${encodeURIComponent(email)}&error=${encodeURIComponent(
+          error instanceof Error ? error.message : "인증 메일 발송에 실패했습니다.",
+        )}`,
+      );
+    }
+
+    redirect(`/signup/check-email?email=${encodeURIComponent(email)}&resent=1`);
+  }
+
   const { error } = await supabase.auth.resend({
     type: "signup",
     email,
