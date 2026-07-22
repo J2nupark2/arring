@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AppHeader } from "@/components/app-header";
+import { FriendsProvider } from "@/components/friends/friends-provider";
 
 export const metadata: Metadata = {
   title: "공지사항",
@@ -32,58 +34,58 @@ const noticeSections = [
 
 export default function NoticesPage() {
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-4 py-12 sm:px-6">
-      <div className="flex items-center justify-between gap-4">
-        <Link href="/" className="arring-wordmark text-sm">
-          Arring
-        </Link>
-        <Link
-          href="/party"
-          className="rounded-md border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:border-primary/60 hover:text-foreground"
-        >
-          매치 메이킹으로 이동
-        </Link>
-      </div>
+    <FriendsProvider isGuest>
+      <AppHeader isGuest />
+      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-4 py-12 sm:px-6">
+        <div className="flex justify-end">
+          <Link
+            href="/party"
+            className="rounded-md border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:border-primary/60 hover:text-foreground"
+          >
+            매치 메이킹으로 이동
+          </Link>
+        </div>
 
-      <section className="space-y-3">
-        <p className="text-sm font-semibold text-primary">공지사항</p>
-        <h1 className="text-3xl font-bold tracking-tight">
-          평가 악용 방지 정책이 적용되었습니다
-        </h1>
-        <p className="leading-7 text-muted-foreground">
-          Arring을 통해 매칭된 뒤 오가는 평가가 더 공정하게 반영되도록 평가
-          반영 기준을 조정했습니다.
-        </p>
-      </section>
-
-      <article className="overflow-hidden rounded-2xl border bg-card shadow-[0_24px_80px_rgba(0,0,0,.20)]">
-        <div className="border-b bg-muted/20 p-5 sm:p-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              평가 시스템
-            </span>
-            <time className="text-sm text-muted-foreground" dateTime="2026-07-22">
-              2026년 7월 22일
-            </time>
-          </div>
-          <h2 className="mt-4 text-2xl font-bold">
-            부정 평가 과반 반영 및 기존 파티원 가중치 조정
-          </h2>
-          <p className="mt-3 leading-7 text-muted-foreground">
-            매칭 품질을 해치지 않으면서도 악의적인 평가 남발을 막기 위해,
-            부정 평가는 여러 명의 일치된 평가가 있을 때만 점수에 반영됩니다.
+        <section className="space-y-3">
+          <p className="text-sm font-semibold text-primary">공지사항</p>
+          <h1 className="text-3xl font-bold tracking-tight">
+            평가 악용 방지 정책이 적용되었습니다
+          </h1>
+          <p className="leading-7 text-muted-foreground">
+            Arring을 통해 매칭된 뒤 오가는 평가가 더 공정하게 반영되도록 평가
+            반영 기준을 조정했습니다.
           </p>
-        </div>
+        </section>
 
-        <div className="grid gap-4 p-5 sm:p-6">
-          {noticeSections.map((section) => (
-            <section key={section.title} className="rounded-xl border bg-background/45 p-4">
-              <h3 className="font-semibold">{section.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{section.body}</p>
-            </section>
-          ))}
-        </div>
-      </article>
-    </main>
+        <article className="overflow-hidden rounded-2xl border bg-card shadow-[0_24px_80px_rgba(0,0,0,.20)]">
+          <div className="border-b bg-muted/20 p-5 sm:p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                평가 시스템
+              </span>
+              <time className="text-sm text-muted-foreground" dateTime="2026-07-22">
+                2026년 7월 22일
+              </time>
+            </div>
+            <h2 className="mt-4 text-2xl font-bold">
+              부정 평가 과반 반영 및 기존 파티원 가중치 조정
+            </h2>
+            <p className="mt-3 leading-7 text-muted-foreground">
+              매칭 품질을 해치지 않으면서도 악의적인 평가 남발을 막기 위해,
+              부정 평가는 여러 명의 일치된 평가가 있을 때만 점수에 반영됩니다.
+            </p>
+          </div>
+
+          <div className="grid gap-4 p-5 sm:p-6">
+            {noticeSections.map((section) => (
+              <section key={section.title} className="rounded-xl border bg-background/45 p-4">
+                <h3 className="font-semibold">{section.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{section.body}</p>
+              </section>
+            ))}
+          </div>
+        </article>
+      </main>
+    </FriendsProvider>
   );
 }
