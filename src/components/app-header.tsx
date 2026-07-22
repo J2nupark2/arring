@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LogIn,
+  Megaphone,
   MessageCircle,
   ShieldCheck,
   Swords,
@@ -217,6 +218,21 @@ export function AppHeader({
               <MessageCircle className="size-4.5" />
             </Link>
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="sm:hidden"
+            asChild
+            title="공지사항"
+          >
+            <Link href="/notices" aria-label="공지사항">
+              <Megaphone className="size-4.5" />
+            </Link>
+          </Button>
+          <LinkButton href="/notices" variant="ghost" className="hidden sm:inline-flex">
+            <Megaphone className="size-4" />
+            공지사항
+          </LinkButton>
           <Button
             variant="ghost"
             size="icon"
