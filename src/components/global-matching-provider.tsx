@@ -103,6 +103,7 @@ const SUPPRESSED_AUTO_RETURN_STORAGE_KEY =
 
 export function GlobalMatchingProvider() {
   const pathname = usePathname();
+  const [matchingUserId, setMatchingUserId] = useState<string | null>(null);
   const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [responding, setResponding] = useState(false);
@@ -116,6 +117,30 @@ export function GlobalMatchingProvider() {
   const lastNotifiedKey = useRef<string | null>(null);
   const pathnameRef = useRef(pathname);
   const pendingAcceptanceRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    const supabase = createClient();
+
+    void supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!active) return;
+      if (!user || user.is_anonymous) setMatchStatus(null);
+      setMatchingUserId(!user || user.is_anonymous ? null : user.id);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = session?.user;
+      if (!user || user.is_anonymous) setMatchStatus(null);
+      setMatchingUserId(!user || user.is_anonymous ? null : user.id);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -188,6 +213,11 @@ export function GlobalMatchingProvider() {
   }, [canAutoNavigateToRoom, navigateMatchedRoom]);
 
   useEffect(() => {
+    if (!matchingUserId) {
+      pendingAcceptanceRef.current = false;
+      return;
+    }
+
     const supabase = createClient();
     const channels: RealtimeChannel[] = [];
     let active = true;
@@ -237,59 +267,55 @@ export function GlobalMatchingProvider() {
 
     void refreshStatus();
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user || user.is_anonymous || !active) return;
+    const ownRows = supabase
+      .channel(`global-matching:${matchingUserId}:${crypto.randomUUID()}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "match_requests",
+          filter: `leader_id=eq.${matchingUserId}`,
+        },
+        () => scheduleRefresh(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "match_queue",
+          filter: `user_id=eq.${matchingUserId}`,
+        },
+        () => scheduleRefresh(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "matching_invites",
+          filter: `receiver_id=eq.${matchingUserId}`,
+        },
+        () => scheduleRefresh(),
+      )
+      .subscribe();
 
-      const ownRows = supabase
-        .channel(`global-matching:${user.id}:${crypto.randomUUID()}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "match_requests",
-            filter: `leader_id=eq.${user.id}`,
-          },
-          () => scheduleRefresh(),
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "match_queue",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => scheduleRefresh(),
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "matching_invites",
-            filter: `receiver_id=eq.${user.id}`,
-          },
-          () => scheduleRefresh(),
-        )
-        .subscribe();
+    const acceptanceRows = supabase
+      .channel(`global-matching-acceptance:${matchingUserId}:${crypto.randomUUID()}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "temporary_matches" },
+        () => scheduleRefresh(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "match_responses" },
+        () => scheduleRefresh(),
+      )
+      .subscribe();
 
-      const acceptanceRows = supabase
-        .channel(`global-matching-acceptance:${user.id}:${crypto.randomUUID()}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "temporary_matches" },
-          () => scheduleRefresh(),
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "match_responses" },
-          () => scheduleRefresh(),
-        )
-        .subscribe();
-
-      channels.push(ownRows, acceptanceRows);
-    });
+    channels.push(ownRows, acceptanceRows);
 
     return () => {
       active = false;
@@ -301,9 +327,11 @@ export function GlobalMatchingProvider() {
         void supabase.removeChannel(channel);
       });
     };
-  }, [canAutoNavigateToRoom, navigateMatchedRoom]);
+  }, [canAutoNavigateToRoom, matchingUserId, navigateMatchedRoom]);
 
   useEffect(() => {
+    if (!matchingUserId) return;
+
     let active = true;
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
@@ -331,7 +359,7 @@ export function GlobalMatchingProvider() {
       active = false;
       window.clearInterval(id);
     };
-  }, [canAutoNavigateToRoom, navigateMatchedRoom]);
+  }, [canAutoNavigateToRoom, matchingUserId, navigateMatchedRoom]);
 
   useEffect(() => {
     if (!matchStatus?.temporaryMatch && !matchStatus?.autoLeadEligibleAt) return;
