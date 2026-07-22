@@ -20,10 +20,7 @@ export default async function SignupPage({
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-24 sm:px-6">
-      <Link
-        href="/"
-        className="arring-wordmark text-2xl"
-      >
+      <Link href="/" className="arring-wordmark text-2xl">
         Arring
       </Link>
       <Card className="w-full max-w-sm">
@@ -42,8 +39,23 @@ export default async function SignupPage({
                 name="email"
                 type="email"
                 placeholder="you@example.com"
+                autoComplete="email"
                 required
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="emailConfirmation">이메일 확인</Label>
+              <Input
+                id="emailConfirmation"
+                name="emailConfirmation"
+                type="email"
+                placeholder="위 이메일을 한 번 더 입력"
+                autoComplete="off"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                브라우저 자동완성으로 다른 주소가 들어가는 일을 막기 위해 한 번 더 확인합니다.
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">비밀번호</Label>
@@ -52,6 +64,7 @@ export default async function SignupPage({
                 name="password"
                 type="password"
                 minLength={8}
+                autoComplete="new-password"
                 required
               />
             </div>
