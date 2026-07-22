@@ -15,7 +15,11 @@ function getEmailRedirectTo() {
 }
 
 function getResendFrom() {
-  return process.env.RESEND_FROM_EMAIL ?? "Arring <noreply@a2rring.com>";
+  if (process.env.RESEND_FROM_EMAIL) return process.env.RESEND_FROM_EMAIL;
+  if (process.env.RESEND_EMAIL_DOMAIN) {
+    return `Arring <noreply@${process.env.RESEND_EMAIL_DOMAIN}>`;
+  }
+  return "Arring <noreply@a2rring.com>";
 }
 
 function escapeHtml(value: string) {
@@ -98,10 +102,19 @@ export async function signup(formData: FormData) {
 
   if (process.env.RESEND_API_KEY) {
     const admin = createAdminClient();
-    const { data, error } = await admin.auth.admin.generateLink({
-      type: "signup",
+    const { error: createError } = await admin.auth.admin.createUser({
       email,
       password,
+      email_confirm: false,
+    });
+
+    if (createError) {
+      redirect("/signup?error=" + encodeURIComponent(translateAuthError(createError.message)));
+    }
+
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email,
       options: {
         redirectTo: getEmailRedirectTo(),
       },
